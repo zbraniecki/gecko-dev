@@ -15,6 +15,9 @@ Cu.import("resource://gre/modules/AppConstants.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
                                   "resource://gre/modules/PluralForm.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "L20n",
+                                  "resource://gre/modules/L20n.jsm");
+
 window.addEventListener("load", function onload(event) {
   try {
   window.removeEventListener("load", onload, false);
@@ -76,9 +79,14 @@ var snapshotFormatters = {
 
     let strings = stringBundle();
     let daysRange = Troubleshoot.kMaxCrashAge / (24 * 60 * 60 * 1000);
-    $("crashes-title").textContent =
-      PluralForm.get(daysRange, strings.GetStringFromName("crashesTitle"))
-                .replace("#1", daysRange);
+    const ctx = L20n.createContext(['en-US'], ['aboutSupport.ftl']);
+
+    $("crashes-title").textContent = ctx.getValue("crashesTitle", {
+      user: "Zibi"
+    });
+    //$("crashes-title").textContent =
+    //  PluralForm.get(daysRange, strings.GetStringFromName("crashesTitle"))
+    //            .replace("#1", daysRange);
     let reportURL;
     try {
       reportURL = Services.prefs.getCharPref("breakpad.reportURL");
