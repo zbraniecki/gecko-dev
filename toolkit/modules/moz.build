@@ -47,6 +47,7 @@ EXTRA_JS_MODULES += [
     'Integration.jsm',
     'IntlListFormat.jsm',
     'IntlMessageContext.jsm',
+    'IntlPluralRules.jsm',
     'L20n.jsm',
     'L20nParser.jsm',
     'LoadContextInfo.jsm',

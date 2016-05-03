@@ -79,11 +79,14 @@ var snapshotFormatters = {
 
     let strings = stringBundle();
     let daysRange = Troubleshoot.kMaxCrashAge / (24 * 60 * 60 * 1000);
-    const ctx = L20n.createContext(['en-US'], ['aboutSupport.ftl']);
-
-    $("crashes-title").textContent = ctx.getValue("crashesTitle", {
-      user: "Zibi"
+    L20n.createContext(['en-US'], [
+      "chrome://global/locale/aboutSupport.ftl"
+    ]).then(ctx => {
+      $("crashes-title").textContent = ctx.getValue("crashesTitle", {
+        days: daysRange
+      });
     });
+
     //$("crashes-title").textContent =
     //  PluralForm.get(daysRange, strings.GetStringFromName("crashesTitle"))
     //            .replace("#1", daysRange);

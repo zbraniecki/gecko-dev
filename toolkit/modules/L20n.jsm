@@ -8,8 +8,10 @@
 
 this.EXPORTED_SYMBOLS = ["L20n"];
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "L20nParser",
                                   "resource://gre/modules/L20nParser.jsm");
@@ -21,15 +23,50 @@ class Env {
   }
 
   createContext(langs, resIds) {
-    return new L20nContext(this, langs, resIds);
+    const ctx = new L20nContext(this, langs, resIds);
+
+    return ctx.loadResources().then(() => {
+      return ctx;
+    });
   }
 }
 
 this.L20n = new Env();
 
 const IO = {
-  load: function(resId) {
-    return 'crashesTitle = Hello World { $user }';
+  load: function(url) {
+    return new Promise((resolve, reject) => {
+			var req = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
+												.createInstance(Ci.nsIXMLHttpRequest)
+
+			req.mozBackgroundRequest = true;
+			req.overrideMimeType("text/plain");
+			req.open("GET", url, true);
+
+			req.addEventListener('load', () => {
+				if (req.status == 200) {
+					resolve(req.responseText);
+				}
+			});
+      req.send(null);
+    });
+    /*let hiddenWindow = Services.appShell.hiddenDOMWindow;
+    return new Promise((resolve, reject) => {
+      const xhr = new hiddenWindow.XmlHttpRequest();
+
+      xhr.open('GET', url, true);
+
+      xhr.addEventListener('load', e => {
+        if (e.target.status = 200) {
+          resolve(e.target.response);
+        } else {
+          reject('Not found: ' + url);
+        }
+      });
+    });*/
+    /*return hiddenWindow.fetch(url).then(response => {
+      return response.text();
+    });*/
   }
 };
 
@@ -41,15 +78,24 @@ class L20nContext {
     this.langs = langs;
     this.env = env;
 
-    langs.forEach(lang => {
+  }
+
+  loadResources() {
+    let resLoading = [];
+
+    this.langs.forEach(lang => {
       this.messageContexts[lang] = new MessageContext(lang);
       this.resCache[lang] = {};
-      resIds.forEach(resId => {
-        const source = IO.load(resId);
-        const [entries, errors] = L20nParser.parseResource(source);
-        this.resCache[lang][resId] = entries;
+
+      this.resIds.forEach(resId => {
+        resLoading.push(IO.load(resId).then(source => {
+          const [entries, errors] = L20nParser.parseResource(source);
+          this.resCache[lang][resId] = entries;
+        }));
       });
     });
+
+    return Promise.all(resLoading);
   }
 
   getValue(id, args) {
