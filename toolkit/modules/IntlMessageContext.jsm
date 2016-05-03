@@ -10,8 +10,14 @@ this.EXPORTED_SYMBOLS = ["MessageContext", "MessageArgument"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
-Cu.import("resource://gre/modules/IntlListFormat.jsm");
-Cu.import("resource://gre/modules/IntlPluralRules.jsm");
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+
+XPCOMUtils.defineLazyModuleGetter(this, "ListFormat",
+  "resource://gre/modules/IntlListFormat.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "PluralRules",
+  "resource://gre/modules/IntlPluralRules.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "RelativeTimeFormat",
+  "resource://gre/modules/IntlRelativeTimeFormat.jsm");
 
 function formatMessage(mf, args, entries, msg) {
   if (typeof msg === 'string') {
@@ -101,8 +107,17 @@ function resolveCallExpression(mf, args, builtin, options, values) {
     case 'PLURAL':
       const pr = new PluralRules(mf.locale);
       return pr.select(values[0]);
+    case 'RELATIVETIME':
+      const rtf = new RelativeTimeFormatter(mf.locale);
+      return rtf.format(values[0]);
     default:
-      formatter = mf.formatters[builtin];
+      let formatter = mf.formatters[builtin];
+      if (!formatter) {
+        throw new Error('Unknown formatter ' + builtin);
+      }
+      if (typeof formatter === 'function') {
+        return formatter(values, options);
+      }
       return resolveCallExpression(mf,
         args,
         formatter[0],

@@ -84,7 +84,14 @@ class L20nContext {
     let resLoading = [];
 
     this.langs.forEach(lang => {
-      this.messageContexts[lang] = new MessageContext(lang);
+      this.messageContexts[lang] = new MessageContext(lang, {
+        formatters: {
+          OS: function() {
+            // you call me a stub? Your mom is a stub!
+            return 'mac';
+          }
+        }
+      });
       this.resCache[lang] = {};
 
       this.resIds.forEach(resId => {
@@ -165,7 +172,16 @@ class L20nContext {
       let id = Array.isArray(key) ? key[0] : key;
       let args = Array.isArray(key) ? key[1] : undefined;
       
-      return this.getEntity(id, args);
+      try {
+        return this.getEntity(id, args);
+      } catch (e) {
+        console.log('Error getting entity: ' + id);
+        console.log(e);
+        return {
+          value: id,
+          traits: null
+        };
+      }
     });
   }
 }

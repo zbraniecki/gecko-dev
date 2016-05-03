@@ -18,6 +18,13 @@
     });
   }
 
+  function getDirection(code) {
+    const tag = code.split('-')[0];
+    return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
+      'rtl' : 'ltr';
+  }
+
+
   function getResourceLinks(head) {
     return Array.prototype.map.call(
       head.querySelectorAll('link[rel="localization"]'),
@@ -295,17 +302,35 @@
     return nodes;
   }
 
-  function translateView(view) {
+  function translateView(view, langs) {
     view.roots.forEach(root => {
       translateFragment(view, root);
     });
+
+    let html = document.documentElement;
+    setLangs(html, langs);
+    setLangDir(html, langs);
+  }
+
+  function setLangs(html, langs) {
+    html.setAttribute('langs', langs.join(', '));
+  }
+
+  function setLangDir(html, langs) {
+    const code = langs[0];
+    html.setAttribute('lang', code);
+    html.setAttribute('dir', getDirection(code));
   }
 
   function init() {
     const resources = getResourceLinks(document.head);
     const meta = getMeta(document.head);
-    return L20n.createContext(['en-US'], resources).then(ctx => {
+
+    let negotiatedLangs = ['en-US'];
+
+    return L20n.createContext(negotiatedLangs, resources).then(ctx => {
       this.ctx = ctx;
+      return negotiatedLangs;
     });
   }
 
@@ -315,7 +340,7 @@
         document
       ];
       const initialized = documentReady().then(init.bind(this));
-      this.ready = initialized.then(langs => translateView(this));
+      this.ready = initialized.then(langs => translateView(this, langs));
     }
 
     setAttributes(element, id, args) {

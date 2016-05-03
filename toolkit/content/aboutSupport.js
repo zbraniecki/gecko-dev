@@ -15,18 +15,22 @@ Cu.import("resource://gre/modules/AppConstants.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
                                   "resource://gre/modules/PluralForm.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "RelativeTimeFormat",
+  "resource://gre/modules/IntlRelativeTimeFormat.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "L20n",
-                                  "resource://gre/modules/L20n.jsm");
+  "resource://gre/modules/L20n.jsm");
 
 window.addEventListener("load", function onload(event) {
   try {
-  window.removeEventListener("load", onload, false);
-  Troubleshoot.snapshot(function (snapshot) {
-    for (let prop in snapshotFormatters)
-      snapshotFormatters[prop](snapshot[prop]);
-  });
-  populateActionBox();
-  setupEventListeners();
+    window.removeEventListener("load", onload, false);
+    document.l10n.ready.then(() => {
+      Troubleshoot.snapshot(function (snapshot) {
+        for (let prop in snapshotFormatters)
+          snapshotFormatters[prop](snapshot[prop]);
+      });
+      populateActionBox();
+      setupEventListeners();
+    });
   } catch (e) {
     Cu.reportError("stack of load error for about:support: " + e + ": " + e.stack);
   }
@@ -41,7 +45,7 @@ var snapshotFormatters = {
     $("application-box").textContent = data.name;
     $("useragent-box").textContent = data.userAgent;
     $("os-box").textContent = data.osVersion;
-    $("supportLink").href = data.supportURL;
+    //$("supportLink").href = data.supportURL;
     let version = AppConstants.MOZ_APP_VERSION_DISPLAY;
     if (data.vendor)
       version += " (" + data.vendor + ")";
@@ -50,7 +54,7 @@ var snapshotFormatters = {
     if (data.updateChannel)
       $("updatechannel-box").textContent = data.updateChannel;
 
-    let statusStrName = ".unknown";
+    let statusStrName = "-unknown";
 
     // Whitelist of known values with string descriptions:
     switch (data.autoStartStatus) {
@@ -63,12 +67,21 @@ var snapshotFormatters = {
       case 7:
       case 8:
       case 9:
-        statusStrName = "." + data.autoStartStatus;
+        statusStrName = "-" + data.autoStartStatus;
     }
 
-    let statusText = stringBundle().GetStringFromName("multiProcessStatus" + statusStrName);
-    $("multiprocess-box").textContent = stringBundle().formatStringFromName("multiProcessWindows",
-      [data.numRemoteWindows, data.numTotalWindows, statusText], 3);
+    let statusText =
+      document.l10n.ctx.getValue('aboutSupport-multiProcessStatus' +
+          statusStrName);
+    document.l10n.setAttributes(
+      $("multiprocess-box"),
+      'aboutSupport-multiProcessWindows',
+      {
+        remote: data.numRemoteWindows,
+        total: data.numTotalWindows,
+        status: statusText
+      }
+    );
 
     $("safemode-box").textContent = data.safeMode;
   },
@@ -79,15 +92,10 @@ var snapshotFormatters = {
 
     let strings = stringBundle();
     let daysRange = Troubleshoot.kMaxCrashAge / (24 * 60 * 60 * 1000);
-    document.l10n.ready.then(() => {
-      document.l10n.setAttributes($("crashes-title"), 'crashesTitle', {
-        days: daysRange
-      });
+    document.l10n.setAttributes($("crashes-title"), 'aboutSupport-crashes-title', {
+      days: daysRange
     });
 
-    //$("crashes-title").textContent =
-    //  PluralForm.get(daysRange, strings.GetStringFromName("crashesTitle"))
-    //            .replace("#1", daysRange);
     let reportURL;
     try {
       reportURL = Services.prefs.getCharPref("breakpad.reportURL");
@@ -107,38 +115,22 @@ var snapshotFormatters = {
     }
 
     if (data.pending > 0) {
-      $("crashes-allReportsWithPending").textContent =
-        PluralForm.get(data.pending, strings.GetStringFromName("pendingReports"))
-                  .replace("#1", data.pending);
+      document.l10n.setAttributes(
+        $("crashes-allReportsWithPending"),
+        'aboutSupport-crashes-pendingReports',
+        { num: data.pending }
+      );
     }
 
     let dateNow = new Date();
     $.append($("crashes-tbody"), data.submitted.map(function (crash) {
       let date = new Date(crash.date);
       let timePassed = dateNow - date;
-      let formattedDate;
-      if (timePassed >= 24 * 60 * 60 * 1000)
-      {
-        let daysPassed = Math.round(timePassed / (24 * 60 * 60 * 1000));
-        let daysPassedString = strings.GetStringFromName("crashesTimeDays");
-        formattedDate = PluralForm.get(daysPassed, daysPassedString)
-                                  .replace("#1", daysPassed);
-      }
-      else if (timePassed >= 60 * 60 * 1000)
-      {
-        let hoursPassed = Math.round(timePassed / (60 * 60 * 1000));
-        let hoursPassedString = strings.GetStringFromName("crashesTimeHours");
-        formattedDate = PluralForm.get(hoursPassed, hoursPassedString)
-                                  .replace("#1", hoursPassed);
-      }
-      else
-      {
-        let minutesPassed = Math.max(Math.round(timePassed / (60 * 1000)), 1);
-        let minutesPassedString = strings.GetStringFromName("crashesTimeMinutes");
-        formattedDate = PluralForm.get(minutesPassed, minutesPassedString)
-                                  .replace("#1", minutesPassed);
-      }
-      return $.new("tr", [
+
+      let rtf = new RelativeTimeFormat(document.documentElement.lang);
+      let fromattedDate = rtf.format(timePassed);
+
+      $.new("tr", [
         $.new("td", [
           $.new("a", crash.id, null, {href : reportURL + crash.id})
         ]),

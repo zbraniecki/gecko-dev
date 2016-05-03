@@ -16,7 +16,119 @@ aboutSupport-restartInSafeMode = Restart with Add-ons Disabled...
 aboutSupport-copyRawDataToClipboard = Copy raw data to clipboard
 aboutSupport-copyTextToClipboard = Copy text to clipboard
 
-crashesTitle = { PLURAL($days) ->
+
+aboutSupport-appBasicsTitle = Application Basics
+aboutSupport-appBasicsName = Name
+aboutSupport-appBasicsVersion = Version
+aboutSupport-appBasicsBuildID = Build ID
+aboutSupport-appBasicsUpdateChannel = Update Channel
+aboutSupport-appBasicsUpdateHistory = Update History
+aboutSupport-appBasicsShowUpdateHistory = Show Update History
+aboutSupport-appBasicsUserAgent = User Agent
+aboutSupport-appBasicsOS = OS
+aboutSupport-appBasicsProfileDir = { OS() ->
+  [win] Profile Folder
+  [mac] Profile Folder
+ *[other] Profile Directory
+}
+aboutSupport-showDir = { OS() ->
+  [win] Show Folder
+  [mac] Show in Finder
+ *[other] Open Directory
+}
+aboutSupport-appBasicsEnabledPlugins = Enabled Plugins
+aboutSupport-appBasicsBuildConfig = Build Configuration
+aboutSupport-appBasicsMemoryUse = Memory Use
+aboutSupport-appBasicsServiceWorkers = Registered Service Workers
+aboutSupport-appBasicsMultiProcessSupport = Multiprocess Windows
+aboutSupport-appBasicsSafeMode = Safe Mode
+aboutSupport-appBasicsProfiles = Profiles
+
+aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status })
+aboutSupport-multiProcessStatus-0 = Enabled by user
+aboutSupport-multiProcessStatus-1 = Enabled by default
+aboutSupport-multiProcessStatus-2 = Disabled
+aboutSupport-multiProcessStatus-4 = Disabled by accessibility tools
+aboutSupport-multiProcessStatus-5 = Disabled by lack of graphics hardware acceleration on Mac OS X
+aboutSupport-multiProcessStatus-6 = Disabled by unsupported text input
+aboutSupport-multiProcessStatus-7 = Disabled by add-ons
+aboutSupport-multiProcessStatus-8 = Disabled forcibly
+aboutSupport-multiProcessStatus-9 = Disabled by graphics hardware acceleration on Windows
+aboutSupport-multiProcessStatus-unknown = Unknown status
+
+aboutSupport-crashes-title = { PLURAL($days) ->
   [one] Crash Reports for the Last { $days } day
  *[other] Crash Reports for the Last { $days } days
 }
+aboutSupport-crashes-id = Report ID
+aboutSupport-crashes-sendDate = Submitted
+aboutSupport-crashes-allReports = All Crash Reports
+aboutSupport-crashes-noConfig =
+  | This application has not been configured to display crash reports.
+aboutSupport-crashes-pendingReports = { PLURAL($num) ->
+  [one]
+   | All Crash Reports (including { $num } pending crash in the given time range)
+ *[other]
+   | All Crash Reports (including { $num } pending crashes in the given time range)
+aboutSupport-crashes-timeHours = { PLURAL($hours) ->
+  [one] 1 hour ago
+ *[other] { $hours } hours ago
+}
+aboutSupport-crashes-timeDays = { PLURAL($days) ->
+  [one] 1 day ago
+ *[other] { $hours } days ago
+}
+
+
+aboutSupport-extensionsTitle = Extensions
+aboutSupport-extensionName = Name
+aboutSupport-extensionEnabled = Enabled
+aboutSupport-extensionVersion = Version
+aboutSupport-extensionId = ID
+
+aboutSupport-graphicsTitle = Graphics
+aboutSupport-graphicsFeaturesTitle = Features
+aboutSupport-graphicsDiagnosticsTitle = Diagnostics
+aboutSupport-graphicsFailureLogTitle = Failure Log
+aboutSupport-graphicsGPU1Title = GPU #1
+aboutSupport-graphicsGPU2Title = GPU #2
+aboutSupport-graphicsDecisionLogTitle = Decision Log
+aboutSupport-graphicsWorkaroundsTitle = Workarounds
+
+
+aboutSupport-modifiedKeyPrefsTitle = Important Modified Preferences
+aboutSupport-modifiedPrefsName = Name
+aboutSupport-modifiedPrefsValue = Value
+
+aboutSupport-userJSTitle = user.js Preferences
+aboutSupport-userJSDescription =
+  | Your profile folder contains a <a id='prefs-user-js-link'>user.js file</a>,
+  | which includes preferences that were not created by { brandShortName }.
+
+
+aboutSupport-lockedKeyPrefsTitle = Important Locked Preferences
+aboutSupport-lockedPrefsName = Name
+aboutSupport-lockedPrefsValue = Value
+
+
+aboutSupport-jsTitle = JavaScript
+aboutSupport-jsIncrementalGC = Incremental GC
+
+aboutSupport-a11yTitle = Accessibility
+aboutSupport-a11yActivated = Activated
+aboutSupport-a11yForceDisabled = Prevent Accessibility
+
+
+aboutSupport-libraryVersionsTitle = Library Versions
+
+
+aboutSupport-experimentsTitle = Experimental Features
+aboutSupport-experimentName = Name
+aboutSupport-experimentId = ID
+aboutSupport-experimentDescription = Description
+aboutSupport-experimentActive = Active
+aboutSupport-experimentEndDate = End Date
+aboutSupport-experimentHomepage = Homepage
+aboutSupport-experimentBranch = Branch
+
+aboutSupport-sandboxTitle = Sandbox
