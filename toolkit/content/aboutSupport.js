@@ -79,10 +79,8 @@ var snapshotFormatters = {
 
     let strings = stringBundle();
     let daysRange = Troubleshoot.kMaxCrashAge / (24 * 60 * 60 * 1000);
-    L20n.createContext(['en-US'], [
-      "chrome://global/locale/aboutSupport.ftl"
-    ]).then(ctx => {
-      $("crashes-title").textContent = ctx.getValue("crashesTitle", {
+    document.l10n.ready.then(() => {
+      document.l10n.setAttributes($("crashes-title"), 'crashesTitle', {
         days: daysRange
       });
     });

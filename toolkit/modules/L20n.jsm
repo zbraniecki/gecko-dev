@@ -110,6 +110,62 @@ class L20nContext {
       return 'No Entity for id ' + id;
     }
     const entry = this.resCache[this.langs[0]][res][id];
+
     return this.messageContexts[this.langs[0]].formatEntry(entry, args);
+  }
+
+  getEntity(id, args) {
+    let res;
+
+    this.resIds.forEach(resId => {
+      if (this.resCache[this.langs[0]][resId].hasOwnProperty(id)) {
+        res = resId;
+      }
+    });
+    if (!res) {
+      return {
+        value: 'No Entity for id ' + id,
+        traits: {}
+      };
+    }
+
+    const entries = this.resCache[this.langs[0]][res];
+    const entry = entries[id];
+    const msgCtx = this.messageContexts[this.langs[0]];
+
+    let value, traits;
+
+    if (typeof entry === 'string' || Array.isArray(entry)) {
+      value = entry;
+    } else {
+      value = entry.val;
+      traits = entry.traits;
+    }
+
+    const formatted = {
+      value: msgCtx.formatEntry(value, args, entries),
+      traits: null
+    };
+    
+    if (traits) {
+      formatted.traits = Object.create(null);
+
+      traits.forEach(trait => {
+        let key = trait.key.ns ?
+          `${trait.key.ns}/${trait.key.name}` : trait.key.name;
+        formatted.traits[key] = msgCtx.formatEntry(trait.val, args, entries);
+      });
+    }
+
+    return formatted;
+  }
+
+  formatEntities(...keys) {
+    return keys.map(key => {
+      let id = Array.isArray(key) ? key[0] : key;
+      let args = Array.isArray(key) ? key[1] : undefined;
+      
+      return this.getEntity(id, args);
+    });
   }
 }
