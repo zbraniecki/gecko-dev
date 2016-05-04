@@ -45,9 +45,7 @@ aboutSupport-appBasicsMultiProcessSupport = Multiprocess Windows
 aboutSupport-appBasicsSafeMode = Safe Mode
 aboutSupport-appBasicsProfiles = Profiles
 
-aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ aboutSupport-multiProcessStatus })
-
-aboutSUpport-multiProcessStatus = { $status ->
+aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status ->
   [0] Enabled by user
   [1] Enabled by default
   [2] Disabled
@@ -58,7 +56,7 @@ aboutSUpport-multiProcessStatus = { $status ->
   [8] Disabled forcibly
   [9] Disabled by graphics hardware acceleration on Windows
  *[other] Unknown status
-}
+})
 
 aboutSupport-crashes-title = { PLURAL($days) ->
   [one] Crash Reports for the Last { $days } day
