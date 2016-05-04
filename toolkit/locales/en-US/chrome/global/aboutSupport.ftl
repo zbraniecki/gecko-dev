@@ -15,7 +15,8 @@ aboutSupport-restartInSafeMode = Restart with Add-ons Disabled...
 
 aboutSupport-copyRawDataToClipboard = Copy raw data to clipboard
 aboutSupport-copyTextToClipboard = Copy text to clipboard
-
+aboutSupport-rawDatCopied = Raw data copied to clipboard
+aboutSupport-textCopied = Text copied to clipboard
 
 aboutSupport-appBasicsTitle = Application Basics
 aboutSupport-appBasicsName = Name

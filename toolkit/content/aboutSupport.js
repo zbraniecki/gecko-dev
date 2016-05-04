@@ -572,7 +572,7 @@ function copyRawDataToClipboard(button) {
         // Present a toast notification.
         let message = {
           type: "Toast:Show",
-          message: stringBundle().GetStringFromName("rawDataCopied"),
+          message: document.l10n.ctx.getValue("aboutSupport-rawDataCopied"),
           duration: "short"
         };
         Services.androidBridge.handleGeckoMessage(message);
@@ -626,7 +626,7 @@ function copyContentsToClipboard() {
     // Present a toast notification.
     let message = {
       type: "Toast:Show",
-      message: stringBundle().GetStringFromName("textCopied"),
+      message: document.l10n.ctx.getValue("aboutSupport-textCopied"),
       duration: "short"
     };
     Services.androidBridge.handleGeckoMessage(message);
