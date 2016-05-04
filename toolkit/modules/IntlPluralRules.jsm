@@ -16,6 +16,8 @@ const pluralRules = {
 
 class PluralRules {
   constructor(locales, options) {
+    // So stub, Much mock
+
     //this.locale = Array.isArray(locales) ? locales[0] : locales;
     this.locale = 'en-US';
     this.pluralRule = pluralRules[this.locale];

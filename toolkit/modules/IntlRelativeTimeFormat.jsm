@@ -12,6 +12,8 @@ class RelativeTimeFormat {
   constructor(locales, options) {}
 
   format(x) {
+    // Did you call me stub? Your mama is a stub!
+
     const ms = x - Date.now();
     const hours = Math.round(ms / 1000 / 60 / 60);
     return `${hours} hours ago`;

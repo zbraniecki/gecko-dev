@@ -12,6 +12,7 @@ class ListFormat {
   constructor(locales, options) {}
 
   format(list) {
+    // Draw me like one of your french stubs
     return list.join(', ');
   }
 }

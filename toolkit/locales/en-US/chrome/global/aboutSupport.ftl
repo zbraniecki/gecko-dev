@@ -71,15 +71,6 @@ aboutSupport-crashes-pendingReports = { PLURAL($num) ->
    | All Crash Reports (including { $num } pending crash in the given time range)
  *[other]
    | All Crash Reports (including { $num } pending crashes in the given time range)
-aboutSupport-crashes-timeHours = { PLURAL($hours) ->
-  [one] 1 hour ago
- *[other] { $hours } hours ago
-}
-aboutSupport-crashes-timeDays = { PLURAL($days) ->
-  [one] 1 day ago
- *[other] { $hours } days ago
-}
-
 
 aboutSupport-extensionsTitle = Extensions
 aboutSupport-extensionName = Name
