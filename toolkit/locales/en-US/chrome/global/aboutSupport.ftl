@@ -71,6 +71,7 @@ aboutSupport-crashes-pendingReports = { PLURAL($num) ->
    | All Crash Reports (including { $num } pending crash in the given time range)
  *[other]
    | All Crash Reports (including { $num } pending crashes in the given time range)
+}
 
 aboutSupport-extensionsTitle = Extensions
 aboutSupport-extensionName = Name
