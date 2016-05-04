@@ -49,32 +49,13 @@ var snapshotFormatters = {
     if (data.updateChannel)
       $("updatechannel-box").textContent = data.updateChannel;
 
-    let statusStrName = "-unknown";
-
-    // Whitelist of known values with string descriptions:
-    switch (data.autoStartStatus) {
-      case 0:
-      case 1:
-      case 2:
-      case 4:
-      case 5:
-      case 6:
-      case 7:
-      case 8:
-      case 9:
-        statusStrName = "-" + data.autoStartStatus;
-    }
-
-    let statusText =
-      document.l10n.ctx.getValue('aboutSupport-multiProcessStatus' +
-          statusStrName);
     document.l10n.setAttributes(
       $("multiprocess-box"),
       'aboutSupport-multiProcessWindows',
       {
         remote: data.numRemoteWindows,
         total: data.numTotalWindows,
-        status: statusText
+        status: data.autoStartStatus
       }
     );
 

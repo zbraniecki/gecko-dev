@@ -45,17 +45,20 @@ aboutSupport-appBasicsMultiProcessSupport = Multiprocess Windows
 aboutSupport-appBasicsSafeMode = Safe Mode
 aboutSupport-appBasicsProfiles = Profiles
 
-aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status })
-aboutSupport-multiProcessStatus-0 = Enabled by user
-aboutSupport-multiProcessStatus-1 = Enabled by default
-aboutSupport-multiProcessStatus-2 = Disabled
-aboutSupport-multiProcessStatus-4 = Disabled by accessibility tools
-aboutSupport-multiProcessStatus-5 = Disabled by lack of graphics hardware acceleration on Mac OS X
-aboutSupport-multiProcessStatus-6 = Disabled by unsupported text input
-aboutSupport-multiProcessStatus-7 = Disabled by add-ons
-aboutSupport-multiProcessStatus-8 = Disabled forcibly
-aboutSupport-multiProcessStatus-9 = Disabled by graphics hardware acceleration on Windows
-aboutSupport-multiProcessStatus-unknown = Unknown status
+aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ aboutSupport-multiProcessStatus })
+
+aboutSUpport-multiProcessStatus = { $status ->
+  [0] Enabled by user
+  [1] Enabled by default
+  [2] Disabled
+  [4] Disabled by accessibility tools
+  [5] Disabled by lack of graphics hardware acceleration on Mac OS X
+  [6] Disabled by unsupported text input
+  [7] Disabled by add-ons
+  [8] Disabled forcibly
+  [9] Disabled by graphics hardware acceleration on Windows
+ *[other] Unknown status
+}
 
 aboutSupport-crashes-title = { PLURAL($days) ->
   [one] Crash Reports for the Last { $days } day
