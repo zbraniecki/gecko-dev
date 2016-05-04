@@ -87,8 +87,18 @@ class L20nContext {
       this.messageContexts[lang] = new MessageContext(lang, {
         formatters: {
           OS: function() {
-            // you call me a stub? Your mom is a stub!
-            return 'mac';
+            switch (Services.appinfo.OS) {
+              case 'WINNT':
+                return 'win';
+              case 'Linux':
+                return 'lin';
+              case 'Darwin':
+                return 'mac';
+              case 'Android':
+                return 'android';
+              default:
+                return 'other';
+            }
           }
         }
       });

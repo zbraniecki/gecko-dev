@@ -12,13 +12,8 @@ Cu.import("resource://gre/modules/Troubleshoot.jsm");
 Cu.import("resource://gre/modules/ResetProfile.jsm");
 Cu.import("resource://gre/modules/AppConstants.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-                                  "resource://gre/modules/PluralForm.jsm");
-
 XPCOMUtils.defineLazyModuleGetter(this, "RelativeTimeFormat",
   "resource://gre/modules/IntlRelativeTimeFormat.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "L20n",
-  "resource://gre/modules/L20n.jsm");
 
 window.addEventListener("load", function onload(event) {
   try {
@@ -90,7 +85,6 @@ var snapshotFormatters = {
     if (!AppConstants.MOZ_CRASHREPORTER)
       return;
 
-    let strings = stringBundle();
     let daysRange = Troubleshoot.kMaxCrashAge / (24 * 60 * 60 * 1000);
     document.l10n.setAttributes($("crashes-title"), 'aboutSupport-crashes-title', {
       days: daysRange
@@ -192,34 +186,6 @@ var snapshotFormatters = {
   },
 
   graphics: function graphics(data) {
-    let strings = stringBundle();
-
-    function localizedMsg(msgArray) {
-      let nameOrMsg = msgArray.shift();
-      if (msgArray.length) {
-        // formatStringFromName logs an NS_ASSERTION failure otherwise that says
-        // "use GetStringFromName".  Lame.
-        try {
-          return strings.formatStringFromName(nameOrMsg, msgArray,
-                                              msgArray.length);
-        }
-        catch (err) {
-          // Throws if nameOrMsg is not a name in the bundle.  This shouldn't
-          // actually happen though, since msgArray.length > 1 => nameOrMsg is a
-          // name in the bundle, not a message, and the remaining msgArray
-          // elements are parameters.
-          return nameOrMsg;
-        }
-      }
-      try {
-        return strings.GetStringFromName(nameOrMsg);
-      }
-      catch (err) {
-        // Throws if nameOrMsg is not a name in the bundle.
-      }
-      return nameOrMsg;
-    }
-
     // Read APZ info out of data.info, stripping it out in the process.
     let apzInfo = [];
     let formatApzInfo = function (info) {
@@ -232,7 +198,7 @@ var snapshotFormatters = {
 
         delete info[key];
 
-        let message = localizedMsg([type.toLowerCase() + 'Enabled']);
+        let message = document.l10n.ctx.getValue('aboutSupport-graphics-' + type.toLowerCase() + 'Enabled');
         out.push(message);
       }
 
@@ -249,7 +215,7 @@ var snapshotFormatters = {
         title = key.substr(1);
       } else {
         try {
-          title = strings.GetStringFromName(key);
+          title = document.l10n.ctx.getValue(key);
         } catch (e) {
           title = key;
         }
@@ -273,7 +239,8 @@ var snapshotFormatters = {
       addRows(where, [buildRow(key, value)]);
     }
     if (data.clearTypeParameters !== undefined) {
-      addRow("diagnostics", "clearTypeParameters", data.clearTypeParameters);
+      addRow("diagnostics",
+        "aboutSupport-graphics-clearTypeParameters", data.clearTypeParameters);
     }
     if ("info" in data) {
       apzInfo = formatApzInfo(data.info);
@@ -333,7 +300,7 @@ var snapshotFormatters = {
       let value;
       let messageKey = key + "Message";
       if (messageKey in data) {
-        value = localizedMsg(data[messageKey]);
+        value = data[messageKey];
         delete data[messageKey];
       } else {
         value = data[key];
@@ -349,19 +316,20 @@ var snapshotFormatters = {
 
     let compositor = data.windowLayerManagerRemote
                      ? data.windowLayerManagerType
-                     : "BasicLayers (" + strings.GetStringFromName("mainThreadNoOMTC") + ")";
-    addRow("features", "compositing", compositor);
+                     : "BasicLayers (" +
+                     document.l10n.ctx.getValue("aboutSupport-graphics-mainThreadNoOMTC") + ")";
+    addRow("features", "aboutSupport-graphics-compositing", compositor);
     delete data.windowLayerManagerRemote;
     delete data.windowLayerManagerType;
     delete data.numTotalWindows;
     delete data.numAcceleratedWindows;
 
-    addRow("features", "asyncPanZoom",
+    addRow("features", "aboutSupport-graphics-asyncPanZoom",
            apzInfo.length
            ? apzInfo.join("; ")
-           : localizedMsg(["apzNone"]));
-    addRowFromKey("features", "webglRenderer");
-    addRowFromKey("features", "supportsHardwareH264", "hardwareH264");
+           : document.l10n.ctx.getValue('aboutSupport-graphics-apzNone'));
+    addRowFromKey("features", "aboutSupport-graphics-webglRenderer");
+    addRowFromKey("features", "supportsHardwareH264", "aboutSupport-graphics-hardwareH264");
     addRowFromKey("features", "direct2DEnabled", "#Direct2D");
 
     if ("directWriteEnabled" in data) {
@@ -375,14 +343,14 @@ var snapshotFormatters = {
 
     // Adapter tbodies.
     let adapterKeys = [
-      ["adapterDescription", "gpuDescription"],
-      ["adapterVendorID", "gpuVendorID"],
-      ["adapterDeviceID", "gpuDeviceID"],
-      ["driverVersion", "gpuDriverVersion"],
-      ["driverDate", "gpuDriverDate"],
-      ["adapterDrivers", "gpuDrivers"],
-      ["adapterSubsysID", "gpuSubsysID"],
-      ["adapterRAM", "gpuRAM"],
+      ["adapterDescription", "aboutSupport-graphics-gpuDescription"],
+      ["adapterVendorID", "aboutSupport-graphics-gpuVendorID"],
+      ["adapterDeviceID", "aboutSupport-graphics-gpuDeviceID"],
+      ["driverVersion", "aboutSupport-graphics-gpuDriverVersion"],
+      ["driverDate", "aboutSupport-graphics-gpuDriverDate"],
+      ["adapterDrivers", "aboutSupport-graphics-gpuDrivers"],
+      ["adapterSubsysID", "aboutSupport-graphics-gpuSubsysID"],
+      ["adapterRAM", "aboutSupport-graphics-gpuRAM"],
     ];
 
     function showGpu(id, suffix) {
@@ -403,11 +371,11 @@ var snapshotFormatters = {
         return;
       }
 
-      let active = "yes";
+      let active = "aboutSupport-graphics-yes";
       if ("isGPU2Active" in data && ((suffix == "2") != data.isGPU2Active)) {
-        active = "no";
+        active = "aboutSupport-graphics-no";
       }
-      addRow(id, "gpuActive", strings.GetStringFromName(active));
+      addRow(id, "aboutSupport-graphics-gpuActive", document.l10n.ctx.getValue(active));
       addRows(id, trs);
     }
     showGpu("gpu-1", "");
@@ -475,12 +443,11 @@ var snapshotFormatters = {
   },
 
   libraryVersions: function libraryVersions(data) {
-    let strings = stringBundle();
     let trs = [
       $.new("tr", [
         $.new("th", ""),
-        $.new("th", strings.GetStringFromName("minLibVersions")),
-        $.new("th", strings.GetStringFromName("loadedLibVersions")),
+        $.new("th", document.l10n.ctx.getValue("aboutSupport-minLibVersions")),
+        $.new("th", document.l10n.ctx.getValue("aboutSupport-loadedLibVersions")),
       ])
     ];
     sortedArrayFromObject(data).forEach(
@@ -510,7 +477,6 @@ var snapshotFormatters = {
     if (AppConstants.platform != "linux" || !AppConstants.MOZ_SANDBOX)
       return;
 
-    let strings = stringBundle();
     let tbody = $("sandbox-tbody");
     for (let key in data) {
       // Simplify the display a little in the common case.
@@ -519,7 +485,7 @@ var snapshotFormatters = {
         continue;
       }
       tbody.appendChild($.new("tr", [
-        $.new("th", strings.GetStringFromName(key), "column"),
+        $.new("th", document.l10n.ctx.getValue('aboutSupport-' + key), "column"),
         $.new("td", data[key])
       ]));
     }
@@ -544,13 +510,11 @@ $.new = function $_new(tag, textContentOrChildren, className, attributes) {
 };
 
 $.append = function $_append(parent, children) {
-  children.forEach(c => parent.appendChild(c));
+  children.forEach(c => {
+    if (!c) return;
+    parent.appendChild(c)
+  });
 };
-
-function stringBundle() {
-  return Services.strings.createBundle(
-           "chrome://global/locale/aboutSupport.properties");
-}
 
 function assembleFromGraphicsFailure(i, data)
 {

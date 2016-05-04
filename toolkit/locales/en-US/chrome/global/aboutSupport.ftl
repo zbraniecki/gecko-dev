@@ -94,6 +94,29 @@ aboutSupport-graphicsGPU1Title = GPU #1
 aboutSupport-graphicsGPU2Title = GPU #2
 aboutSupport-graphicsDecisionLogTitle = Decision Log
 aboutSupport-graphicsWorkaroundsTitle = Workarounds
+aboutSupport-graphics-apzNone = none
+aboutSupport-graphics-wheelEnabled = wheel input enabled
+aboutSupport-graphics-touchEnabled = touch input enabled
+aboutSupport-graphics-dragEnabled = scrollbar drag enabled
+aboutSupport-graphics-yes = Yes
+aboutSupport-graphics-no = No
+aboutSupport-graphics-mainThreadNoOMTC = main thread, no OMTC
+aboutSupport-graphics-clearTypeParameters = ClearType Parameters
+aboutSupport-graphics-compositing = Compositing
+aboutSupport-graphics-asyncPanZoom = Asynchronous Pan/Zoom
+aboutSupport-graphics-gpuActive = Active
+aboutSupport-graphics-webglRenderer = WebGL Renderer
+aboutSupport-graphics-hardwareH264 = Hardware H264 Decoding
+aboutSupport-graphics-gpuDescription = Description
+aboutSupport-graphics-gpuVendorID = Vendor ID
+aboutSupport-graphics-gpuDeviceID = Device ID
+aboutSupport-graphics-gpuDriverVersion = Driver Version
+aboutSupport-graphics-gpuDriverDate = Driver Date
+aboutSupport-graphics-gpuDrivers = Drivers
+aboutSupport-graphics-gpuSubsysID = Subsys ID
+aboutSupport-graphics-gpuRAM = RAM
+aboutSupport-graphics-webglRenderer = WebGL Renderer
+
 
 
 aboutSupport-modifiedKeyPrefsTitle = Important Modified Preferences
@@ -120,6 +143,8 @@ aboutSupport-a11yForceDisabled = Prevent Accessibility
 
 
 aboutSupport-libraryVersionsTitle = Library Versions
+aboutSupport-minLibVersions = Expected minimum version
+aboutSupport-loadedLibVersions = Version in use
 
 
 aboutSupport-experimentsTitle = Experimental Features
@@ -132,3 +157,10 @@ aboutSupport-experimentHomepage = Homepage
 aboutSupport-experimentBranch = Branch
 
 aboutSupport-sandboxTitle = Sandbox
+aboutSupport-hasSeccompBPF = Seccomp-BPF (System Call Filtering)
+aboutSupport-hasSeccompTSync = Seccomp Thread Synchronization
+aboutSupport-hasUserNamespaces = User Namespaces
+aboutSupport-hasPrivilegedUserNamespaces = User Namespaces for privileged processes
+aboutSupport-canSandboxContent = Content Process Sandboxing
+aboutSupport-canSandboxMedia = Media Plugin Sandboxing
+
