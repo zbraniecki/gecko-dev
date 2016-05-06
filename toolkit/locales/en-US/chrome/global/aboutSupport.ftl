@@ -1,32 +1,51 @@
+# This file is used to localize about:support in Firefox.
+
+# Firefox, as a brand name, should not be localized or transliterated.
 brandShortName = Firefox
 
 aboutSupport-pageTitle = Troubleshooting Information
 
+# Don’t translate “supportLink”, it’s an ID used for CSS.
+# The link points to https://support.mozilla.org
 aboutSupport-pageSubtitle =
   | This page contains technical information that might be useful when you’re
   | trying to solve a problem. If you are looking for answers to common questions
   | about { brandShortName } check out our <a id="supportLink">support website</a>.
 
 refreshProfile-dialog-title = Give { brandShortName } a tune up
-refreshProfile-button = Refresh { brandShortName}...
+refreshProfile-button = Refresh { brandShortName}…
 
 aboutSupport-safeModeTitle = Try Safe Mode
-aboutSupport-restartInSafeMode = Restart with Add-ons Disabled...
+# This string is used as a button label. Be aware of length issues compared to
+# the section title.
+aboutSupport-restartInSafeMode = Restart with Add-ons Disabled…
 
 aboutSupport-copyRawDataToClipboard = Copy raw data to clipboard
-aboutSupport-copyTextToClipboard = Copy text to clipboard
 aboutSupport-rawDatCopied = Raw data copied to clipboard
+
+aboutSupport-copyTextToClipboard = Copy text to clipboard
 aboutSupport-textCopied = Text copied to clipboard
 
 aboutSupport-appBasicsTitle = Application Basics
 aboutSupport-appBasicsName = Name
 aboutSupport-appBasicsVersion = Version
 aboutSupport-appBasicsBuildID = Build ID
+
+# “Update” is a noun in this context. Strings refer to the channel used for
+# updates (beta, nightly, etc.) and the history of installed updates.
+[[updates]]
 aboutSupport-appBasicsUpdateChannel = Update Channel
 aboutSupport-appBasicsUpdateHistory = Update History
 aboutSupport-appBasicsShowUpdateHistory = Show Update History
+
 aboutSupport-appBasicsUserAgent = User Agent
 aboutSupport-appBasicsOS = OS
+
+# These messages are platform specific. For consistency make sure to adopt the
+# same terminology used in each platform (Windows, Mac, Linux) for your
+# language. For example, in English Windows and Mac use “Folder”, while Linux
+# use “Directory”.
+[[platform-messages]]
 aboutSupport-appBasicsProfileDir = { OS() ->
   [win] Profile Folder
   [mac] Profile Folder
@@ -37,6 +56,7 @@ aboutSupport-showDir = { OS() ->
   [mac] Show in Finder
  *[other] Open Directory
 }
+
 aboutSupport-appBasicsEnabledPlugins = Enabled Plugins
 aboutSupport-appBasicsBuildConfig = Build Configuration
 aboutSupport-appBasicsMemoryUse = Memory Use
@@ -45,6 +65,13 @@ aboutSupport-appBasicsMultiProcessSupport = Multiprocess Windows
 aboutSupport-appBasicsSafeMode = Safe Mode
 aboutSupport-appBasicsProfiles = Profiles
 
+# This string displays the number of open multiprocess (e10s) windows compared
+# to the overall number of open windows, and the current status of e10s in the
+# browser.
+# $remote (Number) - Number of multiprocess windows
+# $total (Number)  - Total number of open windows
+# $status (String) - Current status of e10s
+# Example output: “2/2 (Enabled by default)”
 aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status ->
   [0] Enabled by user
   [1] Enabled by default
@@ -58,13 +85,18 @@ aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status ->
  *[other] Unknown status
 })
 
+# Number of days passed from the last recorded crash.
+# $days (Number) - Number of days
 aboutSupport-crashes-title = { PLURAL($days) ->
   [one] Crash Reports for the Last { $days } day
  *[other] Crash Reports for the Last { $days } days
 }
+
 aboutSupport-crashes-id = Report ID
 aboutSupport-crashes-sendDate = Submitted
 aboutSupport-crashes-allReports = All Crash Reports
+
+# $num (Number) - Number of pending (not sent) crash reports
 aboutSupport-crashes-noConfig =
   | This application has not been configured to display crash reports.
 aboutSupport-crashes-pendingReports = { PLURAL($num) ->
@@ -111,22 +143,19 @@ aboutSupport-graphics-gpuSubsysID = Subsys ID
 aboutSupport-graphics-gpuRAM = RAM
 aboutSupport-graphics-webglRenderer = WebGL Renderer
 
-
-
 aboutSupport-modifiedKeyPrefsTitle = Important Modified Preferences
 aboutSupport-modifiedPrefsName = Name
 aboutSupport-modifiedPrefsValue = Value
 
 aboutSupport-userJSTitle = user.js Preferences
+# Don’t translate prefs-user-js-link, it’s an ID used for CSS.
 aboutSupport-userJSDescription =
   | Your profile folder contains a <a id='prefs-user-js-link'>user.js file</a>,
   | which includes preferences that were not created by { brandShortName }.
 
-
 aboutSupport-lockedKeyPrefsTitle = Important Locked Preferences
 aboutSupport-lockedPrefsName = Name
 aboutSupport-lockedPrefsValue = Value
-
 
 aboutSupport-jsTitle = JavaScript
 aboutSupport-jsIncrementalGC = Incremental GC
@@ -135,11 +164,9 @@ aboutSupport-a11yTitle = Accessibility
 aboutSupport-a11yActivated = Activated
 aboutSupport-a11yForceDisabled = Prevent Accessibility
 
-
 aboutSupport-libraryVersionsTitle = Library Versions
 aboutSupport-minLibVersions = Expected minimum version
 aboutSupport-loadedLibVersions = Version in use
-
 
 aboutSupport-experimentsTitle = Experimental Features
 aboutSupport-experimentName = Name
@@ -157,4 +184,3 @@ aboutSupport-hasUserNamespaces = User Namespaces
 aboutSupport-hasPrivilegedUserNamespaces = User Namespaces for privileged processes
 aboutSupport-canSandboxContent = Content Process Sandboxing
 aboutSupport-canSandboxMedia = Media Plugin Sandboxing
-
