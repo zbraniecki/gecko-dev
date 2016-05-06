@@ -70,7 +70,7 @@ aboutSupport-appBasicsProfiles = Profiles
 # browser.
 # $remote (Number) - Number of multiprocess windows
 # $total (Number)  - Total number of open windows
-# $status (String) - Current status of e10s
+# $status (Number) - Code of the status of e10s in the browser. Used to select description part of the string.
 # Example output: “2/2 (Enabled by default)”
 aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status ->
   [0] Enabled by user
