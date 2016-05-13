@@ -182,7 +182,7 @@ var snapshotFormatters = {
 
         delete info[key];
 
-        let message = document.l10n.ctx.getValue('aboutSupport-graphics-' + type.toLowerCase() + 'Enabled');
+        let message = document.l10n.getValue('aboutSupport-graphics-' + type.toLowerCase() + 'Enabled');
         out.push(message);
       }
 
@@ -199,7 +199,7 @@ var snapshotFormatters = {
         title = key.substr(1);
       } else {
         try {
-          title = document.l10n.ctx.getValue(key);
+          title = document.l10n.getValue(key);
         } catch (e) {
           title = key;
         }
@@ -301,7 +301,7 @@ var snapshotFormatters = {
     let compositor = data.windowLayerManagerRemote
                      ? data.windowLayerManagerType
                      : "BasicLayers (" +
-                     document.l10n.ctx.getValue("aboutSupport-graphics-mainThreadNoOMTC") + ")";
+                     document.l10n.getValue("aboutSupport-graphics-mainThreadNoOMTC") + ")";
     addRow("features", "aboutSupport-graphics-compositing", compositor);
     delete data.windowLayerManagerRemote;
     delete data.windowLayerManagerType;
@@ -311,7 +311,7 @@ var snapshotFormatters = {
     addRow("features", "aboutSupport-graphics-asyncPanZoom",
            apzInfo.length
            ? apzInfo.join("; ")
-           : document.l10n.ctx.getValue('aboutSupport-graphics-apzNone'));
+           : document.l10n.getValue('aboutSupport-graphics-apzNone'));
     addRowFromKey("features", "aboutSupport-graphics-webglRenderer");
     addRowFromKey("features", "supportsHardwareH264", "aboutSupport-graphics-hardwareH264");
     addRowFromKey("features", "direct2DEnabled", "#Direct2D");
@@ -359,7 +359,7 @@ var snapshotFormatters = {
       if ("isGPU2Active" in data && ((suffix == "2") != data.isGPU2Active)) {
         active = "aboutSupport-graphics-no";
       }
-      addRow(id, "aboutSupport-graphics-gpuActive", document.l10n.ctx.getValue(active));
+      addRow(id, "aboutSupport-graphics-gpuActive", document.l10n.getValue(active));
       addRows(id, trs);
     }
     showGpu("gpu-1", "");
@@ -476,8 +476,8 @@ var snapshotFormatters = {
     let trs = [
       $.new("tr", [
         $.new("th", ""),
-        $.new("th", document.l10n.ctx.getValue("aboutSupport-minLibVersions")),
-        $.new("th", document.l10n.ctx.getValue("aboutSupport-loadedLibVersions")),
+        $.new("th", document.l10n.getValue("aboutSupport-minLibVersions")),
+        $.new("th", document.l10n.getValue("aboutSupport-loadedLibVersions")),
       ])
     ];
     sortedArrayFromObject(data).forEach(
@@ -515,7 +515,7 @@ var snapshotFormatters = {
         continue;
       }
       tbody.appendChild($.new("tr", [
-        $.new("th", document.l10n.ctx.getValue('aboutSupport-' + key), "column"),
+        $.new("th", document.l10n.getValue('aboutSupport-' + key), "column"),
         $.new("td", data[key])
       ]));
     }
@@ -602,7 +602,7 @@ function copyRawDataToClipboard(button) {
         // Present a toast notification.
         let message = {
           type: "Toast:Show",
-          message: document.l10n.ctx.getValue("aboutSupport-rawDataCopied"),
+          message: document.l10n.getValue("aboutSupport-rawDataCopied"),
           duration: "short"
         };
         Services.androidBridge.handleGeckoMessage(message);
@@ -656,7 +656,7 @@ function copyContentsToClipboard() {
     // Present a toast notification.
     let message = {
       type: "Toast:Show",
-      message: document.l10n.ctx.getValue("aboutSupport-textCopied"),
+      message: document.l10n.getValue("aboutSupport-textCopied"),
       duration: "short"
     };
     Services.androidBridge.handleGeckoMessage(message);

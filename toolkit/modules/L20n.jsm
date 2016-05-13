@@ -38,46 +38,77 @@ function fetchResource(res, { code }) {
   return load(url);
 }
 
-const { classes: Cc$1, interfaces: Ci$1, utils: Cu$1 } = Components;
+const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-Cu$1.import("resource://gre/modules/Services.jsm");
-Cu$1.import("resource://gre/modules/IntlMessageContext.jsm");
+Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/IntlMessageContext.jsm");
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "L20nParser",
+                                  "resource://gre/modules/L20nParser.jsm");
 
 class Context {
-  constructor(env, langs, resIds) {
-    this.messageContexts = {};
+  constructor(langs, resIds) {
     this.langs = langs;
     this.resIds = resIds;
-    this.env = env;
+    this.messages = new Map();
+  }
 
-    this.messageContexts[langs[0]] = new MessageContext(langs[0], {
-      formatters: {
-        OS: function() {
-          switch (Services.appinfo.OS) {
-            case 'WINNT':
-              return 'win';
-            case 'Linux':
-              return 'lin';
-            case 'Darwin':
-              return 'mac';
-            case 'Android':
-              return 'android';
-            default:
-              return 'other';
-          }
-        }
+  formatValues() {
+    throw new L10nError('Not implemented');
+  }
+
+  formatEntities() {
+    throw new L10nError('Not implemented');
+  }
+}
+
+class SimpleContext extends Context {
+  constructor(langs, resIds, resources) {
+    super(langs, resIds);
+    this.bundle = new MessageContext(langs[0].code);
+    resources.forEach(res => {
+      const [entries] = L20nParser.parseResource(res);
+      for (let i in entries) {
+        this.messages.set(i, entries[i]);
       }
     });
   }
 
-  _formatEntity(lang, args, entity) {
-    let value = null;
-    let entities = this._getAllEntities(lang);
+  _formatKeys(keys, method) {
+    return keys.map(key => {
+      const [id, args] = Array.isArray(key) ?
+        key : [key, undefined];
 
-    if (typeof entity === 'string' || Array.isArray(entity)) {
-      value = this.messageContexts[lang].formatEntry(entity, args, entities);
-    } else if (entity.val) {
-      value = this.messageContexts[lang].formatEntry(entity.val, args, entities);
+      // XXX Context should handle errors somehow; emit/return?
+      const [result] = method.call(this, id, args);
+      return result;
+    });
+  }
+
+  formatValue(id, args) {
+    const entity = this.messages.get(id);
+
+    if (!entity) {
+      return [id, [new L10nError(`Unknown entity: ${id}`)]];
+    }
+
+    return this.bundle.format(entity, args, this.messages);
+  }
+
+  formatEntity(id, args) {
+    const entity = this.messages.get(id);
+
+    if (!entity)  {
+      return [
+        { value: id, attrs: null },
+        [new L10nError(`Unknown entity: ${id}`)]
+      ];
+    }
+
+    let value = null;
+
+    if (typeof entity === 'string' || Array.isArray(entity) || entity.val !== undefined) {
+      value = this.bundle.format(entity, args, this.messages)[0];
     }
 
     const formatted = {
@@ -88,196 +119,41 @@ class Context {
     if (entity.traits) {
       formatted.attrs = Object.create(null);
       for (let trait of entity.traits) {
-        const attrValue = this.messageContexts[lang].formatEntry(trait, args, entities);
+        const [attrValue] = this.bundle.format(trait, args, this.messages);
         formatted.attrs[trait.key.name] = attrValue;
       }
     }
 
-    return formatted;
+    // XXX return errors
+    return [formatted, []];
   }
 
-  _formatValue(lang, args, entity) {
-    let entities = this._getAllEntities(lang);
-    return this.messageContexts[lang].formatEntry(entity, args, entities);
-  }
 
-  fetch(langs = this.langs) {
-    if (langs.length === 0) {
-      return Promise.resolve(langs);
-    }
-
-    return Promise.all(
-      this.resIds.map(
-        resId => this.env._getResource(langs[0], resId))
-    ).then(() => langs);
-  }
-
-  _resolve(langs, keys, formatter, prevResolved) {
-    const lang = langs[0];
-
-    if (!lang) {
-      return reportMissing.call(this, keys, formatter, prevResolved);
-    }
-
-    let hasUnresolved = false;
-
-    const resolved = keys.map((key, i) => {
-      if (prevResolved && prevResolved[i] !== undefined) {
-        return prevResolved[i];
-      }
-      const [id, args] = Array.isArray(key) ?
-        key : [key, undefined];
-      const entity = this._getEntity(lang, id);
-
-      if (entity !== undefined) {
-        return formatter.call(this, lang, args, entity);
-      }
-
-      hasUnresolved = true;
-    });
-
-    if (!hasUnresolved) {
-      return resolved;
-    }
-
-    return this.fetch(langs.slice(1)).then(
-      nextLangs => this._resolve(nextLangs, keys, formatter, resolved));
+  formatValues(...keys) {
+    return this._formatKeys(keys, this.constructor.prototype.formatValue);
   }
 
   formatEntities(...keys) {
-    return this.fetch().then(
-      langs => this._resolve(langs, keys, this._formatEntity));
-  }
-
-  formatValues(...keys) {
-    return this.fetch().then(
-      langs => this._resolve(langs, keys, this._formatValue));
-  }
-
-  getValue(id, args) {
-    const entity = this._getEntity(this.langs[0], id);
-    if (entity === undefined) {
-      return id;
-    }
-    return this._formatValue(this.langs[0], args, entity);
-  }
-
-  _getEntity(lang, name) {
-    const cache = this.env.resCache;
-
-    // Look for `name` in every resource in order.
-    for (let i = 0, resId; resId = this.resIds[i]; i++) {
-      const resource = cache.get(resId + lang.code + lang.src);
-      if (resource instanceof L10nError) {
-        continue;
-      }
-      if (name in resource) {
-        return resource[name];
-      }
-    }
-    return undefined;
-  }
-
-  _getAllEntities(lang) {
-    const entities = {};
-    const cache = this.env.resCache;
-
-    // Look for `name` in every resource in order.
-    for (let i = 0, resId; resId = this.resIds[i]; i++) {
-      const resource = cache.get(resId + lang.code + lang.src);
-      if (resource instanceof L10nError) {
-        continue;
-      }
-      for (let key in resource) {
-        entities[key] = resource[key];
-      }
-    }
-    return entities;
+    return this._formatKeys(keys, this.constructor.prototype.formatEntity);
   }
 }
 
-function reportMissing(keys, formatter, resolved) {
-  const missingIds = new Set();
+SimpleContext.create = function(fetchResource, langs, resIds) {
+  const [first] = langs;
 
-  keys.forEach((key, i) => {
-    if (resolved && resolved[i] !== undefined) {
-      return;
-    }
-    const id = Array.isArray(key) ? key[0] : key;
-    missingIds.add(id);
-    resolved[i] = formatter === this._formatValue ?
-      id : {value: id, attrs: null};
-  });
-
-  return resolved;
-}
-
-const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "L20nParser",
-                                  "resource://gre/modules/L20nParser.jsm");
-
-class Env {
-  constructor(fetchResource) {
-    this.fetchResource = fetchResource;
-
-    this.resCache = new Map();
-    this.resRefs = new Map();
-    this.builtins = null;
-  }
-
-  createContext(langs, resIds) {
-    const ctx = new Context(this, langs, resIds);
-    resIds.forEach(resId => {
-      const usedBy = this.resRefs.get(resId) || 0;
-      this.resRefs.set(resId, usedBy + 1);
-    });
-
-    return ctx;
-  }
-
-  destroyContext(ctx) {
-    ctx.resIds.forEach(resId => {
-      const usedBy = this.resRefs.get(resId) || 0;
-
-      if (usedBy > 1) {
-        return this.resRefs.set(resId, usedBy - 1);
-      }
-
-      this.resRefs.delete(resId);
-      this.resCache.forEach((val, key) =>
-        key.startsWith(resId) ? this.resCache.delete(key) : null);
-    });
-  }
-
-  _getResource(lang, res) {
-    const cache = this.resCache;
-    const id = res + lang.code + lang.src;
-
-    if (cache.has(id)) {
-      return cache.get(id);
-    }
-
-    const saveEntries = data => {
-      const [entries] = L20nParser.parseResource(data);
-      cache.set(id, entries);
-    };
-
-    const recover = err => {
-      err.lang = lang;
-      cache.set(id, err);
-    };
-
-    const resource = this.fetchResource(res, lang)
-      .then(saveEntries, recover);
-
-    cache.set(id, resource);
-
-    return resource;
-  }
+  return Promise.all(
+    resIds.map(resId => fetchResource(resId, first))
+  ).then(
+    resources => new SimpleContext(
+      langs, resIds, resources.filter(res => !(res instanceof Error))
+    )
+  );
 }
 
 this.EXPORTED_SYMBOLS = ["L20n"];
 
-this.L20n = new Env(fetchResource);
+this.L20n = {
+  createSimpleContext: function(langs, resIds) {
+    return SimpleContext.create(fetchResource, langs, resIds);
+  }
+}
