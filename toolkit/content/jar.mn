@@ -62,6 +62,8 @@ toolkit.jar:
    content/global/mozilla.xhtml
    content/global/nsDragAndDrop.js
    content/global/process-content.js
+   content/global/l20n-html.js
+   content/global/l20n-xul.js
    content/global/resetProfile.css
    content/global/resetProfile.js
    content/global/resetProfile.xul

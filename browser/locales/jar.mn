@@ -9,6 +9,7 @@
 *   locale/browser/bookmarks.html                  (generic/profile/bookmarks.html.in)
     locale/browser/aboutAccounts.dtd               (%chrome/browser/aboutAccounts.dtd)
     locale/browser/aboutDialog.dtd                 (%chrome/browser/aboutDialog.dtd)
+    locale/browser/aboutDialog.ftl                 (%chrome/browser/aboutDialog.ftl)
     locale/browser/aboutPrivateBrowsing.dtd        (%chrome/browser/aboutPrivateBrowsing.dtd)
     locale/browser/aboutPrivateBrowsing.properties (%chrome/browser/aboutPrivateBrowsing.properties)
     locale/browser/aboutRobots.dtd                 (%chrome/browser/aboutRobots.dtd)

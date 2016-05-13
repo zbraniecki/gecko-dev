@@ -12,20 +12,23 @@ Cu.import("resource://gre/modules/Troubleshoot.jsm");
 Cu.import("resource://gre/modules/ResetProfile.jsm");
 Cu.import("resource://gre/modules/AppConstants.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
-                                  "resource://gre/modules/PluralForm.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "RelativeTimeFormat",
+  "resource://gre/modules/IntlRelativeTimeFormat.jsm");
+
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesDBUtils",
                                   "resource://gre/modules/PlacesDBUtils.jsm");
 
 window.addEventListener("load", function onload(event) {
   try {
-  window.removeEventListener("load", onload, false);
-  Troubleshoot.snapshot(function (snapshot) {
-    for (let prop in snapshotFormatters)
-      snapshotFormatters[prop](snapshot[prop]);
-  });
-  populateActionBox();
-  setupEventListeners();
+    window.removeEventListener("load", onload, false);
+    document.l10n.ready.then(() => {
+      Troubleshoot.snapshot(function (snapshot) {
+        for (let prop in snapshotFormatters)
+          snapshotFormatters[prop](snapshot[prop]);
+      });
+      populateActionBox();
+      setupEventListeners();
+    });
   } catch (e) {
     Cu.reportError("stack of load error for about:support: " + e + ": " + e.stack);
   }
@@ -49,25 +52,15 @@ var snapshotFormatters = {
     if (data.updateChannel)
       $("updatechannel-box").textContent = data.updateChannel;
 
-    let statusStrName = ".unknown";
-
-    // Whitelist of known values with string descriptions:
-    switch (data.autoStartStatus) {
-      case 0:
-      case 1:
-      case 2:
-      case 4:
-      case 5:
-      case 6:
-      case 7:
-      case 8:
-      case 9:
-        statusStrName = "." + data.autoStartStatus;
-    }
-
-    let statusText = stringBundle().GetStringFromName("multiProcessStatus" + statusStrName);
-    $("multiprocess-box").textContent = stringBundle().formatStringFromName("multiProcessWindows",
-      [data.numRemoteWindows, data.numTotalWindows, statusText], 3);
+    document.l10n.setAttributes(
+      $("multiprocess-box"),
+      'aboutSupport-multiProcessWindows',
+      {
+        remote: data.numRemoteWindows,
+        total: data.numTotalWindows,
+        status: data.autoStartStatus
+      }
+    );
 
     $("safemode-box").textContent = data.safeMode;
   },
@@ -76,11 +69,11 @@ var snapshotFormatters = {
     if (!AppConstants.MOZ_CRASHREPORTER)
       return;
 
-    let strings = stringBundle();
     let daysRange = Troubleshoot.kMaxCrashAge / (24 * 60 * 60 * 1000);
-    $("crashes-title").textContent =
-      PluralForm.get(daysRange, strings.GetStringFromName("crashesTitle"))
-                .replace("#1", daysRange);
+    document.l10n.setAttributes($("crashes-title"), 'aboutSupport-crashes-title', {
+      days: daysRange
+    });
+
     let reportURL;
     try {
       reportURL = Services.prefs.getCharPref("breakpad.reportURL");
@@ -100,38 +93,22 @@ var snapshotFormatters = {
     }
 
     if (data.pending > 0) {
-      $("crashes-allReportsWithPending").textContent =
-        PluralForm.get(data.pending, strings.GetStringFromName("pendingReports"))
-                  .replace("#1", data.pending);
+      document.l10n.setAttributes(
+        $("crashes-allReportsWithPending"),
+        'aboutSupport-crashes-pendingReports',
+        { num: data.pending }
+      );
     }
 
     let dateNow = new Date();
     $.append($("crashes-tbody"), data.submitted.map(function (crash) {
       let date = new Date(crash.date);
       let timePassed = dateNow - date;
-      let formattedDate;
-      if (timePassed >= 24 * 60 * 60 * 1000)
-      {
-        let daysPassed = Math.round(timePassed / (24 * 60 * 60 * 1000));
-        let daysPassedString = strings.GetStringFromName("crashesTimeDays");
-        formattedDate = PluralForm.get(daysPassed, daysPassedString)
-                                  .replace("#1", daysPassed);
-      }
-      else if (timePassed >= 60 * 60 * 1000)
-      {
-        let hoursPassed = Math.round(timePassed / (60 * 60 * 1000));
-        let hoursPassedString = strings.GetStringFromName("crashesTimeHours");
-        formattedDate = PluralForm.get(hoursPassed, hoursPassedString)
-                                  .replace("#1", hoursPassed);
-      }
-      else
-      {
-        let minutesPassed = Math.max(Math.round(timePassed / (60 * 1000)), 1);
-        let minutesPassedString = strings.GetStringFromName("crashesTimeMinutes");
-        formattedDate = PluralForm.get(minutesPassed, minutesPassedString)
-                                  .replace("#1", minutesPassed);
-      }
-      return $.new("tr", [
+
+      let rtf = new RelativeTimeFormat(document.documentElement.lang);
+      let fromattedDate = rtf.format(timePassed);
+
+      $.new("tr", [
         $.new("td", [
           $.new("a", crash.id, null, {href : reportURL + crash.id})
         ]),
@@ -193,34 +170,6 @@ var snapshotFormatters = {
   },
 
   graphics: function graphics(data) {
-    let strings = stringBundle();
-
-    function localizedMsg(msgArray) {
-      let nameOrMsg = msgArray.shift();
-      if (msgArray.length) {
-        // formatStringFromName logs an NS_ASSERTION failure otherwise that says
-        // "use GetStringFromName".  Lame.
-        try {
-          return strings.formatStringFromName(nameOrMsg, msgArray,
-                                              msgArray.length);
-        }
-        catch (err) {
-          // Throws if nameOrMsg is not a name in the bundle.  This shouldn't
-          // actually happen though, since msgArray.length > 1 => nameOrMsg is a
-          // name in the bundle, not a message, and the remaining msgArray
-          // elements are parameters.
-          return nameOrMsg;
-        }
-      }
-      try {
-        return strings.GetStringFromName(nameOrMsg);
-      }
-      catch (err) {
-        // Throws if nameOrMsg is not a name in the bundle.
-      }
-      return nameOrMsg;
-    }
-
     // Read APZ info out of data.info, stripping it out in the process.
     let apzInfo = [];
     let formatApzInfo = function (info) {
@@ -233,7 +182,7 @@ var snapshotFormatters = {
 
         delete info[key];
 
-        let message = localizedMsg([type.toLowerCase() + 'Enabled']);
+        let message = document.l10n.ctx.getValue('aboutSupport-graphics-' + type.toLowerCase() + 'Enabled');
         out.push(message);
       }
 
@@ -250,7 +199,7 @@ var snapshotFormatters = {
         title = key.substr(1);
       } else {
         try {
-          title = strings.GetStringFromName(key);
+          title = document.l10n.ctx.getValue(key);
         } catch (e) {
           title = key;
         }
@@ -274,7 +223,8 @@ var snapshotFormatters = {
       addRows(where, [buildRow(key, value)]);
     }
     if (data.clearTypeParameters !== undefined) {
-      addRow("diagnostics", "clearTypeParameters", data.clearTypeParameters);
+      addRow("diagnostics",
+        "aboutSupport-graphics-clearTypeParameters", data.clearTypeParameters);
     }
     if ("info" in data) {
       apzInfo = formatApzInfo(data.info);
@@ -334,7 +284,7 @@ var snapshotFormatters = {
       let value;
       let messageKey = key + "Message";
       if (messageKey in data) {
-        value = localizedMsg(data[messageKey]);
+        value = data[messageKey];
         delete data[messageKey];
       } else {
         value = data[key];
@@ -350,19 +300,20 @@ var snapshotFormatters = {
 
     let compositor = data.windowLayerManagerRemote
                      ? data.windowLayerManagerType
-                     : "BasicLayers (" + strings.GetStringFromName("mainThreadNoOMTC") + ")";
-    addRow("features", "compositing", compositor);
+                     : "BasicLayers (" +
+                     document.l10n.ctx.getValue("aboutSupport-graphics-mainThreadNoOMTC") + ")";
+    addRow("features", "aboutSupport-graphics-compositing", compositor);
     delete data.windowLayerManagerRemote;
     delete data.windowLayerManagerType;
     delete data.numTotalWindows;
     delete data.numAcceleratedWindows;
 
-    addRow("features", "asyncPanZoom",
+    addRow("features", "aboutSupport-graphics-asyncPanZoom",
            apzInfo.length
            ? apzInfo.join("; ")
-           : localizedMsg(["apzNone"]));
-    addRowFromKey("features", "webglRenderer");
-    addRowFromKey("features", "supportsHardwareH264", "hardwareH264");
+           : document.l10n.ctx.getValue('aboutSupport-graphics-apzNone'));
+    addRowFromKey("features", "aboutSupport-graphics-webglRenderer");
+    addRowFromKey("features", "supportsHardwareH264", "aboutSupport-graphics-hardwareH264");
     addRowFromKey("features", "direct2DEnabled", "#Direct2D");
 
     if ("directWriteEnabled" in data) {
@@ -376,14 +327,14 @@ var snapshotFormatters = {
 
     // Adapter tbodies.
     let adapterKeys = [
-      ["adapterDescription", "gpuDescription"],
-      ["adapterVendorID", "gpuVendorID"],
-      ["adapterDeviceID", "gpuDeviceID"],
-      ["driverVersion", "gpuDriverVersion"],
-      ["driverDate", "gpuDriverDate"],
-      ["adapterDrivers", "gpuDrivers"],
-      ["adapterSubsysID", "gpuSubsysID"],
-      ["adapterRAM", "gpuRAM"],
+      ["adapterDescription", "aboutSupport-graphics-gpuDescription"],
+      ["adapterVendorID", "aboutSupport-graphics-gpuVendorID"],
+      ["adapterDeviceID", "aboutSupport-graphics-gpuDeviceID"],
+      ["driverVersion", "aboutSupport-graphics-gpuDriverVersion"],
+      ["driverDate", "aboutSupport-graphics-gpuDriverDate"],
+      ["adapterDrivers", "aboutSupport-graphics-gpuDrivers"],
+      ["adapterSubsysID", "aboutSupport-graphics-gpuSubsysID"],
+      ["adapterRAM", "aboutSupport-graphics-gpuRAM"],
     ];
 
     function showGpu(id, suffix) {
@@ -404,11 +355,11 @@ var snapshotFormatters = {
         return;
       }
 
-      let active = "yes";
+      let active = "aboutSupport-graphics-yes";
       if ("isGPU2Active" in data && ((suffix == "2") != data.isGPU2Active)) {
-        active = "no";
+        active = "aboutSupport-graphics-no";
       }
-      addRow(id, "gpuActive", strings.GetStringFromName(active));
+      addRow(id, "aboutSupport-graphics-gpuActive", document.l10n.ctx.getValue(active));
       addRows(id, trs);
     }
     showGpu("gpu-1", "");
@@ -444,19 +395,21 @@ var snapshotFormatters = {
           if (entry.message.length > 0 && entry.message[0] == "#") {
             // This is a failure ID. See nsIGfxInfo.idl.
             let m;
+            let bugSpan;
             if (m = /#BLOCKLIST_FEATURE_FAILURE_BUG_(\d+)/.exec(entry.message)) {
-              let bugSpan = $.new("span");
-              bugSpan.textContent = strings.GetStringFromName("blocklistedBug") + "; ";
-
               let bugHref = $.new("a");
               bugHref.href = "https://bugzilla.mozilla.org/show_bug.cgi?id=" + m[1];
-              bugHref.textContent = strings.formatStringFromName("bugLink", [m[1]], 1);
-
-              contents = [bugSpan, bugHref];
+              bugSpan = $.new("span", [bugHref]);
+              document.l10n.setAttributes(bugSpan, "aboutSupport-blocklistedBug", {
+                bugNumber: m[1]
+              });
             } else {
-              contents = strings.formatStringFromName(
-                "unknownFailure", [entry.message.substr(1)], 1);
+              bugSpan = $.new("span", [bugHref]);
+              document.l10n.setAttributes(bugSpan, "aboutSupport-unknownFailure", {
+                code: entry.message.substr(1)
+              });
             }
+            contents = [bugSpan];
           } else {
             contents = entry.status + " by " + entry.type + ": " + entry.message;
           }
@@ -494,10 +447,10 @@ var snapshotFormatters = {
           };
         })(guard);
 
-        resetButton.textContent = strings.GetStringFromName("resetOnNextRestart");
+        document.l10n.setAttributes('resetButton', 'aboutSupport-resetOnNextRestart');
         resetButton.addEventListener("click", onClickReset);
 
-        addRow("crashguards", guard.type + "CrashGuard", [resetButton]);
+        addRow("crashguards", 'aboutSupport-' + guard.type + "CrashGuard", [resetButton]);
       }
     } else {
       $("graphics-crashguards-tbody").style.display = "none";
@@ -520,12 +473,11 @@ var snapshotFormatters = {
   },
 
   libraryVersions: function libraryVersions(data) {
-    let strings = stringBundle();
     let trs = [
       $.new("tr", [
         $.new("th", ""),
-        $.new("th", strings.GetStringFromName("minLibVersions")),
-        $.new("th", strings.GetStringFromName("loadedLibVersions")),
+        $.new("th", document.l10n.ctx.getValue("aboutSupport-minLibVersions")),
+        $.new("th", document.l10n.ctx.getValue("aboutSupport-loadedLibVersions")),
       ])
     ];
     sortedArrayFromObject(data).forEach(
@@ -555,7 +507,6 @@ var snapshotFormatters = {
     if (AppConstants.platform != "linux" || !AppConstants.MOZ_SANDBOX)
       return;
 
-    let strings = stringBundle();
     let tbody = $("sandbox-tbody");
     for (let key in data) {
       // Simplify the display a little in the common case.
@@ -564,7 +515,7 @@ var snapshotFormatters = {
         continue;
       }
       tbody.appendChild($.new("tr", [
-        $.new("th", strings.GetStringFromName(key), "column"),
+        $.new("th", document.l10n.ctx.getValue('aboutSupport-' + key), "column"),
         $.new("td", data[key])
       ]));
     }
@@ -589,13 +540,11 @@ $.new = function $_new(tag, textContentOrChildren, className, attributes) {
 };
 
 $.append = function $_append(parent, children) {
-  children.forEach(c => parent.appendChild(c));
+  children.forEach(c => {
+    if (!c) return;
+    parent.appendChild(c)
+  });
 };
-
-function stringBundle() {
-  return Services.strings.createBundle(
-           "chrome://global/locale/aboutSupport.properties");
-}
 
 function assembleFromGraphicsFailure(i, data)
 {
@@ -653,7 +602,7 @@ function copyRawDataToClipboard(button) {
         // Present a toast notification.
         let message = {
           type: "Toast:Show",
-          message: stringBundle().GetStringFromName("rawDataCopied"),
+          message: document.l10n.ctx.getValue("aboutSupport-rawDataCopied"),
           duration: "short"
         };
         Services.androidBridge.handleGeckoMessage(message);
@@ -707,7 +656,7 @@ function copyContentsToClipboard() {
     // Present a toast notification.
     let message = {
       type: "Toast:Show",
-      message: stringBundle().GetStringFromName("textCopied"),
+      message: document.l10n.ctx.getValue("aboutSupport-textCopied"),
       duration: "short"
     };
     Services.androidBridge.handleGeckoMessage(message);

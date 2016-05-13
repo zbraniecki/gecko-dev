@@ -19,6 +19,7 @@
   locale/@AB_CD@/global/aboutServiceWorkers.properties  (%chrome/global/aboutServiceWorkers.properties)
   locale/@AB_CD@/global/aboutSupport.dtd                (%chrome/global/aboutSupport.dtd)
   locale/@AB_CD@/global/aboutSupport.properties         (%chrome/global/aboutSupport.properties)
+  locale/@AB_CD@/global/aboutSupport.ftl                (%chrome/global/aboutSupport.ftl)
   locale/@AB_CD@/global/aboutTelemetry.dtd              (%chrome/global/aboutTelemetry.dtd)
   locale/@AB_CD@/global/aboutTelemetry.properties       (%chrome/global/aboutTelemetry.properties)
   locale/@AB_CD@/global/aboutWebrtc.properties          (%chrome/global/aboutWebrtc.properties)
