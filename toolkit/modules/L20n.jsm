@@ -88,7 +88,7 @@ class SimpleContext extends Context {
   formatValue(id, args) {
     const entity = this.messages.get(id);
 
-    if (!entity) {
+    if (entity === undefined) {
       return [id, [new L10nError(`Unknown entity: ${id}`)]];
     }
 
@@ -98,7 +98,7 @@ class SimpleContext extends Context {
   formatEntity(id, args) {
     const entity = this.messages.get(id);
 
-    if (!entity)  {
+    if (entity === undefined)  {
       return [
         { value: id, attrs: null },
         [new L10nError(`Unknown entity: ${id}`)]

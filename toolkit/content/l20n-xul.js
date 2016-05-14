@@ -593,50 +593,36 @@
     }));
   }
 
-  function getResourceLinks$1(head) {
-    return [
-      'chrome://browser/locale/aboutDialog.ftl'
-    ];
-
+  function getResourceLinks$1(doc) {
     return Array.prototype.map.call(
-      head.querySelectorAll('link[rel="localization"]'),
-      el => el.getAttribute('href'));
+      doc.querySelectorAll('messagebundle'),
+      el => el.getAttribute('src'));
   }
 
-  function getMeta$1(head) {
-    return {
-      defaultLang: 'en-US',
-      availableLangs: {'en-US': NaN},
-      appVersion: null
-    };
-
+  function getMeta$1(doc) {
+    const winElem = doc.documentElement;
     let availableLangs = Object.create(null);
     let defaultLang = null;
     let appVersion = null;
 
-    // XXX take last found instead of first?
-    const metas = Array.from(head.querySelectorAll(
-      'meta[name="availableLanguages"],' +
-      'meta[name="defaultLanguage"],' +
-      'meta[name="appVersion"]'));
-    for (let meta of metas) {
-      const name = meta.getAttribute('name');
-      const content = meta.getAttribute('content').trim();
-      switch (name) {
-        case 'availableLanguages':
-          availableLangs = getLangRevisionMap$1(
-            availableLangs, content);
-          break;
-        case 'defaultLanguage':
-          const [lang, rev] = getLangRevisionTuple$1(content);
-          defaultLang = lang;
-          if (!(lang in availableLangs)) {
-            availableLangs[lang] = rev;
-          }
-          break;
-        case 'appVersion':
-          appVersion = content;
+    if (winElem.hasAttribute('defaultLanguage')) {
+      let [lang, rev] =
+        getLangRevisionTuple$1(winElem.getAttribute('defaultLanguage').trim());
+      defaultLang = lang;
+      if (!(lang in availableLangs)) {
+        availableLangs[lang] = rev;
       }
+    }
+
+    if (winElem.hasAttribute('availableLanguages')) {
+      availableLangs = getLangRevisionMap$1(
+        availableLangs,
+        winElem.getAttribute('availableLanguages').trim()
+      );
+    }
+
+    if (winElem.hasAttribute('appVersion')) {
+      appVersion = winElem.getAttribute('appVersion').trim();
     }
 
     return {
@@ -675,8 +661,8 @@
 
   function xulInit(view) {
     const props = viewProps.get(view);
-    props.resIds = getResourceLinks$1(props.doc.head);
-    const meta = getMeta$1(props.doc.head);
+    props.resIds = getResourceLinks$1(props.doc);
+    const meta = getMeta$1(props.doc);
 
     view.observeRoot(props.doc.documentElement);
     const { langs } = negotiateLanguages(meta, [], navigator.languages);
