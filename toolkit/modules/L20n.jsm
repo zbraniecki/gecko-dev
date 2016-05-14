@@ -62,10 +62,30 @@ class Context {
   }
 }
 
+
+const formatters = {
+  OS: function() {
+    switch (Services.appinfo.OS) {
+      case 'WINNT':
+        return 'win';
+      case 'Linux':
+        return 'lin';
+      case 'Darwin':
+        return 'mac';
+      case 'Android':
+        return 'android';
+      default:
+        return 'other';
+    }
+  }
+};
+
 class SimpleContext extends Context {
   constructor(langs, resIds, resources) {
     super(langs, resIds);
-    this.bundle = new MessageContext(langs[0].code);
+    this.bundle = new MessageContext(langs[0].code, {
+      formatters
+    });
     resources.forEach(res => {
       const [entries] = L20nParser.parseResource(res);
       for (let i in entries) {

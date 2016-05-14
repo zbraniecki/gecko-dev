@@ -12,7 +12,7 @@ aboutSupport-pageSubtitle =
   | trying to solve a problem. If you are looking for answers to common questions
   | about { brandShortName } check out our <a id="supportLink">support website</a>.
 
-refreshProfile-dialog-title = Give { brandShortName } a tune up
+refreshProfile-title = Give { brandShortName } a tune up
 refreshProfile-button = Refresh { brandShortName}…
 
 aboutSupport-safeModeTitle = Try Safe Mode
@@ -21,7 +21,7 @@ aboutSupport-safeModeTitle = Try Safe Mode
 aboutSupport-restartInSafeMode = Restart with Add-ons Disabled…
 
 aboutSupport-copyRawDataToClipboard = Copy raw data to clipboard
-aboutSupport-rawDatCopied = Raw data copied to clipboard
+aboutSupport-rawDataCopied = Raw data copied to clipboard
 
 aboutSupport-copyTextToClipboard = Copy text to clipboard
 aboutSupport-textCopied = Text copied to clipboard

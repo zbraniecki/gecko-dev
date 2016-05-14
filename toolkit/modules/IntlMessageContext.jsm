@@ -309,6 +309,12 @@ function* ExternalArgument({name}) {
 }
 
 function* BuiltinReference({name}) {
+  const { bundle } = yield ask();
+
+  if (bundle.formatters.hasOwnProperty(name)) {
+    return bundle.formatters[name];
+  }
+
   const builtin = builtins[name];
 
   if (!builtin) {
@@ -416,7 +422,7 @@ function format(bundle, args, entries, entity) {
 class Bundle {
   constructor(locales, options = {}) {
     this.args = options.args || {};
-    this.entries = options.entries || {};
+    this.entries = options.entries || new Map();
     this.formatters = options.formatters || {};
     this.locale = Array.isArray(locales) ? locales[0] : locales;
     this._intls = new WeakMap();
@@ -424,7 +430,8 @@ class Bundle {
 
   format(entity, args, entries) {
     let a = Object.assign(this.args, args);
-    return format(this, a, entries, entity);
+    let e = new Map([...this.entries, entries]);
+    return format(this, a, e, entity);
   }
 
   _memoizeIntlObject(ctor, opts) {

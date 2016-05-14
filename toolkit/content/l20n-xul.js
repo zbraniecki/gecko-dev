@@ -607,7 +607,7 @@
 
     if (winElem.hasAttribute('defaultLanguage')) {
       let [lang, rev] =
-        getLangRevisionTuple$1(winElem.getAttribute('defaultLanguage').trim());
+        getLangRevisionTuple(winElem.getAttribute('defaultLanguage').trim());
       defaultLang = lang;
       if (!(lang in availableLangs)) {
         availableLangs[lang] = rev;
@@ -615,7 +615,7 @@
     }
 
     if (winElem.hasAttribute('availableLanguages')) {
-      availableLangs = getLangRevisionMap$1(
+      availableLangs = getLangRevisionMap(
         availableLangs,
         winElem.getAttribute('availableLanguages').trim()
       );
@@ -630,20 +630,6 @@
       availableLangs,
       appVersion
     };
-  }
-
-  function getLangRevisionMap$1(seq, str) {
-    return str.split(',').reduce((prevSeq, cur) => {
-      const [lang, rev] = getLangRevisionTuple$1(cur);
-      prevSeq[lang] = rev;
-      return prevSeq;
-    }, seq);
-  }
-
-  function getLangRevisionTuple$1(str) {
-    const [lang, rev]  = str.trim().split(':');
-    // if revision is missing, use NaN
-    return [lang, parseInt(rev)];
   }
 
   class View extends View$1 {
