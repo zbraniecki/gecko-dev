@@ -323,6 +323,7 @@
     if (args) {
       element.setAttribute('data-l10n-args', JSON.stringify(args));
     }
+    return element;
   }
 
   function getAttributes(element) {

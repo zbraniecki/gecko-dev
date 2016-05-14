@@ -476,8 +476,8 @@ var snapshotFormatters = {
     let trs = [
       $.new("tr", [
         $.new("th", ""),
-        $.new("th", document.l10n.getValue("aboutSupport-minLibVersions")),
-        $.new("th", document.l10n.getValue("aboutSupport-loadedLibVersions")),
+        document.l10n.setAttributes($.new("th"), "aboutSupport-minLibVersions"),
+        document.l10n.setAttributes($.new("th"), "aboutSupport-loadedLibVersions")
       ])
     ];
     sortedArrayFromObject(data).forEach(
@@ -515,7 +515,7 @@ var snapshotFormatters = {
         continue;
       }
       tbody.appendChild($.new("tr", [
-        $.new("th", document.l10n.getValue('aboutSupport-' + key), "column"),
+        document.l10n.setAttributes($.new("th", "", "column"), 'aboutSupport-' + key),
         $.new("td", data[key])
       ]));
     }
