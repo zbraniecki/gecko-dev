@@ -141,6 +141,7 @@
     macro(InitializeCollator, InitializeCollator, "InitializeCollator") \
     macro(InitializeDateTimeFormat, InitializeDateTimeFormat, "InitializeDateTimeFormat") \
     macro(InitializeNumberFormat, InitializeNumberFormat, "InitializeNumberFormat") \
+    macro(InitializeRelativeTimeFormat, InitializeRelativeTimeFormat, "InitializeRelativeTimeFormat") \
     macro(inNursery, inNursery, "inNursery") \
     macro(innermost, innermost, "innermost") \
     macro(input, input, "input") \
@@ -230,6 +231,9 @@
     macro(proxy, proxy, "proxy") \
     macro(reason, reason, "reason") \
     macro(Reify, Reify, "Reify") \
+    macro(RelativeTimeFormat, RelativeTimeFormat, "RelativeTimeFormat") \
+    macro(RelativeTimeFormatFormatGet, RelativeTimeFormatFormatGet, "Intl_RelativeTimeFormat_format_get") \
+    macro(RelativeTimeFormatFormatToPartsGet, RelativeTimeFormatFormatToPartsGet, "Intl_RelativeTimeFormat_formatToParts_get") \
     macro(RequireObjectCoercible, RequireObjectCoercible, "RequireObjectCoercible") \
     macro(resumeGenerator, resumeGenerator, "resumeGenerator") \
     macro(return, return_, "return") \

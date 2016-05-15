@@ -2331,7 +2331,7 @@ js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-/******************** PluralRules ********************/
+/******************** RelativeTimeFormat ********************/
 
 static void relativeTimeFormat_finalize(FreeOp* fop, JSObject* obj);
 
@@ -2444,15 +2444,6 @@ js::intl_RelativeTimeFormat(JSContext* cx, unsigned argc, Value* vp)
 static void
 relativeTimeFormat_finalize(FreeOp* fop, JSObject* obj)
 {
-    // This is-undefined check shouldn't be necessary, but for internal
-    // brokenness in object allocation code.  For the moment, hack around it by
-    // explicitly guarding against the possibility of the reserved slot not
-    // containing a private.  See bug 949220.
-    const Value& slot = obj->as<NativeObject>().getReservedSlot(UNUMBER_FORMAT_SLOT);
-    if (!slot.isUndefined()) {
-        if (URelativeTimeFormat* nf = static_cast<URelativeTimeFormat*>(slot.toPrivate()))
-            unum_close(nf);
-    }
 }
 
 static JSObject*
@@ -2538,213 +2529,20 @@ js::intl_RelativeTimeFormat_availableLocales(JSContext* cx, unsigned argc, Value
     return true;
 }
 
-/**
- * Returns a new URelativeTimeFormat with the locale and number formatting options
- * of the given RelativeTimeFormat.
- */
-static URelativeTimeFormat*
-NewURelativeTimeFormat(JSContext* cx, HandleObject relativeTimeFormat)
-{
-    RootedValue value(cx);
-
-    RootedObject internals(cx, GetInternals(cx, relativeTimeFormat));
-    if (!internals)
-       return nullptr;
-
-    if (!GetProperty(cx, internals, internals, cx->names().locale, &value))
-        return nullptr;
-    JSAutoByteString locale(cx, value.toString());
-    if (!locale)
-        return nullptr;
-
-    // We don't need to look at numberingSystem - it can only be set via
-    // the Unicode locale extension and is therefore already set on locale.
-
-    if (!GetProperty(cx, internals, internals, cx->names().style, &value))
-        return nullptr;
-    JSAutoByteString style(cx, value.toString());
-    if (!style)
-        return nullptr;
-
-    if (equal(style, "currency")) {
-        if (!GetProperty(cx, internals, internals, cx->names().currency, &value))
-            return nullptr;
-        currency = value.toString();
-        MOZ_ASSERT(currency->length() == 3,
-                   "IsWellFormedCurrencyCode permits only length-3 strings");
-        if (!currency->ensureFlat(cx) || !stableChars.initTwoByte(cx, currency))
-            return nullptr;
-        // uCurrency remains owned by stableChars.
-        uCurrency = Char16ToUChar(stableChars.twoByteRange().start().get());
-        if (!uCurrency)
-            return nullptr;
-
-        if (!GetProperty(cx, internals, internals, cx->names().currencyDisplay, &value))
-            return nullptr;
-        JSAutoByteString currencyDisplay(cx, value.toString());
-        if (!currencyDisplay)
-            return nullptr;
-        if (equal(currencyDisplay, "code")) {
-            uStyle = UNUM_CURRENCY_ISO;
-        } else if (equal(currencyDisplay, "symbol")) {
-            uStyle = UNUM_CURRENCY;
-        } else {
-            MOZ_ASSERT(equal(currencyDisplay, "name"));
-            uStyle = UNUM_CURRENCY_PLURAL;
-        }
-    } else if (equal(style, "percent")) {
-        uStyle = UNUM_PERCENT;
-    } else {
-        MOZ_ASSERT(equal(style, "decimal"));
-        uStyle = UNUM_DECIMAL;
-    }
-
-    RootedId id(cx, NameToId(cx->names().minimumSignificantDigits));
-    bool hasP;
-    if (!HasProperty(cx, internals, id, &hasP))
-        return nullptr;
-    if (hasP) {
-        if (!GetProperty(cx, internals, internals, cx->names().minimumSignificantDigits,
-                         &value))
-        {
-            return nullptr;
-        }
-        uMinimumSignificantDigits = int32_t(value.toNumber());
-        if (!GetProperty(cx, internals, internals, cx->names().maximumSignificantDigits,
-                         &value))
-        {
-            return nullptr;
-        }
-        uMaximumSignificantDigits = int32_t(value.toNumber());
-    } else {
-        if (!GetProperty(cx, internals, internals, cx->names().minimumIntegerDigits,
-                         &value))
-        {
-            return nullptr;
-        }
-        uMinimumIntegerDigits = int32_t(value.toNumber());
-        if (!GetProperty(cx, internals, internals, cx->names().minimumFractionDigits,
-                         &value))
-        {
-            return nullptr;
-        }
-        uMinimumFractionDigits = int32_t(value.toNumber());
-        if (!GetProperty(cx, internals, internals, cx->names().maximumFractionDigits,
-                         &value))
-        {
-            return nullptr;
-        }
-        uMaximumFractionDigits = int32_t(value.toNumber());
-    }
-
-    if (!GetProperty(cx, internals, internals, cx->names().useGrouping, &value))
-        return nullptr;
-    uUseGrouping = value.toBoolean();
-
-    UErrorCode status = U_ZERO_ERROR;
-    UNumberFormat* nf = unum_open(uStyle, nullptr, 0, icuLocale(locale.ptr()), nullptr, &status);
-    if (U_FAILURE(status)) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
-        return nullptr;
-    }
-    ScopedICUObject<UNumberFormat> toClose(nf, unum_close);
-
-    if (uCurrency) {
-        unum_setTextAttribute(nf, UNUM_CURRENCY_CODE, uCurrency, 3, &status);
-        if (U_FAILURE(status)) {
-            JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
-            return nullptr;
-        }
-    }
-    if (uMinimumSignificantDigits != -1) {
-        unum_setAttribute(nf, UNUM_SIGNIFICANT_DIGITS_USED, true);
-        unum_setAttribute(nf, UNUM_MIN_SIGNIFICANT_DIGITS, uMinimumSignificantDigits);
-        unum_setAttribute(nf, UNUM_MAX_SIGNIFICANT_DIGITS, uMaximumSignificantDigits);
-    } else {
-        unum_setAttribute(nf, UNUM_MIN_INTEGER_DIGITS, uMinimumIntegerDigits);
-        unum_setAttribute(nf, UNUM_MIN_FRACTION_DIGITS, uMinimumFractionDigits);
-        unum_setAttribute(nf, UNUM_MAX_FRACTION_DIGITS, uMaximumFractionDigits);
-    }
-    unum_setAttribute(nf, UNUM_GROUPING_USED, uUseGrouping);
-    unum_setAttribute(nf, UNUM_ROUNDING_MODE, UNUM_ROUND_HALFUP);
-
-    return toClose.forget();
-}
-
 static bool
-intl_FormatNumber(JSContext* cx, UNumberFormat* nf, double x, MutableHandleValue result)
+intl_FormatRelativeTime(JSContext* cx, UNumberFormat* nf, double x, MutableHandleValue result)
 {
-    // FormatNumber doesn't consider -0.0 to be negative.
-    if (IsNegativeZero(x))
-        x = 0.0;
-
-    Vector<char16_t, INITIAL_CHAR_BUFFER_SIZE> chars(cx);
-    if (!chars.resize(INITIAL_CHAR_BUFFER_SIZE))
-        return false;
-    UErrorCode status = U_ZERO_ERROR;
-    int size = unum_formatDouble(nf, x, Char16ToUChar(chars.begin()), INITIAL_CHAR_BUFFER_SIZE,
-                                 nullptr, &status);
-    if (status == U_BUFFER_OVERFLOW_ERROR) {
-        if (!chars.resize(size))
-            return false;
-        status = U_ZERO_ERROR;
-        unum_formatDouble(nf, x, Char16ToUChar(chars.begin()), size, nullptr, &status);
-    }
-    if (U_FAILURE(status)) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
-        return false;
-    }
-
-    JSString* str = NewStringCopyN<CanGC>(cx, chars.begin(), size);
-    if (!str)
-        return false;
-
-    result.setString(str);
     return true;
 }
 
 bool
-js::intl_FormatNumber(JSContext* cx, unsigned argc, Value* vp)
+js::intl_FormatRelativeTime(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     MOZ_ASSERT(args.length() == 2);
     MOZ_ASSERT(args[0].isObject());
     MOZ_ASSERT(args[1].isNumber());
 
-    RootedObject numberFormat(cx, &args[0].toObject());
-
-    // Obtain a UNumberFormat object, cached if possible.
-    bool isNumberFormatInstance = numberFormat->getClass() == &NumberFormatClass;
-    UNumberFormat* nf;
-    if (isNumberFormatInstance) {
-        void* priv =
-            numberFormat->as<NativeObject>().getReservedSlot(UNUMBER_FORMAT_SLOT).toPrivate();
-        nf = static_cast<UNumberFormat*>(priv);
-        if (!nf) {
-            nf = NewUNumberFormat(cx, numberFormat);
-            if (!nf)
-                return false;
-            numberFormat->as<NativeObject>().setReservedSlot(UNUMBER_FORMAT_SLOT, PrivateValue(nf));
-        }
-    } else {
-        // There's no good place to cache the ICU number format for an object
-        // that has been initialized as a NumberFormat but is not a
-        // NumberFormat instance. One possibility might be to add a
-        // NumberFormat instance as an internal property to each such object.
-        nf = NewUNumberFormat(cx, numberFormat);
-        if (!nf)
-            return false;
-    }
-
-    // Use the UNumberFormat to actually format the number.
-    RootedValue result(cx);
-    bool success = intl_FormatNumber(cx, nf, args[1].toNumber(), &result);
-
-    if (!isNumberFormatInstance)
-        unum_close(nf);
-    if (!success)
-        return false;
-    args.rval().set(result);
     return true;
 }
 

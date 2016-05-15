@@ -109,6 +109,7 @@ class GlobalObject : public NativeObject
         COLLATOR_PROTO,
         NUMBER_FORMAT_PROTO,
         DATE_TIME_FORMAT_PROTO,
+        RELATIVE_TIME_FORMAT_PROTO,
         MODULE_PROTO,
         IMPORT_ENTRY_PROTO,
         EXPORT_ENTRY_PROTO,
@@ -471,6 +472,10 @@ class GlobalObject : public NativeObject
         return getOrCreateObject(cx, DATE_TIME_FORMAT_PROTO, initDateTimeFormatProto);
     }
 
+    JSObject* getOrCreateRelativeTimeFormatPrototype(JSContext* cx) {
+        return getOrCreateObject(cx, RELATIVE_TIME_FORMAT_PROTO, initRelativeTimeFormatProto);
+    }
+
     static bool ensureModulePrototypesCreated(JSContext *cx, Handle<GlobalObject*> global);
 
     JSObject* maybeGetModulePrototype() {
@@ -733,6 +738,7 @@ class GlobalObject : public NativeObject
     static bool initCollatorProto(JSContext* cx, Handle<GlobalObject*> global);
     static bool initNumberFormatProto(JSContext* cx, Handle<GlobalObject*> global);
     static bool initDateTimeFormatProto(JSContext* cx, Handle<GlobalObject*> global);
+    static bool initRelativeTimeFormatProto(JSContext* cx, Handle<GlobalObject*> global);
 
     // Implemented in builtin/ModuleObject.cpp
     static bool initModuleProto(JSContext* cx, Handle<GlobalObject*> global);
