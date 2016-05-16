@@ -2365,6 +2365,28 @@ relativeTimeFormat_toSource(JSContext* cx, unsigned argc, Value* vp)
 }
 #endif
 
+static bool
+relativeTimeFormat_format(JSContext* cx, unsigned argc, Value* vp)
+{
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  RootedValue result(cx, StringValue(NewStringCopyZ<CanGC>(cx, "5 min. ago")));
+
+  args.rval().set(result);
+  return true;
+}
+
+static bool
+relativeTimeFormat_formatToParts(JSContext* cx, unsigned argc, Value* vp)
+{
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  RootedValue result(cx, StringValue(NewStringCopyZ<CanGC>(cx, "10 min. ago in parts")));
+
+  args.rval().set(result);
+  return true;
+}
+
 static const JSFunctionSpec relativeTimeFormat_static_methods[] = {
     JS_SELF_HOSTED_FN("supportedLocalesOf", "Intl_RelativeTimeFormat_supportedLocalesOf", 1, 0),
     JS_FS_END
@@ -2372,6 +2394,8 @@ static const JSFunctionSpec relativeTimeFormat_static_methods[] = {
 
 static const JSFunctionSpec relativeTimeFormat_methods[] = {
     JS_SELF_HOSTED_FN("resolvedOptions", "Intl_RelativeTimeFormat_resolvedOptions", 0, 0),
+    JS_FN("format", relativeTimeFormat_format, 0, 0),
+    JS_FN("formatToParts", relativeTimeFormat_formatToParts, 0, 0),
 #if JS_HAS_TOSOURCE
     JS_FN(js_toSource_str, relativeTimeFormat_toSource, 0, 0),
 #endif
@@ -2447,7 +2471,7 @@ relativeTimeFormat_finalize(FreeOp* fop, JSObject* obj)
 }
 
 static JSObject*
-InitRelativeTimeFormat(JSContext* cx, HandleObject Intl, Handle<GlobalObject*> global)
+InitRelativeTimeFormatClass(JSContext* cx, HandleObject Intl, Handle<GlobalObject*> global)
 {
     RootedFunction ctor(cx);
     ctor = global->createConstructor(cx, &RelativeTimeFormat, cx->names().RelativeTimeFormat, 0);
@@ -2467,24 +2491,6 @@ InitRelativeTimeFormat(JSContext* cx, HandleObject Intl, Handle<GlobalObject*> g
     // 11.3.2 and 11.3.3
     if (!JS_DefineFunctions(cx, proto, relativeTimeFormat_methods))
         return nullptr;
-
-    /*
-     * Install the getter for NumberFormat.prototype.format, which returns a
-     * bound formatting function for the specified NumberFormat object (suitable
-     * for passing to methods like Array.prototype.map).
-     */
-    RootedValue getter(cx);
-    if (!GlobalObject::getIntrinsicValue(cx, cx->global(), cx->names().RelativeTimeFormatFormatGet,
-                                         &getter))
-    {
-        return nullptr;
-    }
-    if (!DefineProperty(cx, proto, cx->names().format, UndefinedHandleValue,
-                        JS_DATA_TO_FUNC_PTR(JSGetterOp, &getter.toObject()),
-                        nullptr, JSPROP_GETTER | JSPROP_SHARED))
-    {
-        return nullptr;
-    }
 
     RootedValue options(cx);
     if (!CreateDefaultOptions(cx, &options))
@@ -2604,6 +2610,8 @@ js::InitIntlClass(JSContext* cx, HandleObject obj)
     if (!InitNumberFormatClass(cx, Intl, global))
         return nullptr;
     if (!InitDateTimeFormatClass(cx, Intl, global))
+        return nullptr;
+    if (!InitRelativeTimeFormatClass(cx, Intl, global))
         return nullptr;
 
     global->setConstructor(JSProto_Intl, ObjectValue(*Intl));

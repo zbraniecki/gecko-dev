@@ -1161,7 +1161,7 @@ function initializeIntlObject(obj) {
 function setLazyData(internals, type, lazyData)
 {
     assert(internals.type === "partial", "can't set lazy data for anything but a newborn");
-    assert(type === "Collator" || type === "DateTimeFormat" || type == "NumberFormat", "bad type");
+    assert(type === "Collator" || type === "DateTimeFormat" || type == "NumberFormat" || type == "RelativeTimeFormat", "bad type");
     assert(IsObject(lazyData), "non-object lazy data");
 
     // Set in reverse order so that the .type change is a barrier.
@@ -1211,7 +1211,7 @@ function isInitializedIntlObject(obj) {
     if (IsObject(internals)) {
         assert(callFunction(std_Object_hasOwnProperty, internals, "type"), "missing type");
         var type = internals.type;
-        assert(type === "partial" || type === "Collator" || type === "DateTimeFormat" || type === "NumberFormat", "unexpected type");
+        assert(type === "partial" || type === "Collator" || type === "DateTimeFormat" || type === "NumberFormat" || type === "RelativeTimeFormat", "unexpected type");
         assert(callFunction(std_Object_hasOwnProperty, internals, "lazyData"), "missing lazyData");
         assert(callFunction(std_Object_hasOwnProperty, internals, "internalProps"), "missing internalProps");
     } else {
@@ -1268,6 +1268,8 @@ function getInternals(obj)
         internalProps = resolveCollatorInternals(lazyData)
     else if (type === "DateTimeFormat")
         internalProps = resolveDateTimeFormatInternals(lazyData)
+    else if (type === "RelativeTimeFormat")
+        internalProps = resolveRelativeTimeFormatInternals(lazyData)
     else
         internalProps = resolveNumberFormatInternals(lazyData);
     setInternalProperties(internals, internalProps);
@@ -2883,6 +2885,71 @@ function resolveICUPattern(pattern, result) {
                 _DefineDataProperty(result, "hour12", false);
         }
     }
+}
+
+/********** Intl.RelativeTimeFormat **********/
+
+function resolveRelativeTimeFormatInternals(lazyRelativeTimeFormatData) {
+  var internalProps = std_Object_create(null);
+  return internalProps;
+}
+
+function getRelativeTimeFormatInternals(obj, methodName) {
+  var internals = getIntlObjectInternals(obj, "RelativeTimeFormat", methodName);
+  assert(internals.type === "RelativeTimeFormat", "bad type escaped getIntlObjectInternals");
+
+  // If internal properties have already been computed, use them.
+  var internalProps = maybeInternalProperties(internals);
+  if (internalProps)
+      return internalProps;
+
+  // Otherwise it's time to fully create them.
+  internalProps = resolveRelativeTimeFormatInternals(internals.lazyData);
+  setInternalProperties(internals, internalProps);
+  return internalProps;
+}
+
+function InitializeRelativeTimeFormat(relativeTimeFormat, locales, options) {
+	assert(IsObject(relativeTimeFormat), "InitializeRelativeTimeFormat");
+	if (isInitializedIntlObject(relativeTimeFormat))
+		ThrowTypeError(JSMSG_INTL_OBJECT_REINITED);
+
+	var internals = initializeIntlObject(relativeTimeFormat);
+	var lazyRelativeTimeFormatData = std_Object_create(null);
+
+  var requestedLocales = CanonicalizeLocaleList(locales);
+  lazyRelativeTimeFormatData.requestedLocales = requestedLocales;
+
+	setLazyData(internals, "RelativeTimeFormat", lazyRelativeTimeFormatData);
+}
+
+function Intl_RelativeTimeFormat_supportedLocalesOf(locales /*, options*/) {
+    var options = arguments.length > 1 ? arguments[1] : undefined;
+
+    var availableLocales = callFunction(relativeTimeFormatInternalProperties.availableLocales,
+                                        relativeTimeFormatInternalProperties);
+    var requestedLocales = CanonicalizeLocaleList(locales);
+    return SupportedLocales(availableLocales, requestedLocales, options);
+}
+
+function Intl_RelativeTimeFormat_format_get() {
+  return '5 min ago';
+}
+
+function Intl_RelativeTimeFormat_formatToParts_get() {
+  return [
+    {type: 'number', value: '5'},
+    {type: 'literal', value: ' min ago'}
+  ];
+}
+
+function Intl_RelativeTimeFormat_resolvedOptions() {
+  var internals = getRelativeTimeFormatInternals(this, "resolvedOptions");
+
+  var result = {
+    locale: internals.locale
+  };
+  return result;
 }
 
 function Intl_getCanonicalLocales(locales) {
