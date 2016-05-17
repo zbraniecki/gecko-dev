@@ -2889,6 +2889,49 @@ function resolveICUPattern(pattern, result) {
 
 /********** Intl.RelativeTimeFormat **********/
 
+function round(x) {
+  let base = x - (x % 1);
+  let n = x >= 0 ? 1 : -1;
+  return std_Math_abs(x % 1) > 0.5 ? x + n : x;
+}
+
+function ComputeTimeUnits(v) {
+  const DaysPerWeek = 7;
+  const HoursPerDay = 24;
+  const MinutesPerHour = 60;
+  const SecondsPerMinute = 60;
+  const msPerSecond = 1000;
+  const msPerMinute = msPerSecond * SecondsPerMinute;
+  const msPerHour = msPerMinute * MinutesPerHour;
+  const msPerDay = msPerHour * HoursPerDay;
+  const msPerWeek = msPerDay * DaysPerWeek;
+  const msPer400Years = msPerDay * 146097;
+
+  const units = {};
+  const rawYear = v * 400 / msPer400Years;
+
+  units['[[Second]]'] = round(v / msPerSecond);
+  units['[[Minute]]'] = round(v / msPerMinute);
+  units['[[Hour]]'] = round(v / msPerHour);
+  units['[[Day]]'] = round(v / msPerDay);
+  units['[[Week]]'] = round(v / msPerWeek);
+  units['[[Month]]'] = round(rawYear * 12);
+  units['[[Quarter]]'] = round(rawYear * 4);
+  units['[[Year]]'] = round(rawYear);
+  return units;
+}
+
+function GetBestMatchUnit(units) {
+  if (std_Math_abs(units['[[Second]]']) < 45) { return 'second'; }
+  if (std_Math_abs(units['[[Minute]]']) < 45) { return 'minute'; }
+  if (std_Math_abs(units['[[Hour]]']) < 22) { return 'hour'; }
+  if (std_Math_abs(units['[[Day]]']) < 7) { return 'day'; }
+  if (std_Math_abs(units['[[Week]]']) < 4) { return 'week'; }
+  if (std_Math_abs(units['[[Month]]']) < 11) { return 'month'; }
+  //if (std_Math_abs(units.quarter) < 4) { return 'quarter'; }
+  return 'year';
+}
+
 function DeconstructPattern(pattern, placeables) {
   const parts = pattern.split(/\{([^\}]+)\}/);
   const result = [];
@@ -2899,7 +2942,7 @@ function DeconstructPattern(pattern, placeables) {
         result.push({'[[Type]]': 'literal', '[[Value]]': part});
       }
     } else {
-      const subst = placeables[part];
+      const subst = placeables['[[' + part + ']]'];
       if (!subst) {
         throw new Error(`Missing placeable: "${part}"`);
       }
@@ -2910,16 +2953,22 @@ function DeconstructPattern(pattern, placeables) {
 }
 
 function PartitionRelativeTimePattern(relativeTimeFormat, x) {
+  let internals = getRelativeTimeFormatInternals(relativeTimeFormat, 'format');
+  let fields = internals.fields;
   let now = std_Date_now();
   let ms = x - now;
-  //let units = ComputeTimeUnits(ms);
-  //let unit = GetBestMatchUnit(units);
-  //let entry = unit;
+  let units = ComputeTimeUnits(ms);
+  let unit = GetBestMatchUnit(units);
+  let entry = unit;
 
-  let internals = getRelativeTimeFormatInternals(relativeTimeFormat, 'format');
-  let pattern = internals.pattern;
+  let patterns = fields[entry];
+  let v = units['[[' + unit[0].toUpperCase() + unit.slice(1) + ']]'];
+
+  let po = patterns['past'];
+  let fv = ToString(v);
+  let pattern = po['other'];
   let values = new Record();
-  values['0'] = {'[[Type]]': 'number', '[[Value]]': '15'};
+  values['[[0]]'] = {'[[Type]]': 'number', '[[Value]]': fv};
   return DeconstructPattern(pattern, values);
 }
 
@@ -2968,7 +3017,20 @@ function resolveRelativeTimeFormatInternals(lazyRelativeTimeFormatData) {
 
   var dataLocale = 'en-US';
 
-  internalProps.pattern = "{0} min. ago";
+  internalProps.fields = {
+    'second': {
+      'past': {
+        'one': '{0} second ago',
+        'other': '{0} seconds ago'
+      }
+    },
+    'minute': {
+      'past': {
+        'one': '{0} minute ago',
+        'other': '{0} minutes ago'
+      }
+    }
+  };
 
   return internalProps;
 }
