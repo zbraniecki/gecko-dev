@@ -232,6 +232,8 @@
     macro(reason, reason, "reason") \
     macro(Reify, Reify, "Reify") \
     macro(RelativeTimeFormat, RelativeTimeFormat, "RelativeTimeFormat") \
+    macro(RelativeTimeFormatFormat, RelativeTimeFormatFormat, "Intl_RelativeTimeFormat_format") \
+    macro(RelativeTimeFormatFormatToParts, RelativeTimeFormatFormatToParts, "Intl_RelativeTimeFormat_formatToParts") \
     macro(RequireObjectCoercible, RequireObjectCoercible, "RequireObjectCoercible") \
     macro(resumeGenerator, resumeGenerator, "resumeGenerator") \
     macro(return, return_, "return") \

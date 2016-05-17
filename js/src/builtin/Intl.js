@@ -2889,6 +2889,48 @@ function resolveICUPattern(pattern, result) {
 
 /********** Intl.RelativeTimeFormat **********/
 
+function PartitionRelativeTimePattern(relativeTimeFormat, x) {
+  let now = Date.now();
+  let ms = x - now;
+  let units = ComputeTimeUnits(ms);
+  let unit = GetBestMatchUnit(units);
+  let entry = unit;
+
+  let pattern = '';
+  let values = new Record();
+  values['[[0]]'] = {'[[Type]]': 'number', '[[Value]]': fv};
+  return DeconstructPattern(pattern, values);
+  return [
+    {'[[Type]]': 'number', '[[Value]]': '15'},
+    {'[[Type]]': 'literal', '[[Value]]': ' min. ago'}
+  ];
+}
+
+function FormatRelativeTime(relativeTimeFormat, x) {
+  let parts = PartitionRelativeTimePattern(relativeTimeFormat, x);
+  let result = '';
+
+  for (let part in parts) {
+    result += parts[part]['[[Value]]'];
+  }
+  return result;
+}
+
+function FormatRelativeTimeToParts(relativeTimeFormat, x) {
+  let parts = PartitionRelativeTimePattern(relativeTimeFormat, x);
+  let result = [];
+  let n = 0;
+
+  for (let part in parts) {
+    let O = {};
+    O.type = parts[part]['[[Type]]'];
+    O.value = parts[part]['[[Value]]'];
+    result.push(O);
+    n += 1;
+  }
+  return result;
+}
+
 function resolveRelativeTimeFormatInternals(lazyRelativeTimeFormatData) {
   var internalProps = std_Object_create(null);
   return internalProps;
@@ -2932,15 +2974,18 @@ function Intl_RelativeTimeFormat_supportedLocalesOf(locales /*, options*/) {
     return SupportedLocales(availableLocales, requestedLocales, options);
 }
 
-function Intl_RelativeTimeFormat_format_get() {
-  return '5 min ago';
+function Intl_RelativeTimeFormat_format(value) {
+  let relativeTimeFormat = this;
+  value = ToNumber(value);
+
+  return FormatRelativeTime(relativeTimeFormat, value);
 }
 
-function Intl_RelativeTimeFormat_formatToParts_get() {
-  return [
-    {type: 'number', value: '5'},
-    {type: 'literal', value: ' min ago'}
-  ];
+function Intl_RelativeTimeFormat_formatToParts(value) {
+  let relativeTimeFormat = this;
+  value = ToNumber(value);
+
+  return FormatRelativeTimeToParts(relativeTimeFormat, value);
 }
 
 function Intl_RelativeTimeFormat_resolvedOptions() {

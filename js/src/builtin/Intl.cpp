@@ -2369,6 +2369,7 @@ static bool
 relativeTimeFormat_format(JSContext* cx, unsigned argc, Value* vp)
 {
   CallArgs args = CallArgsFromVp(argc, vp);
+  RootedValue relativeTimeFormat(cx, args.thisv());
 
   RootedValue result(cx, StringValue(NewStringCopyZ<CanGC>(cx, "5 min. ago")));
 
@@ -2394,8 +2395,8 @@ static const JSFunctionSpec relativeTimeFormat_static_methods[] = {
 
 static const JSFunctionSpec relativeTimeFormat_methods[] = {
     JS_SELF_HOSTED_FN("resolvedOptions", "Intl_RelativeTimeFormat_resolvedOptions", 0, 0),
-    JS_FN("format", relativeTimeFormat_format, 0, 0),
-    JS_FN("formatToParts", relativeTimeFormat_formatToParts, 0, 0),
+    JS_SELF_HOSTED_FN("format", "Intl_RelativeTimeFormat_format", 0, 0),
+    JS_SELF_HOSTED_FN("formatToParts", "Intl_RelativeTimeFormat_formatToParts", 0, 0),
 #if JS_HAS_TOSOURCE
     JS_FN(js_toSource_str, relativeTimeFormat_toSource, 0, 0),
 #endif
