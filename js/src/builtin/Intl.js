@@ -2889,21 +2889,38 @@ function resolveICUPattern(pattern, result) {
 
 /********** Intl.RelativeTimeFormat **********/
 
-function PartitionRelativeTimePattern(relativeTimeFormat, x) {
-  let now = Date.now();
-  let ms = x - now;
-  let units = ComputeTimeUnits(ms);
-  let unit = GetBestMatchUnit(units);
-  let entry = unit;
+function DeconstructPattern(pattern, placeables) {
+  const parts = pattern.split(/\{([^\}]+)\}/);
+  const result = [];
 
-  let pattern = '';
+  parts.forEach((part, i) => {
+    if (i % 2 === 0) {
+      if (part.length > 0) {
+        result.push({'[[Type]]': 'literal', '[[Value]]': part});
+      }
+    } else {
+      const subst = placeables[part];
+      if (!subst) {
+        throw new Error(`Missing placeable: "${part}"`);
+      }
+      result.push(subst);
+    }
+  });
+  return result;
+}
+
+function PartitionRelativeTimePattern(relativeTimeFormat, x) {
+  let now = std_Date_now();
+  let ms = x - now;
+  //let units = ComputeTimeUnits(ms);
+  //let unit = GetBestMatchUnit(units);
+  //let entry = unit;
+
+  let internals = getRelativeTimeFormatInternals(relativeTimeFormat, 'format');
+  let pattern = internals.pattern;
   let values = new Record();
-  values['[[0]]'] = {'[[Type]]': 'number', '[[Value]]': fv};
+  values['0'] = {'[[Type]]': 'number', '[[Value]]': '15'};
   return DeconstructPattern(pattern, values);
-  return [
-    {'[[Type]]': 'number', '[[Value]]': '15'},
-    {'[[Type]]': 'literal', '[[Value]]': ' min. ago'}
-  ];
 }
 
 function FormatRelativeTime(relativeTimeFormat, x) {
@@ -2933,6 +2950,26 @@ function FormatRelativeTimeToParts(relativeTimeFormat, x) {
 
 function resolveRelativeTimeFormatInternals(lazyRelativeTimeFormatData) {
   var internalProps = std_Object_create(null);
+
+  var RelativeTimeFormat = relativeTimeFormatInternalProperties;
+
+  var localeData = RelativeTimeFormat.localeData;
+
+  var r = ResolveLocale(callFunction(RelativeTimeFormat.availableLocales, RelativeTimeFormat),
+      lazyRelativeTimeFormatData.requestedLocales,
+      lazyRelativeTimeFormatData.localeOpt,
+      [],
+      localeData);
+  internalProps.locale = r.locale;
+
+  var dataLocale = r.dataLocale;
+
+  internalProps.locale = 'en-US';
+
+  var dataLocale = 'en-US';
+
+  internalProps.pattern = "{0} min. ago";
+
   return internalProps;
 }
 
@@ -2953,14 +2990,29 @@ function getRelativeTimeFormatInternals(obj, methodName) {
 
 function InitializeRelativeTimeFormat(relativeTimeFormat, locales, options) {
 	assert(IsObject(relativeTimeFormat), "InitializeRelativeTimeFormat");
+
 	if (isInitializedIntlObject(relativeTimeFormat))
 		ThrowTypeError(JSMSG_INTL_OBJECT_REINITED);
 
 	var internals = initializeIntlObject(relativeTimeFormat);
+
 	var lazyRelativeTimeFormatData = std_Object_create(null);
 
   var requestedLocales = CanonicalizeLocaleList(locales);
   lazyRelativeTimeFormatData.requestedLocales = requestedLocales;
+
+  if (options === undefined)
+    options = {};
+  else
+    options = ToObject(options);
+
+  var localeOpt = new Record();
+  lazyRelativeTimeFormatData.localeOpt = localeOpt;
+
+  var localeMatcher =
+    GetOption(options, "localeMatcher", "string", ["lookup", "best fit"],
+        "best fit");
+  localeOpt.localeMatcher = localeMatcher;
 
 	setLazyData(internals, "RelativeTimeFormat", lazyRelativeTimeFormatData);
 }
@@ -2972,6 +3024,23 @@ function Intl_RelativeTimeFormat_supportedLocalesOf(locales /*, options*/) {
                                         relativeTimeFormatInternalProperties);
     var requestedLocales = CanonicalizeLocaleList(locales);
     return SupportedLocales(availableLocales, requestedLocales, options);
+}
+
+
+var relativeTimeFormatInternalProperties = {
+  localeData: relativeTimeFormatLocaleData,
+  _availableLocales: null,
+  availableLocales: function() {
+    var locales = this._availableLocales;
+    if (locales)
+      return locales;
+    locales = intl_RelativeTimeFormat_availableLocales();
+    return (this._availableLocales = locales);
+  }
+};
+
+function relativeTimeFormatLocaleData(locale) {
+   return {};
 }
 
 function Intl_RelativeTimeFormat_format(value) {

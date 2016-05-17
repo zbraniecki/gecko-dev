@@ -2365,29 +2365,6 @@ relativeTimeFormat_toSource(JSContext* cx, unsigned argc, Value* vp)
 }
 #endif
 
-static bool
-relativeTimeFormat_format(JSContext* cx, unsigned argc, Value* vp)
-{
-  CallArgs args = CallArgsFromVp(argc, vp);
-  RootedValue relativeTimeFormat(cx, args.thisv());
-
-  RootedValue result(cx, StringValue(NewStringCopyZ<CanGC>(cx, "5 min. ago")));
-
-  args.rval().set(result);
-  return true;
-}
-
-static bool
-relativeTimeFormat_formatToParts(JSContext* cx, unsigned argc, Value* vp)
-{
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  RootedValue result(cx, StringValue(NewStringCopyZ<CanGC>(cx, "10 min. ago in parts")));
-
-  args.rval().set(result);
-  return true;
-}
-
 static const JSFunctionSpec relativeTimeFormat_static_methods[] = {
     JS_SELF_HOSTED_FN("supportedLocalesOf", "Intl_RelativeTimeFormat_supportedLocalesOf", 1, 0),
     JS_FS_END
@@ -2485,11 +2462,9 @@ InitRelativeTimeFormatClass(JSContext* cx, HandleObject Intl, Handle<GlobalObjec
     if (!LinkConstructorAndPrototype(cx, ctor, proto))
         return nullptr;
 
-    // 11.2.2
     if (!JS_DefineFunctions(cx, ctor, relativeTimeFormat_static_methods))
         return nullptr;
 
-    // 11.3.2 and 11.3.3
     if (!JS_DefineFunctions(cx, proto, relativeTimeFormat_methods))
         return nullptr;
 
@@ -2497,14 +2472,12 @@ InitRelativeTimeFormatClass(JSContext* cx, HandleObject Intl, Handle<GlobalObjec
     if (!CreateDefaultOptions(cx, &options))
         return nullptr;
 
-    // 11.2.1 and 11.3
     if (!IntlInitialize(cx, proto, cx->names().InitializeRelativeTimeFormat, UndefinedHandleValue,
                         options))
     {
         return nullptr;
     }
 
-    // 8.1
     RootedValue ctorValue(cx, ObjectValue(*ctor));
     if (!DefineProperty(cx, Intl, cx->names().RelativeTimeFormat, ctorValue, nullptr, nullptr, 0))
         return nullptr;
@@ -2530,26 +2503,10 @@ js::intl_RelativeTimeFormat_availableLocales(JSContext* cx, unsigned argc, Value
     MOZ_ASSERT(args.length() == 0);
 
     RootedValue result(cx);
+    //XXX: We should be getting RelativeTimeFormat locales, not NumberFormat ones
     if (!intl_availableLocales(cx, unum_countAvailable, unum_getAvailable, &result))
         return false;
     args.rval().set(result);
-    return true;
-}
-
-static bool
-intl_FormatRelativeTime(JSContext* cx, UNumberFormat* nf, double x, MutableHandleValue result)
-{
-    return true;
-}
-
-bool
-js::intl_FormatRelativeTime(JSContext* cx, unsigned argc, Value* vp)
-{
-    CallArgs args = CallArgsFromVp(argc, vp);
-    MOZ_ASSERT(args.length() == 2);
-    MOZ_ASSERT(args[0].isObject());
-    MOZ_ASSERT(args[1].isNumber());
-
     return true;
 }
 
