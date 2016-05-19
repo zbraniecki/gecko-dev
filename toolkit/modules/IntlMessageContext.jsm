@@ -75,8 +75,8 @@ class FTLNumber extends FTLBase {
   constructor(value, opts) {
     super(parseFloat(value), opts);
   }
-  toString(bundle) {
-    const nf = bundle._memoizeIntlObject(
+  toString(ctx) {
+    const nf = ctx._memoizeIntlObject(
       Intl.NumberFormat, this.opts
     );
     return nf.format(this.value);
@@ -87,8 +87,8 @@ class FTLDateTime extends FTLBase {
   constructor(value, opts) {
     super(new Date(value), opts);
   }
-  toString(bundle) {
-    const dtf = bundle._memoizeIntlObject(
+  toString(ctx) {
+    const dtf = ctx._memoizeIntlObject(
       Intl.DateTimeFormat, this.opts
     );
     return dtf.format(this.value);
@@ -100,7 +100,7 @@ class FTLKeyword extends FTLBase {
     const { name, namespace } = this.value;
     return namespace ? `${namespace}:${name}` : name;
   }
-  match(bundle, other) {
+  match(ctx, other) {
     const { name, namespace } = this.value;
     if (other instanceof FTLKeyword) {
       return name === other.value.name && namespace === other.value.namespace;
@@ -109,7 +109,7 @@ class FTLKeyword extends FTLBase {
     } else if (typeof other === 'string') {
       return name === other;
     } else if (other instanceof FTLNumber) {
-      const pr = bundle._memoizeIntlObject(
+      const pr = ctx._memoizeIntlObject(
         PluralRules, other.opts
       );
       return name === pr.select(other.valueOf());
@@ -120,12 +120,12 @@ class FTLKeyword extends FTLBase {
 }
 
 class FTLList extends Array {
-  toString(bundle) {
-    const lf = bundle._memoizeIntlObject(
+  toString(ctx) {
+    const lf = ctx._memoizeIntlObject(
       ListFormat // XXX add this.opts
     );
     const elems = this.map(
-      elem => elem.toString(bundle)
+      elem => elem.toString(ctx)
     );
     return lf.format(elems);
   }
@@ -136,14 +136,21 @@ class FTLList extends Array {
 //  - opts  = an object of key-value args
 
 var builtins = {
-  'NUMBER': ([arg], opts) => new FTLNumber(arg.valueOf(), valuesOf(opts)),
-  'PLURAL': ([arg], opts) => new FTLNumber(arg.valueOf(), valuesOf(opts)),
-  'DATETIME': ([arg], opts) => new FTLDateTime(arg.valueOf(), valuesOf(opts)),
-  'LEN': ([arg], opts) => new FTLNumber(arg.valueOf().length, valuesOf(opts)),
+  'NUMBER': ([arg], opts) =>
+    new FTLNumber(arg.valueOf(), merge(arg.opts, opts)),
+  'PLURAL': ([arg], opts) =>
+    new FTLNumber(arg.valueOf(), merge(arg.opts, opts)),
+  'DATETIME': ([arg], opts) =>
+    new FTLDateTime(arg.valueOf(), merge(arg.opts, opts)),
   'LIST': (args) => FTLList.from(args),
+  'LEN': ([arg]) => new FTLNumber(arg.valueOf().length),
   'TAKE': ([num, arg]) => FTLList.from(arg.valueOf().slice(0, num.value)),
   'DROP': ([num, arg]) => FTLList.from(arg.valueOf().slice(num.value)),
 };
+
+function merge(argopts, opts) {
+  return Object.assign({}, argopts, valuesOf(opts));
+}
 
 function valuesOf(opts) {
   return Object.keys(opts).reduce(
@@ -182,8 +189,8 @@ function* DefaultMember(members) {
 // Half-resolved expressions evaluate to raw Runtime AST nodes
 
 function* EntityReference({name}) {
-  const { entries } = yield ask();
-  const entity = entries.get(name);
+  const { ctx } = yield ask();
+  const entity = ctx.messages.get(name);
 
   if (!entity) {
     yield tell(new ReferenceError(`Unknown entity: ${name}`));
@@ -199,17 +206,17 @@ function* MemberExpression({obj, key}) {
     return { val: entity };
   }
 
-  const { bundle } = yield ask();
+  const { ctx } = yield ask();
   const keyword = yield* Value(key);
 
   for (let member of entity.traits) {
     const memberKey = yield* Value(member.key);
-    if (keyword.match(bundle, memberKey)) {
+    if (keyword.match(ctx, memberKey)) {
       return member;
     }
   }
 
-  yield tell(new ReferenceError(`Unknown trait: ${key.toString(bundle)}`));
+  yield tell(new ReferenceError(`Unknown trait: ${keyword.toString(ctx)}`));
   return {
     val: yield* Entity(entity)
   };
@@ -230,10 +237,10 @@ function* SelectExpression({exp, vars}) {
       return variant;
     }
 
-    const { bundle } = yield ask();
+    const { ctx } = yield ask();
 
     if (key instanceof FTLKeyword &&
-        key.match(bundle, selector)) {
+        key.match(ctx, selector)) {
       return variant;
     }
   }
@@ -260,8 +267,8 @@ function* Value(expr) {
       return new FTLNumber(expr.val);
     case 'ext':
       return yield* ExternalArgument(expr);
-    case 'blt':
-      return yield* BuiltinReference(expr);
+    case 'fun':
+      return yield* FunctionReference(expr);
     case 'call':
       return yield* CallExpression(expr);
     case 'ref':
@@ -288,6 +295,10 @@ function* ExternalArgument({name}) {
 
   const arg = args[name];
 
+  if (arg instanceof FTLBase) {
+    return arg;
+  }
+
   switch (typeof arg) {
     case 'string':
       return arg;
@@ -308,25 +319,25 @@ function* ExternalArgument({name}) {
   }
 }
 
-function* BuiltinReference({name}) {
-  const { bundle } = yield ask();
+function* FunctionReference({name}) {
+  const { ctx: { functions } } = yield ask();
+  const func = functions[name] || builtins[name];
 
-  if (bundle.formatters.hasOwnProperty(name)) {
-    return bundle.formatters[name];
-  }
-
-  const builtin = builtins[name];
-
-  if (!builtin) {
+  if (!func) {
     yield tell(new ReferenceError(`Unknown built-in: ${name}()`));
     return new FTLNone(`${name}()`);
   }
 
-  return builtin;
+  if (!(func instanceof Function)) {
+    yield tell(new TypeError(`Function ${name}() is not callable`));
+    return new FTLNone(`${name}()`);
+  }
+
+  return func;
 }
 
 function* CallExpression({name, args}) {
-  const callee = yield* BuiltinReference(name);
+  const callee = yield* FunctionReference(name);
 
   if (callee instanceof FTLNone) {
     return callee;
@@ -348,7 +359,7 @@ function* CallExpression({name, args}) {
 }
 
 function* Pattern(ptn) {
-  const { bundle, dirty } = yield ask();
+  const { ctx, dirty } = yield ask();
 
   if (dirty.has(ptn)) {
     yield tell(new RangeError('Cyclic reference'));
@@ -365,7 +376,7 @@ function* Pattern(ptn) {
       const value = part.length === 1 ?
         yield* Value(part[0]) : yield* mapValues(part);
 
-      const str = value.toString(bundle);
+      const str = value.toString(ctx);
       if (str.length > MAX_PLACEABLE_LENGTH) {
         yield tell(
           new RangeError(
@@ -406,7 +417,7 @@ function* toString(entity) {
   return value.toString();
 }
 
-function format(bundle, args, entries, entity) {
+function format(ctx, args, entity) {
   if (entity === undefined) {
     return ['', []];
   }
@@ -415,32 +426,43 @@ function format(bundle, args, entries, entity) {
   }
 
   return resolve(toString(entity)).run({
-    bundle, args, entries, dirty: new WeakSet()
+    ctx, args, dirty: new WeakSet()
   });
 }
 
-class Bundle {
-  constructor(locales, options = {}) {
-    this.args = options.args || {};
-    this.entries = options.entries || new Map();
-    this.formatters = options.formatters || {};
-    this.locale = Array.isArray(locales) ? locales[0] : locales;
-    this._intls = new WeakMap();
+Components.utils.import("resource://gre/modules/XPCOMUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "L20nParser",
+                                 "resource://gre/modules/L20nParser.jsm");
+
+
+class MessageContext {
+  constructor(lang, { functions } = {}) {
+    this.lang = lang;
+    this.functions = functions || {}
+    this.messages = new Map();
+    this.intls = new WeakMap();
   }
 
-  format(entity, args, entries) {
-    let a = Object.assign(this.args, args);
-    let e = new Map([...this.entries, entries]);
-    return format(this, a, e, entity);
+  addMessages(source) {
+    const [entries, errors] = L20nParser.parseResource(source);
+    for (let id in entries) {
+      this.messages.set(id, entries[id]);
+    }
+
+    return errors;
+  }
+
+  format(entity, args) {
+    return format(this, args, entity);
   }
 
   _memoizeIntlObject(ctor, opts) {
-    const cache = this._intls.get(ctor) || {};
+    const cache = this.intls.get(ctor) || {};
     const id = JSON.stringify(opts);
 
     if (!cache[id]) {
       cache[id] = new ctor(this.lang, opts);
-      this._intls.set(ctor, cache);
+      this.intls.set(ctor, cache);
     }
 
     return cache[id];
@@ -477,5 +499,5 @@ function MessageArgument(formatter, options, values) {
   };
 }
 
-this.MessageContext = Bundle;
+this.MessageContext = MessageContext;
 this.MessageArgument = MessageArgument;

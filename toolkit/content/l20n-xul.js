@@ -19,115 +19,73 @@
     return [supportedLocale, def];
   }
 
-  function negotiateLanguages(
-    { defaultLang, availableLangs }, prevLangs, requestedLangs
-  ) {
-
-    const newLangs = prioritizeLocales(
-      defaultLang, Object.keys(availableLangs), requestedLangs
-    );
-
-    const langs = newLangs.map(code => ({
-      code: code,
-      src: 'app',
-    }));
-
-    return { langs, haveChanged: !arrEqual(prevLangs, newLangs) };
-  }
-
-  function arrEqual(arr1, arr2) {
-    return arr1.length === arr2.length &&
-      arr1.every((elem, i) => elem === arr2[i]);
-  }
-
-  // Polyfill NodeList.prototype[Symbol.iterator] for Chrome.
-  // See https://code.google.com/p/chromium/issues/detail?id=401699
-  if (typeof NodeList === 'function' && !NodeList.prototype[Symbol.iterator]) {
-    NodeList.prototype[Symbol.iterator] = Array.prototype[Symbol.iterator];
-  }
-
-  // A document.ready shim
-  // https://github.com/whatwg/html/issues/127
-  function documentReady() {
-    if (document.readyState !== 'loading') {
-      return Promise.resolve();
-    }
-
-    return new Promise(resolve => {
-      document.addEventListener('readystatechange', function onrsc() {
-        document.removeEventListener('readystatechange', onrsc);
-        resolve();
-      });
-    });
-  }
-
-  // Intl.Locale
   function getDirection(code) {
     const tag = code.split('-')[0];
     return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
       'rtl' : 'ltr';
   }
 
-  // Opera and Safari don't support it yet
-  if (typeof navigator !== 'undefined' && navigator.languages === undefined) {
-    navigator.languages = [navigator.language];
+  class L10nError extends Error {
+    constructor(message, id, lang) {
+      super();
+      this.name = 'L10nError';
+      this.message = message;
+      this.id = id;
+      this.lang = lang;
+    }
   }
 
-  function getResourceLinks(head) {
-    return Array.prototype.map.call(
-      head.querySelectorAll('link[rel="localization"]'),
-      el => el.getAttribute('href'));
+  function keysFromContext(ctx, keys, method) {
+    return keys.map(key => {
+      const [id, args] = Array.isArray(key) ?
+        key : [key, undefined];
+
+      // XXX Handle errors somehow; emit?
+      const [result] = method.call(this, ctx, id, args);
+      return result;
+    });
   }
 
-  function getMeta(head) {
-    let availableLangs = Object.create(null);
-    let defaultLang = null;
-    let appVersion = null;
+  function valueFromContext(ctx, id, args) {
+    const entity = ctx.messages.get(id);
 
-    // XXX take last found instead of first?
-    const metas = Array.from(head.querySelectorAll(
-      'meta[name="availableLanguages"],' +
-      'meta[name="defaultLanguage"],' +
-      'meta[name="appVersion"]'));
-    for (let meta of metas) {
-      const name = meta.getAttribute('name');
-      const content = meta.getAttribute('content').trim();
-      switch (name) {
-        case 'availableLanguages':
-          availableLangs = getLangRevisionMap(
-            availableLangs, content);
-          break;
-        case 'defaultLanguage':
-          const [lang, rev] = getLangRevisionTuple(content);
-          defaultLang = lang;
-          if (!(lang in availableLangs)) {
-            availableLangs[lang] = rev;
-          }
-          break;
-        case 'appVersion':
-          appVersion = content;
+    if (entity === undefined) {
+      return [id, [new L10nError(`Unknown entity: ${id}`)]];
+    }
+
+    return ctx.format(entity, args);
+  }
+
+  function entityFromContext(ctx, id, args) {
+    const entity = ctx.messages.get(id);
+
+    if (entity === undefined)  {
+      return [
+        { value: id, attrs: null },
+        [new L10nError(`Unknown entity: ${id}`)]
+      ];
+    }
+
+    let value = null;
+
+    if (typeof entity === 'string' || Array.isArray(entity) || entity.val !== undefined) {
+      value = ctx.format(entity, args)[0];
+    }
+
+    const formatted = {
+      value,
+      attrs: null,
+    };
+
+    if (entity.traits) {
+      formatted.attrs = Object.create(null);
+      for (let trait of entity.traits) {
+        const [attrValue] = ctx.format(trait, args);
+        formatted.attrs[trait.key.name] = attrValue;
       }
     }
 
-    return {
-      defaultLang,
-      availableLangs,
-      appVersion
-    };
-  }
-
-  function getLangRevisionMap(seq, str) {
-    return str.split(',').reduce((prevSeq, cur) => {
-      const [lang, rev] = getLangRevisionTuple(cur);
-      prevSeq[lang] = rev;
-      return prevSeq;
-    }, seq);
-  }
-
-  function getLangRevisionTuple(str) {
-    const [lang, rev]  = str.trim().split(':');
-    // if revision is missing, use NaN
-    return [lang, parseInt(rev)];
+    return [formatted, []];
   }
 
   // match the opening angle bracket (<) in HTML tags, and HTML entities like
@@ -462,48 +420,60 @@
     }
   }
 
-  const viewProps = new WeakMap();
+  Components.utils.import("resource://gre/modules/Services.jsm");
+  Components.utils.import("resource://gre/modules/IntlMessageContext.jsm");
 
-  class View$1 {
-    constructor(createContext, doc, init = defaultInit) {
-      this.interactive = documentReady().then(() => init(this));
-      this.ready = this.interactive.then(
-        ({langs}) => translateView(this, langs).then(
-          () => langs
-        )
-      );
-      initMutationObserver(this);
+  const properties = new WeakMap();
+  const contexts = new WeakMap();
 
-      viewProps.set(this, {
-        doc, createContext, ready: false, resIds: []
+  class Localization {
+    constructor(doc, requestBundles) {
+      this.interactive = requestBundles();
+      this.ready = this.interactive
+        .then(bundles => fetchFirstBundle(bundles))
+        .then(bundles => translateDocument(this, bundles));
+
+      this.interactive.then(bundles => {
+        this.getValue = function(id, args) {
+          return keysFromContext(contexts.get(bundles[0]), [[id, args]], valueFromContext)[0];
+        };
       });
+
+      properties.set(this, { doc, requestBundles, ready: false });
+      initMutationObserver(this);
+      this.observeRoot(doc.documentElement);
     }
 
     requestLanguages(requestedLangs) {
       return this.ready = this.interactive.then(
-        ctx => changeLanguages(this, ctx, requestedLangs)
+        bundles => changeLanguages(this, bundles, requestedLangs)
       );
     }
 
     handleEvent() {
-      return this.requestLanguages(navigator.languages);
+      return this.requestLanguages();
     }
 
     formatEntities(...keys) {
+      // XXX add async fallback
       return this.interactive.then(
-        ctx => ctx.formatEntities(...keys)
+        ([bundle]) => keysFromContext(
+          contexts.get(bundle), keys, entityFromContext
+        )
       );
-    }
-
-    formatValue(id, args) {
-      return this.interactive
-        .then(ctx => ctx.formatValues([id, args]))
-        .then(([val]) => val);
     }
 
     formatValues(...keys) {
       return this.interactive.then(
-        ctx => ctx.formatValues(...keys)
+        ([bundle]) => keysFromContext(
+          contexts.get(bundle), keys, valueFromContext
+        )
+      );
+    }
+
+    formatValue(id, args) {
+      return this.formatValues([id, args]).then(
+        ([val]) => val
       );
     }
 
@@ -520,87 +490,124 @@
     }
   }
 
-  View$1.prototype.setAttributes = setAttributes;
-  View$1.prototype.getAttributes = getAttributes;
+  Localization.prototype.setAttributes = setAttributes;
+  Localization.prototype.getAttributes = getAttributes;
 
-  function defaultInit(view) {
-    const props = viewProps.get(view);
-    props.resIds = getResourceLinks(props.doc.head);
-    const meta = getMeta(props.doc.head);
-
-    view.observeRoot(props.doc.documentElement);
-    const { langs } = negotiateLanguages(meta, [], navigator.languages);
-    return props.createContext(langs, props.resIds);
-  }
-
-  function changeLanguages(view, oldCtx, requestedLangs) {
-    const { doc, resIds, createContext } = viewProps.get(view);
-    const meta = getMeta(doc.head);
-
-    const { langs, haveChanged } = negotiateLanguages(
-      meta, oldCtx.langs, requestedLangs
-    );
-
-    if (!haveChanged) {
-      return langs;
+  const functions = {
+    OS: function() {
+      switch (Services.appinfo.OS) {
+        case 'WINNT':
+          return 'win';
+        case 'Linux':
+          return 'lin';
+        case 'Darwin':
+          return 'mac';
+        case 'Android':
+          return 'android';
+        default:
+          return 'other';
+      }
     }
+  };
 
-    view.interactive = createContext(langs, resIds);
-
-    return view.interactive.then(
-      ctx => translateView(view, ctx.langs).then(
-        () => ctx.langs
-      )
-    );
-  }
-
-  function translateView(view, langs) {
-    const props = viewProps.get(view);
-    const html = props.doc.documentElement;
-
-    if (props.ready) {
-      return translateRoots(view).then(
-        () => setAllAndEmit(html, langs)
-      );
-    }
-
-    const translated = translateRoots(view).then(
-      () => setLangDir(html, langs)
-    );
-
-    return translated.then(() => {
-      setLangs(html, langs);
-      props.ready = true;
+  function createContextFromBundle(bundle) {
+    return bundle.fetch().then(resources => {
+      const ctx = new MessageContext(bundle.lang, {
+        functions
+      });
+      resources.forEach(res => ctx.addMessages(res));
+      contexts.set(bundle, ctx);
+      return ctx;
     });
   }
 
-  function setLangs(html, langs) {
-    const codes = langs.map(lang => lang.code);
-    html.setAttribute('langs', codes.join(' '));
+  function fetchFirstBundle(bundles) {
+    const [bundle] = bundles;
+    return createContextFromBundle(bundle).then(
+      () => bundles
+    );
   }
 
-  function setLangDir(html, langs) {
-    const code = langs[0].code;
-    html.setAttribute('lang', code);
-    html.setAttribute('dir', getDirection(code));
+  function changeLanguages(l10n, oldBundles, requestedLangs) {
+    const { requestBundles } = properties.get(l10n);
+
+    l10n.interactive = requestBundles(requestedLangs).then(
+      newBundles => equal(oldBundles, newBundles) ?
+        oldBundles : fetchFirstBundle(newBundles)
+    );
+
+    return l10n.interactive.then(
+      bundles => translateDocument(l10n, bundles)
+    );
   }
 
-  function setAllAndEmit(html, langs) {
-    setLangDir(html, langs);
-    setLangs(html, langs);
-    html.parentNode.dispatchEvent(new CustomEvent('DOMRetranslated', {
-      bubbles: false,
-      cancelable: false,
-    }));
+  function equal(bundles1, bundles2) {
+    return bundles1.length === bundles2.length &&
+      bundles1.every(({lang}, i) => lang === bundles2[i].lang);
   }
 
-  function getResourceLinks$1(doc) {
+  function translateDocument(l10n, bundles) {
+    const langs = bundles.map(bundle => bundle.lang);
+    const props = properties.get(l10n);
+    const html = props.doc.documentElement;
+
+    function setLangs() {
+      html.setAttribute('langs', langs.join(' '));
+      html.setAttribute('lang', langs[0]);
+      html.setAttribute('dir', getDirection(langs[0]));
+    }
+
+    function emit() {
+      html.parentNode.dispatchEvent(new CustomEvent('DOMRetranslated', {
+        bubbles: false,
+        cancelable: false,
+      }));
+    }
+
+    const next = props.ready ?
+      emit : () => props.ready = true;
+
+    return translateRoots(l10n)
+      .then(setLangs)
+      .then(next);
+  }
+
+  // A document.ready shim
+  // https://github.com/whatwg/html/issues/127
+  function documentReady() {
+    if (document.readyState !== 'loading') {
+      return Promise.resolve();
+    }
+
+    return new Promise(resolve => {
+      document.addEventListener('readystatechange', function onrsc() {
+        document.removeEventListener('readystatechange', onrsc);
+        resolve();
+      });
+    });
+  }
+
+  function getLangRevisionMap(seq, str) {
+    return str.split(',').reduce((prevSeq, cur) => {
+      const [lang, rev] = getLangRevisionTuple(cur);
+      prevSeq[lang] = rev;
+      return prevSeq;
+    }, seq);
+  }
+
+  function getLangRevisionTuple(str) {
+    const [lang, rev]  = str.trim().split(':');
+    // if revision is missing, use NaN
+    return [lang, parseInt(rev)];
+  }
+
+  function getXULResourceLinks(doc) {
     return Array.prototype.map.call(
       doc.querySelectorAll('messagebundle'),
       el => el.getAttribute('src'));
   }
 
-  function getMeta$1(doc) {
+  function getXULMeta(doc) {
     const winElem = doc.documentElement;
     let availableLangs = Object.create(null);
     let defaultLang = null;
@@ -633,35 +640,26 @@
     };
   }
 
-  class View extends View$1 {
-    constructor(createContext, doc) {
-      super(createContext, doc, xulInit);
-      this.interactive.then(ctx => {
-        this.ctx = ctx;
-      });
-    }
-
-    getValue(id, args) {
-      return this.ctx.formatValue(id, args);
-    }
-  }
-
-  function xulInit(view) {
-    const props = viewProps.get(view);
-    props.resIds = getResourceLinks$1(props.doc);
-    const meta = getMeta$1(props.doc);
-
-    view.observeRoot(props.doc.documentElement);
-    const { langs } = negotiateLanguages(meta, [], navigator.languages);
-    return props.createContext(langs, props.resIds);
-  }
-
   const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
   Cu.import("resource://gre/modules/L20n.jsm");
 
-  document.l10n = new View(L20n.createSimpleContext, document);
+  function requestBundles(requestedLangs = navigator.languages) {
+    return documentReady().then(() => {
+      const { defaultLang, availableLangs } = getXULMeta(document);
+      const resIds = getXULResourceLinks(document);
 
+      const newLangs = prioritizeLocales(
+        defaultLang, Object.keys(availableLangs), requestedLangs
+      );
+
+      return newLangs.map(
+        lang => new ResourceBundle(lang, resIds)
+      );
+    });
+  }
+
+  document.l10n = new Localization(document, requestBundles);
   window.addEventListener('languagechange', document.l10n);
 
 }());
