@@ -59,18 +59,14 @@
   function entityFromContext(ctx, id, args) {
     const entity = ctx.messages.get(id);
 
-    if (entity === undefined)  {
+    if (entity === undefined) {
       return [
         { value: id, attrs: null },
         [new L10nError(`Unknown entity: ${id}`)]
       ];
     }
 
-    let value = null;
-
-    if (typeof entity === 'string' || Array.isArray(entity) || entity.val !== undefined) {
-      value = ctx.format(entity, args)[0];
-    }
+    const [value] = ctx.formatToPrimitive(entity, args);
 
     const formatted = {
       value,
@@ -358,11 +354,7 @@
   function applyTranslations(view, elems, translations) {
     disconnect(view, null, true);
     for (let i = 0; i < elems.length; i++) {
-      try {
-        overlayElement(elems[i], translations[i]);
-      } catch (e) {
-        console.log(e);
-      }
+      overlayElement(elems[i], translations[i]);
     }
     reconnect(view);
   }
