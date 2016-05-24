@@ -790,18 +790,6 @@ function resolve(iter) {
   }();
 }
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-
-XPCOMUtils.defineLazyModuleGetter(this, "ListFormat",
-  "resource://gre/modules/IntlListFormat.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "PluralRules",
-  "resource://gre/modules/IntlPluralRules.jsm");
-XPCOMUtils.defineLazyModuleGetter(this, "RelativeTimeFormat",
-  "resource://gre/modules/IntlRelativeTimeFormat.jsm");
-
-
 class FTLBase {
   constructor(value, opts) {
     this.value = value;
@@ -857,7 +845,7 @@ class FTLKeyword extends FTLBase {
       return name === other;
     } else if (other instanceof FTLNumber) {
       const pr = ctx._memoizeIntlObject(
-        PluralRules, other.opts
+        Intl.PluralRules, other.opts
       );
       return name === pr.select(other.valueOf());
     } else {
@@ -869,7 +857,7 @@ class FTLKeyword extends FTLBase {
 class FTLList extends Array {
   toString(ctx) {
     const lf = ctx._memoizeIntlObject(
-      ListFormat // XXX add this.opts
+      Intl.ListFormat // XXX add this.opts
     );
     const elems = this.map(
       elem => elem.toString(ctx)
@@ -1220,34 +1208,6 @@ class MessageContext {
 
 }
 
-this.EXPORTED_SYMBOLS = ["MessageContext", "MessageArgument"];
-
-
-function MessageArgument(formatter, options, values) {
-  if (values === undefined) {
-    return (values) => {
-      if (values === undefined) {
-        throw new Error('Cannot resolve Argument without a value');
-      }
-      if (!Array.isArray(values)) {
-        values = [values];
-      }
-      return {
-        formatter,
-        options,
-        values
-      };
-    };
-  }
-  if (!Array.isArray(values)) {
-    values = [values];
-  }
-  return {
-    formatter,
-    options,
-    values
-  };
-}
+this.EXPORTED_SYMBOLS = ['MessageContext'];
 
 this.MessageContext = MessageContext;
-this.MessageArgument = MessageArgument;

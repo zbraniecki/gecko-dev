@@ -96,9 +96,9 @@
     ],
     attributes: {
       global: ['title', 'aria-label', 'aria-valuetext', 'aria-moz-hint'],
-      button: ['accesskey'],
       a: ['download'],
       area: ['download', 'alt'],
+      button: ['accesskey'], // used by XUL
       // value is special-cased in isAttrAllowed
       input: ['alt', 'placeholder'],
       menuitem: ['label'],
@@ -121,8 +121,8 @@
       } else {
         // start with an inert template element and move its children into
         // `element` but such that `element`'s own children are not replaced
-        const tmpl =
-          document.createElementNS('http://www.w3.org/1999/xhtml', 'template');
+        const tmpl = element.ownerDocument.createElementNS(
+          'http://www.w3.org/1999/xhtml', 'template');
         tmpl.innerHTML = value;
         // overlay the node with the DocumentFragment
         overlay(element, tmpl.content);
@@ -412,24 +412,15 @@
     }
   }
 
-  Components.utils.import("resource://gre/modules/Services.jsm");
-  Components.utils.import("resource://gre/modules/IntlMessageContext.jsm");
-
   const properties = new WeakMap();
   const contexts = new WeakMap();
 
   class Localization {
-    constructor(doc, requestBundles) {
+    constructor(doc, requestBundles, createContext) {
       this.interactive = requestBundles();
       this.ready = this.interactive
-        .then(bundles => fetchFirstBundle(bundles))
+        .then(bundles => fetchFirstBundle(bundles, createContext))
         .then(bundles => translateDocument(this, bundles));
-
-      this.interactive.then(bundles => {
-        this.getValue = function(id, args) {
-          return keysFromContext(contexts.get(bundles[0]), [[id, args]], valueFromContext)[0];
-        };
-      });
 
       properties.set(this, { doc, requestBundles, ready: false });
       initMutationObserver(this);
@@ -485,37 +476,18 @@
   Localization.prototype.setAttributes = setAttributes;
   Localization.prototype.getAttributes = getAttributes;
 
-  const functions = {
-    OS: function() {
-      switch (Services.appinfo.OS) {
-        case 'WINNT':
-          return 'win';
-        case 'Linux':
-          return 'lin';
-        case 'Darwin':
-          return 'mac';
-        case 'Android':
-          return 'android';
-        default:
-          return 'other';
-      }
-    }
-  };
-
-  function createContextFromBundle(bundle) {
+  function createContextFromBundle(bundle, createContext) {
     return bundle.fetch().then(resources => {
-      const ctx = new MessageContext(bundle.lang, {
-        functions
-      });
+      const ctx = createContext(bundle.lang);
       resources.forEach(res => ctx.addMessages(res));
       contexts.set(bundle, ctx);
       return ctx;
     });
   }
 
-  function fetchFirstBundle(bundles) {
+  function fetchFirstBundle(bundles, createContext) {
     const [bundle] = bundles;
-    return createContextFromBundle(bundle).then(
+    return createContextFromBundle(bundle, createContext).then(
       () => bundles
     );
   }
@@ -632,9 +604,29 @@
     };
   }
 
-  const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+  Components.utils.import('resource://gre/modules/Services.jsm');
+  Components.utils.import('resource://gre/modules/L20n.jsm');
+  Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
+  Components.utils.import('resource://gre/modules/IntlListFormat.jsm');
+  Components.utils.import('resource://gre/modules/IntlPluralRules.jsm');
+  Components.utils.import('resource://gre/modules/IntlRelativeTimeFormat.jsm');
 
-  Cu.import("resource://gre/modules/L20n.jsm");
+  const functions = {
+    OS: function() {
+      switch (Services.appinfo.OS) {
+        case 'WINNT':
+          return 'win';
+        case 'Linux':
+          return 'lin';
+        case 'Darwin':
+          return 'mac';
+        case 'Android':
+          return 'android';
+        default:
+          return 'other';
+      }
+    }
+  };
 
   function requestBundles(requestedLangs = navigator.languages) {
     return documentReady().then(() => {
@@ -651,7 +643,24 @@
     });
   }
 
-  document.l10n = new Localization(document, requestBundles);
+  function createContext(lang) {
+    return new MessageContext(lang, { functions });
+  }
+
+  Intl.MessageContext = MessageContext;
+  Intl.PluralRules = PluralRules;
+  Intl.ListFormat = ListFormat;
+  Intl.RelativeTimeFormat = RelativeTimeFormat;
+
+  document.l10n = new Localization(document, requestBundles, createContext);
+
+  document.l10n.interactive.then(bundles => {
+    document.l10n.getValue = function(id, args) {
+      return keysFromContext(
+        contexts.get(bundles[0]), [[id, args]], valueFromContext)[0];
+    };
+  });
+
   window.addEventListener('languagechange', document.l10n);
 
 }());
