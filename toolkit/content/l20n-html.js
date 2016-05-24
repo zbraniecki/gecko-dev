@@ -418,6 +418,7 @@
   class Localization {
     constructor(doc, requestBundles, createContext) {
       this.interactive = requestBundles();
+      this.createContext = createContext;
       this.ready = this.interactive
         .then(bundles => fetchFirstBundle(bundles, createContext))
         .then(bundles => translateDocument(this, bundles));
@@ -497,7 +498,7 @@
 
     l10n.interactive = requestBundles(requestedLangs).then(
       newBundles => equal(oldBundles, newBundles) ?
-        oldBundles : fetchFirstBundle(newBundles)
+        oldBundles : fetchFirstBundle(newBundles, l10n.createContext)
     );
 
     return l10n.interactive.then(
@@ -611,10 +612,6 @@
   Components.utils.import('resource://gre/modules/Services.jsm');
   Components.utils.import('resource://gre/modules/L20n.jsm');
   Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
-  Components.utils.import('resource://gre/modules/IntlListFormat.jsm');
-  Components.utils.import('resource://gre/modules/IntlPluralRules.jsm');
-  Components.utils.import('resource://gre/modules/IntlRelativeTimeFormat.jsm');
-
 
   const functions = {
     OS: function() {
@@ -651,11 +648,6 @@
   function createContext(lang) {
     return new MessageContext(lang, { functions });
   }
-
-  Intl.MessageContext = MessageContext;
-  Intl.PluralRules = PluralRules;
-  Intl.ListFormat = ListFormat;
-  Intl.RelativeTimeFormat = RelativeTimeFormat;
 
   document.l10n = new Localization(document, requestBundles, createContext);
 

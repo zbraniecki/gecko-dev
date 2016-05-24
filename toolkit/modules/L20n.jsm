@@ -23,7 +23,7 @@ function load(url) {
   });
 }
 
-function fetchResource(res, { code }) {
+function fetchResource(res, code) {
   const url = res.replace('{locale}', code);
   return load(url);
 }

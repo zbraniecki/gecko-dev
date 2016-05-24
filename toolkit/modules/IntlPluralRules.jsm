@@ -11,6 +11,9 @@ this.EXPORTED_SYMBOLS = ["PluralRules"];
 const pluralRules = {
   'en-US': function(n) {
     return n === 1 ? 'one' : 'other';
+  },
+  'pl': function(n) {
+    return n === 1 ? 'one' : 'other';
   }
 };
 
@@ -18,8 +21,7 @@ class PluralRules {
   constructor(locales, options) {
     // So stub, Much mock
 
-    //this.locale = Array.isArray(locales) ? locales[0] : locales;
-    this.locale = 'en-US';
+    this.locale = Array.isArray(locales) ? locales[0] : locales;
     this.pluralRule = pluralRules[this.locale];
   }
 
