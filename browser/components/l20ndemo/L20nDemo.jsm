@@ -8,6 +8,7 @@ this.EXPORTED_SYMBOLS = ["L20nDemo"];
 
 const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
+Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 // See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
@@ -56,11 +57,15 @@ this.L20nDemo = {
       return false;
     }
 
-    return true;
-  },
+    Services.obs.notifyObservers(
+      null,
+      "language-update",
+      // XXX data sent to observers needs to be string; how to send more 
+      // information, like the language the messages are in?
+      aEvent.detail.data.messages
+    );
 
-  handleEvent: function(aEvent) {
-    log.debug("handleEvent: type =", aEvent.type, "event =", aEvent);
+    return true;
   },
 
 };
