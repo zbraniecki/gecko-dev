@@ -558,59 +558,50 @@
       el => el.getAttribute('href'));
   }
 
-  function getMeta(head) {
-    let availableLangs = Object.create(null);
-    let defaultLang = null;
-    let appVersion = null;
+  const HTTP_STATUS_CODE_OK = 200;
 
-    // XXX take last found instead of first?
-    const metas = Array.from(head.querySelectorAll(
-      'meta[name="availableLanguages"],' +
-      'meta[name="defaultLanguage"],' +
-      'meta[name="appVersion"]'));
-    for (let meta of metas) {
-      const name = meta.getAttribute('name');
-      const content = meta.getAttribute('content').trim();
-      switch (name) {
-        case 'availableLanguages':
-          availableLangs = getLangRevisionMap(
-            availableLangs, content);
-          break;
-        case 'defaultLanguage':
-          const [lang, rev] = getLangRevisionTuple(content);
-          defaultLang = lang;
-          if (!(lang in availableLangs)) {
-            availableLangs[lang] = rev;
-          }
-          break;
-        case 'appVersion':
-          appVersion = content;
-      }
+  function load(url) {
+    return new Promise((resolve) => {
+      const req = Components.classes['@mozilla.org/xmlextras/xmlhttprequest;1']
+                        .createInstance(Ci.nsIXMLHttpRequest)
+
+      req.mozBackgroundRequest = true;
+      req.overrideMimeType('text/plain');
+      req.open('GET', url, true);
+
+      req.addEventListener('load', () => {
+        if (req.status === HTTP_STATUS_CODE_OK) {
+          resolve(req.responseText);
+        }
+      });
+      req.send(null);
+    });
+  }
+
+  function fetchResource(res, code) {
+    const url = res.replace('{locale}', code);
+    return load(url);
+  }
+
+  class ResourceBundle {
+    constructor(lang, resIds) {
+      this.lang = lang;
+      this.loaded = false;
+      this.resIds = resIds;
     }
 
-    return {
-      defaultLang,
-      availableLangs,
-      appVersion
-    };
-  }
+    fetch() {
+      if (!this.loaded) {
+        this.loaded = Promise.all(
+          this.resIds.map(id => fetchResource(id, this.lang))
+        );
+      }
 
-  function getLangRevisionMap(seq, str) {
-    return str.split(',').reduce((prevSeq, cur) => {
-      const [lang, rev] = getLangRevisionTuple(cur);
-      prevSeq[lang] = rev;
-      return prevSeq;
-    }, seq);
-  }
-
-  function getLangRevisionTuple(str) {
-    const [lang, rev]  = str.trim().split(':');
-    // if revision is missing, use NaN
-    return [lang, parseInt(rev)];
+      return this.loaded;
+    }
   }
 
   Components.utils.import('resource://gre/modules/Services.jsm');
-  Components.utils.import('resource://gre/modules/L20n.jsm');
   Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
 
   const functions = {
@@ -632,11 +623,12 @@
 
   function requestBundles(requestedLangs = navigator.languages) {
     return documentReady().then(() => {
-      const { defaultLang, availableLangs } = getMeta(document.head);
+      const defaultLang = 'en-US';
+      const availableLangs = ['pl', 'en-US'];
       const resIds = getResourceLinks(document.head);
 
       const newLangs = prioritizeLocales(
-        defaultLang, Object.keys(availableLangs), requestedLangs
+        defaultLang, availableLangs, requestedLangs
       );
 
       return newLangs.map(

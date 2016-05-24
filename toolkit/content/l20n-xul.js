@@ -552,61 +552,56 @@
     });
   }
 
-  function getLangRevisionMap(seq, str) {
-    return str.split(',').reduce((prevSeq, cur) => {
-      const [lang, rev] = getLangRevisionTuple(cur);
-      prevSeq[lang] = rev;
-      return prevSeq;
-    }, seq);
-  }
-
-  function getLangRevisionTuple(str) {
-    const [lang, rev]  = str.trim().split(':');
-    // if revision is missing, use NaN
-    return [lang, parseInt(rev)];
-  }
-
   function getXULResourceLinks(doc) {
     return Array.prototype.map.call(
       doc.querySelectorAll('messagebundle'),
       el => el.getAttribute('src'));
   }
 
-  function getXULMeta(doc) {
-    const winElem = doc.documentElement;
-    let availableLangs = Object.create(null);
-    let defaultLang = null;
-    let appVersion = null;
+  const HTTP_STATUS_CODE_OK = 200;
 
-    if (winElem.hasAttribute('defaultLanguage')) {
-      let [lang, rev] =
-        getLangRevisionTuple(winElem.getAttribute('defaultLanguage').trim());
-      defaultLang = lang;
-      if (!(lang in availableLangs)) {
-        availableLangs[lang] = rev;
+  function load(url) {
+    return new Promise((resolve) => {
+      const req = Components.classes['@mozilla.org/xmlextras/xmlhttprequest;1']
+                        .createInstance(Ci.nsIXMLHttpRequest)
+
+      req.mozBackgroundRequest = true;
+      req.overrideMimeType('text/plain');
+      req.open('GET', url, true);
+
+      req.addEventListener('load', () => {
+        if (req.status === HTTP_STATUS_CODE_OK) {
+          resolve(req.responseText);
+        }
+      });
+      req.send(null);
+    });
+  }
+
+  function fetchResource(res, code) {
+    const url = res.replace('{locale}', code);
+    return load(url);
+  }
+
+  class ResourceBundle {
+    constructor(lang, resIds) {
+      this.lang = lang;
+      this.loaded = false;
+      this.resIds = resIds;
+    }
+
+    fetch() {
+      if (!this.loaded) {
+        this.loaded = Promise.all(
+          this.resIds.map(id => fetchResource(id, this.lang))
+        );
       }
-    }
 
-    if (winElem.hasAttribute('availableLanguages')) {
-      availableLangs = getLangRevisionMap(
-        availableLangs,
-        winElem.getAttribute('availableLanguages').trim()
-      );
+      return this.loaded;
     }
-
-    if (winElem.hasAttribute('appVersion')) {
-      appVersion = winElem.getAttribute('appVersion').trim();
-    }
-
-    return {
-      defaultLang,
-      availableLangs,
-      appVersion
-    };
   }
 
   Components.utils.import('resource://gre/modules/Services.jsm');
-  Components.utils.import('resource://gre/modules/L20n.jsm');
   Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
 
   const functions = {
@@ -628,11 +623,12 @@
 
   function requestBundles(requestedLangs = navigator.languages) {
     return documentReady().then(() => {
-      const { defaultLang, availableLangs } = getXULMeta(document);
+      const defaultLang = 'en-US';
+      const availableLangs = ['en-US'];
       const resIds = getXULResourceLinks(document);
 
       const newLangs = prioritizeLocales(
-        defaultLang, Object.keys(availableLangs), requestedLangs
+        defaultLang, availableLangs, requestedLangs
       );
 
       return newLangs.map(

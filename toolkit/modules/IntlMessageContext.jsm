@@ -140,7 +140,7 @@ class ParseContext {
       traits = this.getMembers();
     } else if (value === null) {
       throw this.error(
-        `Expected a value (like: " = value") or a trait (like: "[key] value")`
+        'Expected a value (like: " = value") or a trait (like: "[key] value")'
       );
     }
 
