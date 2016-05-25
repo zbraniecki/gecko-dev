@@ -49,7 +49,6 @@ EXTRA_JS_MODULES += [
     'IntlMessageContext.jsm',
     'IntlPluralRules.jsm',
     'IntlRelativeTimeFormat.jsm',
-    'L20n.jsm',
     'LoadContextInfo.jsm',
     'Locale.jsm',
     'Log.jsm',
