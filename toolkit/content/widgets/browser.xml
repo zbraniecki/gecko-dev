@@ -287,6 +287,17 @@
         </body>
       </method>
 
+      <method name="makePrerenderedBrowserActive">
+        <body>
+        <![CDATA[
+          let frameLoader = this.QueryInterface(Components.interfaces.nsIFrameLoaderOwner).frameLoader;
+          if (frameLoader) {
+            frameLoader.makePrerenderedLoaderActive();
+          }
+        ]]>
+        </body>
+      </method>
+
       <property name="imageDocument"
                 readonly="true">
         <getter>
@@ -1323,6 +1334,22 @@
           }
           return {permitUnload: this.docShell.contentViewer.permitUnload(), timedOut: false};
         ]]>
+        </body>
+      </method>
+
+      <method name="print">
+        <parameter name="aPrintSettings"/>
+        <parameter name="aPrintProgressListener"/>
+        <body>
+          <![CDATA[
+            var owner = this.QueryInterface(Components.interfaces.nsIFrameLoaderOwner);
+            if (!owner.frameLoader) {
+              throw Components.Exception("No frame loader.",
+                                         Components.results.NS_ERROR_FAILURE);
+            }
+
+            owner.frameLoader.print(aPrintSettings, aPrintProgressListener);
+          ]]>
         </body>
       </method>
 

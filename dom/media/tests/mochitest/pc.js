@@ -409,6 +409,7 @@ function(peer, desc, stateExpected) {
 
   var stateChanged = peer.setRemoteDescription(desc).then(() => {
     peer.setRemoteDescDate = new Date();
+    peer.checkMediaTracks();
   });
 
   return Promise.all([eventFired, stateChanged]);
@@ -877,7 +878,10 @@ PeerConnectionWrapper.prototype = {
       streamId: stream.id,
     };
 
-    this.ensureMediaElement(track, stream, "local");
+    // This will create one media element per track, which might not be how
+    // we set up things with the RTCPeerConnection. It's the only way
+    // we can ensure all sent tracks are flowing however.
+    this.ensureMediaElement(track, new MediaStream([track]), "local");
 
     return this.observedNegotiationNeeded;
   },
@@ -1129,28 +1133,22 @@ PeerConnectionWrapper.prototype = {
     observedTrackInfoById[track.id] = expectedTrackInfoById[track.id];
   },
 
+  isTrackOnPC: function(track) {
+    return this._pc.getRemoteStreams().some(s => !!s.getTrackById(track.id));
+  },
+
   allExpectedTracksAreObserved: function(expected, observed) {
     return Object.keys(expected).every(trackId => observed[trackId]);
   },
 
   setupTrackEventHandler: function() {
-    var resolveAllTrackEventsDone;
-
-    // checkMediaTracks waits on this promise later on in the test.
-    this.allTrackEventsDonePromise =
-      new Promise(resolve => resolveAllTrackEventsDone = resolve);
-
     this._pc.addEventListener('track', event => {
       info(this + ": 'ontrack' event fired for " + JSON.stringify(event.track));
 
       this.checkTrackIsExpected(event.track,
                                 this.expectedRemoteTrackInfoById,
                                 this.observedRemoteTrackInfoById);
-
-      if (this.allExpectedTracksAreObserved(this.expectedRemoteTrackInfoById,
-                                            this.observedRemoteTrackInfoById)) {
-        resolveAllTrackEventsDone();
-      }
+      ok(this.isTrackOnPC(event.track), "Found track " + event.track.id);
 
       this.ensureMediaElement(event.track, event.streams[0], 'remote');
     });
@@ -1332,9 +1330,6 @@ PeerConnectionWrapper.prototype = {
 
   /**
    * Checks that we are getting the media tracks we expect.
-   *
-   * @param {object} constraints
-   *        The media constraints of the remote peer connection object
    */
   checkMediaTracks : function() {
     this.checkLocalMediaTracks();
@@ -1342,13 +1337,11 @@ PeerConnectionWrapper.prototype = {
     info(this + " Checking remote tracks " +
          JSON.stringify(this.expectedRemoteTrackInfoById));
 
-    // No tracks are expected
-    if (this.allExpectedTracksAreObserved(this.expectedRemoteTrackInfoById,
-                                          this.observedRemoteTrackInfoById)) {
-      return;
-    }
-
-    return timerGuard(this.allTrackEventsDonePromise, 60000, "The expected ontrack events never fired");
+    ok(this.allExpectedTracksAreObserved(this.expectedRemoteTrackInfoById,
+                                         this.observedRemoteTrackInfoById),
+       "All expected tracks have been observed"
+       + "\nexpected: " + JSON.stringify(this.expectedRemoteTrackInfoById)
+       + "\nobserved: " + JSON.stringify(this.observedRemoteTrackInfoById));
   },
 
   checkMsids: function() {
@@ -1374,7 +1367,11 @@ PeerConnectionWrapper.prototype = {
 
   rollbackRemoteTracksIfNotNegotiated: function() {
     Object.keys(this.observedRemoteTrackInfoById).forEach(
-        id => delete this.observedRemoteTrackInfoById[id]);
+        id => {
+          if (!this.observedRemoteTrackInfoById[id].negotiated) {
+            delete this.observedRemoteTrackInfoById[id];
+          }
+        });
   },
 
   /**
@@ -1482,7 +1479,7 @@ PeerConnectionWrapper.prototype = {
     // As input we use the stream of |from|'s first available audio sender.
     var inputSenderTracks = from._pc.getSenders().map(sn => sn.track);
     var inputAudioStream = from._pc.getLocalStreams()
-      .find(s => s.getAudioTracks().some(t => inputSenderTracks.some(t2 => t == t2)));
+      .find(s => inputSenderTracks.some(t => t.kind == "audio" && s.getTrackById(t.id)));
     var inputAnalyser = new AudioStreamAnalyser(audiocontext, inputAudioStream);
 
     // It would have been nice to have a working getReceivers() here, but until

@@ -379,6 +379,7 @@ var commandsPeerConnectionOfferAnswer = [
       })
       .then(() => test.pcLocal.markRemoteTracksAsNegotiated());
   },
+
   function PC_REMOTE_SANE_LOCAL_SDP(test) {
     test.pcRemote.localRequiresTrickleIce =
       sdputils.verifySdp(test._remote_answer, "answer",
@@ -411,14 +412,6 @@ var commandsPeerConnectionOfferAnswer = [
 
   function PC_REMOTE_VERIFY_ICE_GATHERING(test) {
     return waitForAnIceCandidate(test.pcRemote);
-  },
-
-  function PC_LOCAL_CHECK_MEDIA_TRACKS(test) {
-    return test.pcLocal.checkMediaTracks();
-  },
-
-  function PC_REMOTE_CHECK_MEDIA_TRACKS(test) {
-    return test.pcRemote.checkMediaTracks();
   },
 
   function PC_LOCAL_WAIT_FOR_MEDIA_FLOW(test) {
@@ -480,10 +473,10 @@ var commandsPeerConnectionOfferAnswer = [
     return test.pcRemote.checkMsids();
   },
 
-  function PC_LOCAL_CHECK_STATS(test) {
+  function PC_LOCAL_CHECK_TRACK_STATS(test) {
     return checkAllTrackStats(test.pcLocal);
   },
-  function PC_REMOTE_CHECK_STATS(test) {
+  function PC_REMOTE_CHECK_TRACK_STATS(test) {
     return checkAllTrackStats(test.pcRemote);
   },
   function PC_LOCAL_VERIFY_SDP_AFTER_END_OF_TRICKLE(test) {

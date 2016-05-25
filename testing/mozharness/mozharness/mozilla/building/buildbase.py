@@ -849,6 +849,13 @@ or run without that action (ie: --no-{action})"
         # first grab the buildid
         env['MOZ_BUILD_DATE'] = self.query_buildid()
 
+        # Set the source repository to what we're building from since
+        # the default is to query `hg paths` which isn't reliable with pooled
+        # storage
+        repo_path = self._query_repo()
+        assert repo_path
+        env['MOZ_SOURCE_REPO'] = repo_path
+
         if self.query_is_nightly() or self.query_is_nightly_promotion():
             if self.query_is_nightly():
                 # nightly promotion needs to set update_channel but not do all the 'IS_NIGHTLY'
@@ -1166,6 +1173,7 @@ or run without that action (ie: --no-{action})"
 
         if c.get('clone_with_purge'):
             vcs_checkout_kwargs['clone_with_purge'] = True
+        vcs_checkout_kwargs['clone_upstream_url'] = c.get('clone_upstream_url')
         rev = self.vcs_checkout(**vcs_checkout_kwargs)
         if c.get('is_automation'):
             changes = self.buildbot_config['sourcestamp']['changes']

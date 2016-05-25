@@ -15,6 +15,7 @@
 #include "PublicKeyPinningService.h"
 #include "cert.h"
 #include "certdb.h"
+#include "mozilla/Casting.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/unused.h"
 #include "nsNSSCertificate.h"
@@ -52,6 +53,7 @@ NSSCertDBTrustDomain::NSSCertDBTrustDomain(SECTrustType certDBTrustType,
                                            unsigned int minRSABits,
                                            ValidityCheckingMode validityCheckingMode,
                                            CertVerifier::SHA1Mode sha1Mode,
+                                           NetscapeStepUpPolicy netscapeStepUpPolicy,
                                            UniqueCERTCertList& builtChain,
                               /*optional*/ PinningTelemetryInfo* pinningTelemetryInfo,
                               /*optional*/ const char* hostname)
@@ -65,6 +67,7 @@ NSSCertDBTrustDomain::NSSCertDBTrustDomain(SECTrustType certDBTrustType,
   , mMinRSABits(minRSABits)
   , mValidityCheckingMode(validityCheckingMode)
   , mSHA1Mode(sha1Mode)
+  , mNetscapeStepUpPolicy(netscapeStepUpPolicy)
   , mBuiltChain(builtChain)
   , mPinningTelemetryInfo(pinningTelemetryInfo)
   , mHostname(hostname)
@@ -98,9 +101,9 @@ FindIssuerInner(const UniqueCERTCertList& candidates, bool useRoots,
       const_cast<unsigned char*>(encodedIssuerName.UnsafeGetData()),
       encodedIssuerName.GetLength()
     };
-    ScopedSECItem nameConstraints(::SECITEM_AllocItem(nullptr, nullptr, 0));
+    ScopedAutoSECItem nameConstraints;
     SECStatus srv = CERT_GetImposedNameConstraints(&encodedIssuerNameItem,
-                                                   nameConstraints.get());
+                                                   &nameConstraints);
     if (srv != SECSuccess) {
       if (PR_GetError() != SEC_ERROR_EXTENSION_NOT_FOUND) {
         return Result::FATAL_ERROR_LIBRARY_FAILURE;
@@ -111,9 +114,8 @@ FindIssuerInner(const UniqueCERTCertList& candidates, bool useRoots,
     } else {
       // Otherwise apply the constraints
       Input nameConstraintsInput;
-      if (nameConstraintsInput.Init(
-              nameConstraints->data,
-              nameConstraints->len) != Success) {
+      if (nameConstraintsInput.Init(nameConstraints.data, nameConstraints.len)
+            != Success) {
         return Result::FATAL_ERROR_LIBRARY_FAILURE;
       }
       rv = checker.Check(certDER, &nameConstraintsInput, keepGoing);
@@ -776,7 +778,7 @@ NSSCertDBTrustDomain::IsChainValid(const DERArray& certArray, Time time)
       return Result::FATAL_ERROR_LIBRARY_FAILURE;
     }
     const uint8_t* certHash(
-      reinterpret_cast<const uint8_t*>(digest.get().data));
+      BitwiseCast<uint8_t*, unsigned char*>(digest.get().data));
     size_t certHashLen = digest.get().len;
     size_t unused;
     if (!mozilla::BinarySearchIf(WhitelistedCNNICHashes, 0,
@@ -928,39 +930,33 @@ NSSCertDBTrustDomain::CheckValidityIsAcceptable(Time notBefore, Time notAfter,
   return Success;
 }
 
-namespace {
-
-static char*
-nss_addEscape(const char* string, char quote)
+Result
+NSSCertDBTrustDomain::NetscapeStepUpMatchesServerAuth(Time notBefore,
+                                                      /*out*/ bool& matches)
 {
-  char* newString = 0;
-  size_t escapes = 0, size = 0;
-  const char* src;
-  char* dest;
+  // (new Date("2015-08-23T00:00:00Z")).getTime() / 1000
+  static const Time AUGUST_23_2015 = TimeFromEpochInSeconds(1440288000);
+  // (new Date("2016-08-23T00:00:00Z")).getTime() / 1000
+  static const Time AUGUST_23_2016 = TimeFromEpochInSeconds(1471910400);
 
-  for (src = string; *src; src++) {
-  if ((*src == quote) || (*src == '\\')) {
-    escapes++;
+  switch (mNetscapeStepUpPolicy) {
+    case NetscapeStepUpPolicy::AlwaysMatch:
+      matches = true;
+      return Success;
+    case NetscapeStepUpPolicy::MatchBefore23August2016:
+      matches = notBefore < AUGUST_23_2016;
+      return Success;
+    case NetscapeStepUpPolicy::MatchBefore23August2015:
+      matches = notBefore < AUGUST_23_2015;
+      return Success;
+    case NetscapeStepUpPolicy::NeverMatch:
+      matches = false;
+      return Success;
+    default:
+      MOZ_ASSERT_UNREACHABLE("unhandled NetscapeStepUpPolicy type");
   }
-  size++;
-  }
-
-  newString = (char*) PORT_ZAlloc(escapes + size + 1u);
-  if (!newString) {
-    return nullptr;
-  }
-
-  for (src = string, dest = newString; *src; src++, dest++) {
-    if ((*src == quote) || (*src == '\\')) {
-      *dest++ = '\\';
-    }
-    *dest = *src;
-  }
-
-  return newString;
+  return Result::FATAL_ERROR_LIBRARY_FAILURE;
 }
-
-} // unnamed namespace
 
 SECStatus
 InitializeNSS(const char* dir, bool readOnly, bool loadPKCS11Modules)
@@ -1007,9 +1003,11 @@ LoadLoadableRoots(/*optional*/ const char* dir, const char* modNameUTF8)
     return SECFailure;
   }
 
-  UniquePORTString escapedFullLibraryPath(nss_addEscape(fullLibraryPath.get(),
-                                                        '\"'));
-  if (!escapedFullLibraryPath) {
+  // Escape the \ and " characters.
+  nsAutoCString escapedFullLibraryPath(fullLibraryPath.get());
+  escapedFullLibraryPath.ReplaceSubstring("\\", "\\\\");
+  escapedFullLibraryPath.ReplaceSubstring("\"", "\\\"");
+  if (escapedFullLibraryPath.IsEmpty()) {
     return SECFailure;
   }
 

@@ -260,6 +260,7 @@ nsHttpChannel::nsHttpChannel()
     , mPinCacheContent(0)
     , mIsPackagedAppResource(0)
     , mIsCorsPreflightDone(0)
+    , mStronglyFramed(false)
     , mPushedStream(nullptr)
     , mLocalBlocklist(false)
     , mWarningReporter(nullptr)
@@ -763,9 +764,9 @@ nsHttpChannel::SetupTransaction()
     }
 
     // trim off the #ref portion if any...
-    int32_t ref = requestURI->FindChar('#');
-    if (ref != kNotFound) {
-        requestURI->SetLength(ref);
+    int32_t ref1 = requestURI->FindChar('#');
+    if (ref1 != kNotFound) {
+        requestURI->SetLength(ref1);
     }
 
     if (mConnectionInfo->UsingConnect() || !mConnectionInfo->UsingHttpProxy()) {
@@ -793,9 +794,9 @@ nsHttpChannel::SetupTransaction()
         }
 
         // trim off the #ref portion if any...
-        int32_t ref = requestURI->FindChar('#');
-        if (ref != kNotFound) {
-            requestURI->SetLength(ref);
+        int32_t ref2 = requestURI->FindChar('#');
+        if (ref2 != kNotFound) {
+            requestURI->SetLength(ref2);
         }
 
         mRequestHead.SetVersion(gHttpHandler->ProxyHttpVersion());
@@ -1610,6 +1611,46 @@ nsHttpChannel::ProcessResponse()
         const char *alt_protocol = mResponseHead->PeekHeader(nsHttp::Alternate_Protocol);
         bool saw_quic = (alt_protocol && PL_strstr(alt_protocol, "quic")) ? 1 : 0;
         Telemetry::Accumulate(Telemetry::HTTP_SAW_QUIC_ALT_PROTOCOL, saw_quic);
+
+        // Gather data on how many URLS get redirected
+        switch (httpStatus) {
+            case 200:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 0);
+                break;
+            case 301:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 1);
+                break;
+            case 302:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 2);
+                break;
+            case 304:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 3);
+                break;
+            case 307:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 4);
+                break;
+            case 308:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 5);
+                break;
+            case 400:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 6);
+                break;
+            case 401:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 7);
+                break;
+            case 403:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 8);
+                break;
+            case 404:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 9);
+                break;
+            case 500:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 10);
+                break;
+            default:
+                Telemetry::Accumulate(Telemetry::HTTP_RESPONSE_STATUS_CODE, 11);
+                break;
+        }
     }
 
     // Let the predictor know whether this was a cacheable response or not so
@@ -3406,6 +3447,13 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
     bool isForcedValid = false;
     entry->GetIsForcedValid(&isForcedValid);
 
+    nsXPIDLCString framedBuf;
+    rv = entry->GetMetaDataElement("strongly-framed", getter_Copies(framedBuf));
+    // describe this in terms of explicitly weakly framed so as to be backwards
+    // compatible with old cache contents which dont have strongly-framed makers
+    bool weaklyFramed = NS_SUCCEEDED(rv) && framedBuf.EqualsLiteral("0");
+    bool isImmutable = !weaklyFramed && isHttps && mCachedResponseHead->Immutable();
+
     // Cached entry is not the entity we request (see bug #633743)
     if (ResponseWouldVary(entry)) {
         LOG(("Validating based on Vary headers returning TRUE\n"));
@@ -3431,7 +3479,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
     }
     // If the VALIDATE_ALWAYS flag is set, any cached data won't be used until
     // it's revalidated with the server.
-    else if (mLoadFlags & nsIRequest::VALIDATE_ALWAYS) {
+    else if ((mLoadFlags & nsIRequest::VALIDATE_ALWAYS) && !isImmutable) {
         LOG(("Validating based on VALIDATE_ALWAYS load flag\n"));
         doValidation = true;
     }
@@ -3569,10 +3617,12 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
         // the request method MUST be either GET or HEAD (see bug 175641) and
         // the cached response code must be < 400
         //
+        // the cached content must not be weakly framed or marked immutable
+        //
         // do not override conditional headers when consumer has defined its own
         if (!mCachedResponseHead->NoStore() &&
             (mRequestHead.IsGet() || mRequestHead.IsHead()) &&
-            !mCustomConditionalRequest &&
+            !mCustomConditionalRequest && !weaklyFramed && !isImmutable &&
             (mCachedResponseHead->Status() < 400)) {
 
             if (mConcurentCacheAccess) {
@@ -4357,6 +4407,9 @@ nsHttpChannel::InitCacheEntry()
     rv = UpdateExpirationTime();
     if (NS_FAILED(rv)) return rv;
 
+    // mark this weakly framed until a response body is seen
+    mCacheEntry->SetMetaDataElement("strongly-framed", "0");
+
     rv = AddCacheEntryHeaders(mCacheEntry);
     if (NS_FAILED(rv)) return rv;
 
@@ -4464,8 +4517,8 @@ DoAddCacheEntryHeaders(nsHttpChannel *self,
         if (!buf.IsEmpty()) {
             NS_NAMED_LITERAL_CSTRING(prefix, "request-");
 
-            char *val = buf.BeginWriting(); // going to munge buf
-            char *token = nsCRT::strtok(val, NS_HTTP_HEADER_SEPS, &val);
+            char *bufData = buf.BeginWriting(); // going to munge buf
+            char *token = nsCRT::strtok(bufData, NS_HTTP_HEADER_SEPS, &bufData);
             while (token) {
                 LOG(("nsHttpChannel::AddCacheEntryHeaders [this=%p] " \
                         "processing %s", self, token));
@@ -4500,11 +4553,10 @@ DoAddCacheEntryHeaders(nsHttpChannel *self,
                         entry->SetMetaDataElement(metaKey.get(), nullptr);
                     }
                 }
-                token = nsCRT::strtok(val, NS_HTTP_HEADER_SEPS, &val);
+                token = nsCRT::strtok(bufData, NS_HTTP_HEADER_SEPS, &bufData);
             }
         }
     }
-
 
     // Store the received HTTP head with the cache entry as an element of
     // the meta data.
@@ -4560,6 +4612,12 @@ nsresult
 nsHttpChannel::FinalizeCacheEntry()
 {
     LOG(("nsHttpChannel::FinalizeCacheEntry [this=%p]\n", this));
+
+    // Don't update this meta-data on 304
+    if (mStronglyFramed && !mCachedContentIsValid && mCacheEntry) {
+        LOG(("nsHttpChannel::FinalizeCacheEntry [this=%p] Is Strongly Framed\n", this));
+        mCacheEntry->SetMetaDataElement("strongly-framed", "1");
+    }
 
     if (mResponseHead && mResponseHeadersModified) {
         // Set the expiration time for this cache entry
@@ -5912,7 +5970,7 @@ nsHttpChannel::OnStartRequest(nsIRequest *request, nsISupports *ctxt)
     if (mCacheEntry && mCachePump && RECOVER_FROM_CACHE_FILE_ERROR(mStatus)) {
         LOG(("  cache file error, reloading from server"));
         mCacheEntry->AsyncDoom(nullptr);
-        nsresult rv = StartRedirectChannelToURI(mURI, nsIChannelEventSink::REDIRECT_INTERNAL);
+        rv = StartRedirectChannelToURI(mURI, nsIChannelEventSink::REDIRECT_INTERNAL);
         if (NS_SUCCEEDED(rv))
             return NS_OK;
     }
@@ -6025,6 +6083,13 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
         ProcessSecurityReport(status);
     }
 
+    // If this load failed because of a security error, it may be because we
+    // are in a captive portal - trigger an async check to make sure.
+    int32_t nsprError = -1 * NS_ERROR_GET_CODE(status);
+    if (mozilla::psm::IsNSSErrorCode(nsprError)) {
+        gIOService->RecheckCaptivePortal();
+    }
+
     if (mTimingEnabled && request == mCachePump) {
         mCacheReadEnd = TimeStamp::Now();
     }
@@ -6068,6 +6133,9 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
     if (mTransaction) {
         // determine if we should call DoAuthRetry
         bool authRetry = mAuthRetryPending && NS_SUCCEEDED(status);
+        mStronglyFramed = mTransaction->ResponseIsComplete();
+        LOG(("nsHttpChannel %p has a strongly framed transaction: %d",
+             this, mStronglyFramed));
 
         //
         // grab references to connection in case we need to retry an
@@ -6145,6 +6213,7 @@ nsHttpChannel::OnStopRequest(nsIRequest *request, nsISupports *ctxt, nsresult st
             mResponseHead && mResponseHead->Status() == 101) {
             gHttpHandler->ConnMgr()->CompleteUpgrade(stickyConn,
                                                      mUpgradeProtocolCallback);
+            mUpgradeProtocolCallback = nullptr;
         }
     }
 

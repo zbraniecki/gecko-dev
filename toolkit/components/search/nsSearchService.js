@@ -1209,7 +1209,7 @@ EngineURL.prototype = {
         this._addMozParam(param);
       }
       else
-        this.addParam(param.name, param.value, param.purpose);
+        this.addParam(param.name, param.value, param.purpose || undefined);
     }
   },
 
@@ -2069,7 +2069,7 @@ Engine.prototype = {
       let url = aJson._urls[i];
       let engineURL = new EngineURL(url.type || URLTYPE_SEARCH_HTML,
                                     url.method || "GET", url.template,
-                                    url.resultDomain);
+                                    url.resultDomain || undefined);
       engineURL._initWithJSON(url, this);
       this._urls.push(engineURL);
     }
@@ -2739,7 +2739,7 @@ SearchService.prototype = {
 
     Services.obs.notifyObservers(null, SEARCH_SERVICE_TOPIC, "init-complete");
     Services.telemetry.getHistogramById("SEARCH_SERVICE_INIT_SYNC").add(true);
-    this._recordEnginesWithUpdate();
+    this._recordEngineTelemetry();
 
     LOG("_syncInit end");
   },
@@ -2782,7 +2782,7 @@ SearchService.prototype = {
       this._initObservers.resolve(this._initRV);
       Services.obs.notifyObservers(null, SEARCH_SERVICE_TOPIC, "init-complete");
       Services.telemetry.getHistogramById("SEARCH_SERVICE_INIT_SYNC").add(false);
-      this._recordEnginesWithUpdate();
+      this._recordEngineTelemetry();
 
       LOG("_asyncInit: Completed _asyncInit");
     }.bind(this));
@@ -3154,7 +3154,7 @@ SearchService.prototype = {
         // Typically we'll re-init as a result of a pref observer,
         // so signal to 'callers' that we're done.
         Services.obs.notifyObservers(null, SEARCH_SERVICE_TOPIC, "init-complete");
-        this._recordEnginesWithUpdate();
+        this._recordEngineTelemetry();
         gInitialized = true;
       } catch (err) {
         LOG("Reinit failed: " + err);
@@ -3384,7 +3384,7 @@ SearchService.prototype = {
 
     let skippedEngines = 0;
     for (let engine of cache.engines) {
-      if (skipReadOnly && engine._readOnly !== false) {
+      if (skipReadOnly && engine._readOnly == undefined) {
         ++skippedEngines;
         continue;
       }
@@ -3399,7 +3399,7 @@ SearchService.prototype = {
 
   _loadEngineFromCache: function SRCH_SVC__loadEngineFromCache(json) {
     try {
-      let engine = new Engine(json._shortName, json._readOnly);
+      let engine = new Engine(json._shortName, json._readOnly == undefined);
       engine._initWithJSON(json);
       this._addEngineToStore(engine);
     } catch (ex) {
@@ -4264,7 +4264,9 @@ SearchService.prototype = {
     return result;
   },
 
-  _recordEnginesWithUpdate: function() {
+  _recordEngineTelemetry: function() {
+    Services.telemetry.getHistogramById("SEARCH_SERVICE_ENGINE_COUNT")
+            .add(Object.keys(this._engines).length);
     let hasUpdates = false;
     let hasIconUpdates = false;
     for (let name in this._engines) {
@@ -4355,6 +4357,54 @@ SearchService.prototype = {
       SearchStaticData.getAlternateDomains(urlParsingInfo.mainDomain)
                       .forEach(d => processDomain(d, true));
     }
+  },
+
+  /**
+   * Checks to see if any engine has an EngineURL of type URLTYPE_SEARCH_HTML
+   * for this request-method, template URL, and query params.
+   */
+  hasEngineWithURL: function(method, template, formData) {
+    this._ensureInitialized();
+
+    // Quick helper method to ensure formData filtered/sorted for compares.
+    let getSortedFormData = data => {
+      return data.filter(a => a.name && a.value).sort((a, b) => {
+        return (a.name > b.name) ? 1 : (b.name > a.name) ? -1 :
+               (a.value > b.value) ? 1 : (b.value > a.value) ? -1 : 0;
+      });
+    };
+
+    // Sanitize method, ensure formData is pre-sorted.
+    let methodUpper = method.toUpperCase();
+    let sortedFormData = getSortedFormData(formData);
+    let sortedFormLength = sortedFormData.length;
+
+    return this._getSortedEngines(false).some(engine => {
+      return engine._urls.some(url => {
+        // Not an engineURL match if type, method, url, #params don't match.
+        if (url.type != URLTYPE_SEARCH_HTML ||
+            url.method != methodUpper ||
+            url.template != template ||
+            url.params.length != sortedFormLength) {
+          return false;
+        };
+
+        // Ensure engineURL formData is pre-sorted. Then, we're
+        // not an engineURL match if any queryParam doesn't compare.
+        let sortedParams = getSortedFormData(url.params);
+        for (let i = 0; i < sortedFormLength; i++) {
+          let formData = sortedFormData[i];
+          let param = sortedParams[i];
+          if (param.name != formData.name ||
+              param.value != formData.value ||
+              param.purpose != formData.purpose) {
+            return false;
+          };
+        };
+        // Else we're a match.
+        return true;
+      });
+    });
   },
 
   parseSubmissionURL: function SRCH_SVC_parseSubmissionURL(aURL) {

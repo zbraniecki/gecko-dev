@@ -60,14 +60,19 @@ class HTMLElement(object):
         """
         return self.marionette.find_elements(method, target, self.id)
 
-    def get_attribute(self, attribute):
+    def get_attribute(self, name):
         """Returns the requested attribute, or None if no attribute
         is set.
-
-        :param attribute: The name of the attribute.
         """
-        body = {"id": self.id, "name": attribute}
+        body = {"id": self.id, "name": name}
         return self.marionette._send_message("getElementAttribute", body, key="value")
+
+    def get_property(self, name):
+        """Returns the requested property, or None if the property is
+        not set.
+        """
+        body = {"id": self.id, "name": name}
+        return self.marionette._send_message("getElementProperty", body, key="value")
 
     def click(self):
         self.marionette._send_message("clickElement", {"id": self.id})
@@ -534,7 +539,7 @@ class Marionette(object):
     TIMEOUT_SCRIPT = 'script'
     TIMEOUT_PAGE = 'page load'
     DEFAULT_SOCKET_TIMEOUT = 360
-    DEFAULT_STARTUP_TIMEOUT = 60
+    DEFAULT_STARTUP_TIMEOUT = 120
 
     def __init__(self, host='localhost', port=2828, app=None, app_args=None, bin=None,
                  profile=None, addons=None, emulator=None, sdcard=None, emulator_img=None,

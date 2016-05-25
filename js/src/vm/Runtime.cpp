@@ -133,6 +133,9 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
     jitActivation(nullptr),
     jitStackLimit_(0xbad),
     jitStackLimitNoInterrupt_(0xbad),
+#ifdef DEBUG
+    ionBailAfter_(0),
+#endif
     activation_(nullptr),
     profilingActivation_(nullptr),
     profilerSampleBufferGen_(0),
@@ -431,17 +434,14 @@ JSRuntime::~JSRuntime()
 
     MOZ_ASSERT(!exclusiveAccessOwner);
 
-    // Avoid bogus asserts during teardown.
     MOZ_ASSERT(!numExclusiveThreads);
-#ifdef DEBUG
-    mainThreadHasExclusiveAccess = true;
-#endif
+    AutoLockForExclusiveAccess lock(this);
 
     /*
      * Even though all objects in the compartment are dead, we may have keep
      * some filenames around because of gcKeepAtoms.
      */
-    FreeScriptData(this);
+    FreeScriptData(this, lock);
 
 #ifdef DEBUG
     /* Don't hurt everyone in leaky ol' Mozilla with a fatal MOZ_ASSERT! */
@@ -526,7 +526,7 @@ JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::Runtim
 
     rtSizes->object += mallocSizeOf(this);
 
-    rtSizes->atomsTable += atoms().sizeOfIncludingThis(mallocSizeOf);
+    rtSizes->atomsTable += atoms(lock).sizeOfIncludingThis(mallocSizeOf);
 
     if (!parentRuntime) {
         rtSizes->atomsTable += mallocSizeOf(staticStrings);
@@ -550,8 +550,8 @@ JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::Runtim
 
     rtSizes->uncompressedSourceCache += uncompressedSourceCache.sizeOfExcludingThis(mallocSizeOf);
 
-    rtSizes->scriptData += scriptDataTable().sizeOfExcludingThis(mallocSizeOf);
-    for (ScriptDataTable::Range r = scriptDataTable().all(); !r.empty(); r.popFront())
+    rtSizes->scriptData += scriptDataTable(lock).sizeOfExcludingThis(mallocSizeOf);
+    for (ScriptDataTable::Range r = scriptDataTable(lock).all(); !r.empty(); r.popFront())
         rtSizes->scriptData += mallocSizeOf(r.front());
 
     if (jitRuntime_) {
@@ -588,8 +588,11 @@ InvokeInterruptCallback(JSContext* cx)
         // Debugger treats invoking the interrupt callback as a "step", so
         // invoke the onStep handler.
         if (cx->compartment()->isDebuggee()) {
-            ScriptFrameIter iter(cx);
-            if (!iter.done() && iter.script()->stepModeEnabled()) {
+            ScriptFrameIter iter(cx, FrameIter::GO_THROUGH_SAVED);
+            if (!iter.done() &&
+                cx->compartment() == iter.compartment() &&
+                iter.script()->stepModeEnabled())
+            {
                 RootedValue rval(cx);
                 switch (Debugger::onSingleStep(cx, &rval)) {
                   case JSTRAP_ERROR:

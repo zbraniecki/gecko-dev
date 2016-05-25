@@ -768,7 +768,7 @@ nsPresContext::UpdateAfterPreferencesChanged()
   nsChangeHint hint = nsChangeHint(0);
 
   if (mPrefChangePendingNeedsReflow) {
-    NS_UpdateHint(hint, NS_STYLE_HINT_REFLOW);
+    hint |= NS_STYLE_HINT_REFLOW;
   }
 
   // Preferences require rerunning selector matching because we rebuild
@@ -2732,21 +2732,6 @@ nsPresContext::IsRootContentDocument() const
 
   nsIFrame* f = view->GetFrame();
   return (f && f->PresContext()->IsChrome());
-}
-
-bool
-nsPresContext::IsCrossProcessRootContentDocument()
-{
-  if (!IsRootContentDocument()) {
-    return false;
-  }
-
-  if (XRE_IsParentProcess()) {
-    return true;
-  }
-
-  TabChild* tabChild = TabChild::GetFrom(mShell);
-  return (tabChild && tabChild->IsRootContentDocument());
 }
 
 bool nsPresContext::GetPaintFlashing() const

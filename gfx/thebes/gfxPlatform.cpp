@@ -5,10 +5,11 @@
 
 #include "mozilla/layers/AsyncTransactionTracker.h" // for AsyncTransactionTracker
 #include "mozilla/layers/CompositorBridgeChild.h"
-#include "mozilla/layers/CompositorBridgeParent.h"
+#include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/SharedBufferManagerChild.h"
 #include "mozilla/layers/ISurfaceAllocator.h"     // for GfxMemoryImageReporter
+#include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
@@ -23,6 +24,7 @@
 #include "gfxEnv.h"
 #include "gfxTextRun.h"
 #include "gfxConfig.h"
+#include "MediaPrefs.h"
 
 #ifdef XP_WIN
 #include <process.h>
@@ -127,6 +129,7 @@ class mozilla::gl::SkiaGLGlue : public GenericAtomicRefCounted {
 
 #include "mozilla/Preferences.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Mutex.h"
 
@@ -587,6 +590,9 @@ gfxPlatform::Init()
 
     // Initialize the preferences by creating the singleton.
     gfxPrefs::GetSingleton();
+    MediaPrefs::GetSingleton();
+
+    GPUProcessManager::Initialize();
 
     auto fwd = new CrashStatsLogForwarder("GraphicsCriticalError");
     fwd->SetCircularBufferSize(gfxPrefs::GfxLoggingCrashLength());
@@ -836,6 +842,8 @@ gfxPlatform::Shutdown()
     GLContextProviderEGL::Shutdown();
 #endif
 
+    GPUProcessManager::Shutdown();
+
     // This is a bit iffy - we're assuming that we were the ones that set the
     // log forwarder in the Factory, so that it's our responsibility to
     // delete it.
@@ -865,7 +873,7 @@ gfxPlatform::InitLayersIPC()
 
     if (XRE_IsParentProcess())
     {
-        mozilla::layers::CompositorBridgeParent::StartUp();
+        layers::CompositorThreadHolder::Start();
 #ifdef MOZ_WIDGET_GONK
         SharedBufferManagerChild::StartUp();
 #endif
@@ -902,7 +910,7 @@ gfxPlatform::ShutdownLayersIPC()
 #endif
 
         // This has to happen after shutting down the child protocols.
-        layers::CompositorBridgeParent::ShutDown();
+        layers::CompositorThreadHolder::Shutdown();
     } else {
       // TODO: There are other kind of processes and we should make sure gfx
       // stuff is either not created there or shut down properly.
@@ -2059,13 +2067,12 @@ gfxPlatform::OptimalFormatForContent(gfxContentType aContent)
  * and remember the values.  Changing these preferences during the run will
  * not have any effect until we restart.
  */
-bool gANGLESupportsD3D11 = false;
-static bool sLayersSupportsHardwareVideoDecoding = false;
+static mozilla::Atomic<bool> sLayersSupportsHardwareVideoDecoding(false);
 static bool sLayersHardwareVideoDecodingFailed = false;
 static bool sBufferRotationCheckPref = true;
 static bool sPrefBrowserTabsRemoteAutostart = false;
 
-static bool sLayersAccelerationPrefsInitialized = false;
+static mozilla::Atomic<bool> sLayersAccelerationPrefsInitialized(false);
 
 void
 gfxPlatform::InitAcceleration()
@@ -2088,15 +2095,6 @@ gfxPlatform::InitAcceleration()
   nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
   nsCString discardFailureId;
   int32_t status;
-#ifdef XP_WIN
-  if (!gfxPrefs::LayersAccelerationDisabledDoNotUseDirectly() && gfxInfo) {
-    if (NS_SUCCEEDED(gfxInfo->GetFeatureStatus(nsIGfxInfo::FEATURE_DIRECT3D_11_ANGLE, discardFailureId, &status))) {
-      if (status == nsIGfxInfo::FEATURE_STATUS_OK) {
-        gANGLESupportsD3D11 = true;
-      }
-    }
-  }
-#endif
 
   if (Preferences::GetBool("media.hardware-video-decoding.enabled", false) &&
 #ifdef XP_WIN

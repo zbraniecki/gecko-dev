@@ -505,7 +505,7 @@ public:
   /**
    * This can be used anytime. Ownership passes to the caller!
    */
-  nsAutoPtr<LayerUserData> RemoveUserData(void* aKey);
+  UniquePtr<LayerUserData> RemoveUserData(void* aKey);
 
   /**
    * This getter can be used anytime.
@@ -1462,7 +1462,7 @@ public:
   /**
    * This can be used anytime. Ownership passes to the caller!
    */
-  nsAutoPtr<LayerUserData> RemoveUserData(void* aKey);
+  UniquePtr<LayerUserData> RemoveUserData(void* aKey);
   /**
    * This getter can be used anytime.
    */
@@ -2556,13 +2556,13 @@ class RefLayer : public ContainerLayer {
 
 private:
   virtual bool InsertAfter(Layer* aChild, Layer* aAfter) override
-  { MOZ_CRASH(); return false; }
+  { MOZ_CRASH("GFX: RefLayer"); return false; }
 
   virtual bool RemoveChild(Layer* aChild) override
-  { MOZ_CRASH(); return false; }
+  { MOZ_CRASH("GFX: RefLayer"); return false; }
 
   virtual bool RepositionChild(Layer* aChild, Layer* aAfter) override
-  { MOZ_CRASH(); return false; }
+  { MOZ_CRASH("GFX: RefLayer"); return false; }
 
 public:
   /**

@@ -14,7 +14,6 @@ scopes:
   - scheduler:*
 tasks:
   - taskId: '{{#as_slugid}}decision task{{/as_slugid}}'
-    reruns: 3
     task:
       routes:
         - index.gecko.v2.{{project}}.latest.firefox.decision
@@ -81,7 +80,8 @@ tasks:
             --owner='{{owner}}'
             --level='{{level}}'
             --revision-hash='{{revision_hash}}'
-            --extend-graph > /home/worker/artifacts/graph.json
+            --extend-graph > /home/worker/artifacts/graph.json &&
+            cp /home/worker/artifacts/graph.json /home/worker/artifacts/all_tasks.json
         graphs:
           - /home/worker/artifacts/graph.json
         artifacts:

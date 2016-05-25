@@ -318,6 +318,7 @@ pref("media.wmf.decoder.thread-count", -1);
 pref("media.wmf.low-latency.enabled", false);
 pref("media.wmf.skip-blacklist", false);
 pref("media.windows-media-foundation.allow-d3d11-dxva", true);
+pref("media.wmf.disable-d3d11-for-dlls", "igd10iumd32.dll: 20.19.15.4444, 20.19.15.4424, 20.19.15.4409, 20.19.15.4390, 20.19.15.4380, 20.19.15.4360, 10.18.10.4358, 20.19.15.4331, 20.19.15.4312, 20.19.15.4300, 10.18.15.4281, 10.18.15.4279, 10.18.10.4276, 10.18.15.4268, 10.18.15.4256, 10.18.10.4252, 10.18.14.4112, 10.18.10.3431, 10.18.10.3412, 10.18.10.3355, 9.18.10.3234, 9.18.10.3071, 9.18.10.3055; igd10umd32.dll: 9.17.10.4229, 9.17.10.2857, 8.15.10.2274, 8.15.10.2272, 8.15.10.2246, 8.15.10.1840, 8.15.10.1808; igd10umd64.dll: 9.17.10.4229, 10.18.10.3496; isonyvideoprocessor.dll: 4.1.2247.8090, 4.1.2153.6200; tosqep.dll: 1.2.15.526, 1.1.12.201, 1.0.11.318, 1.0.11.215, 1.0.10.1224; tosqep64.dll: 1.1.12.201, 1.0.11.215; nvwgf2um.dll: 10.18.13.5891, 10.18.13.5887, 10.18.13.5582, 10.18.13.5382, 9.18.13.3165; atidxx32.dll: 8.17.10.671, 8.17.10.661, 8.17.10.648, 8.17.10.644, 8.17.10.625, 8.17.10.605, 8.17.10.539, 8.17.10.525, 8.17.10.519, 8.17.10.511, 8.17.10.511, 8.17.10.451; atidxx64.dll: 8.17.10.661, 8.17.10.644");
 #endif
 #if defined(MOZ_FFMPEG)
 #if defined(XP_MACOSX)
@@ -361,9 +362,12 @@ pref("media.gmp.storage.version.expected", 1);
 
 // Filter what triggers user notifications.
 // See DecoderDoctorDocumentWatcher::ReportAnalysis for details.
-pref("media.decoder-doctor.notifications-allowed", "MediaWidevineNoWMFNoSilverlight");
+pref("media.decoder-doctor.notifications-allowed", "MediaWMFNeeded,MediaWidevineNoWMFNoSilverlight");
 // Whether we report partial failures.
 pref("media.decoder-doctor.verbose", false);
+
+// Whether to suspend decoding of videos in background tabs.
+pref("media.suspend-bkgnd-video.enabled", true);
 
 #ifdef MOZ_WEBRTC
 pref("media.navigator.enabled", true);
@@ -375,6 +379,8 @@ pref("media.navigator.load_adapt.high_load","0.90");
 pref("media.navigator.load_adapt.low_load","0.40");
 pref("media.navigator.video.default_fps",30);
 pref("media.navigator.video.default_minfps",10);
+pref("media.navigator.video.use_remb", true);
+
 
 pref("media.webrtc.debug.trace_mask", 0);
 pref("media.webrtc.debug.multi_log", false);
@@ -1066,7 +1072,6 @@ pref("dom.disable_window_open_feature.toolbar",     false);
 pref("dom.disable_window_open_feature.location",    false);
 pref("dom.disable_window_open_feature.personalbar", false);
 pref("dom.disable_window_open_feature.menubar",     false);
-pref("dom.disable_window_open_feature.scrollbars",  false);
 pref("dom.disable_window_open_feature.resizable",   true);
 pref("dom.disable_window_open_feature.minimizable", false);
 pref("dom.disable_window_open_feature.status",      true);
@@ -1510,6 +1515,12 @@ pref("network.http.enable-packaged-apps", false);
 // Enable this to bring in the signature verification if the signature exists.
 // Set to false if you don't need the signed packaged web app support (i.e. NSec).
 pref("network.http.signed-packages.enabled", false);
+
+// If it is set to false, headers with empty value will not appear in the header
+// array - behavior as it used to be. If it is true: empty headers coming from
+// the network will exits in header array as empty string. Call SetHeader with
+// an empty value will still delete the header.(Bug 6699259)
+pref("network.http.keep_empty_response_headers_as_empty_string", false);
 
 // default values for FTP
 // in a DSCP environment this should be 40 (0x28, or AF11), per RFC-4594,
@@ -2065,9 +2076,41 @@ pref("security.cert_pinning.process_headers_from_non_builtin_roots", false);
 // their protocol with the inner URI of the view-source URI
 pref("security.view-source.reachable-from-inner-protocol", false);
 
+// Services security settings
+pref("services.settings.server", "https://firefox.settings.services.mozilla.com/v1");
+
+// Blocklist preferences
+pref("extensions.blocklist.enabled", true);
+// OneCRL freshness checking depends on this value, so if you change it,
+// please also update security.onecrl.maximum_staleness_in_seconds.
+pref("extensions.blocklist.interval", 86400);
+// Required blocklist freshness for OneCRL OCSP bypass
+// (default is 1.25x extensions.blocklist.interval, or 30 hours)
+pref("security.onecrl.maximum_staleness_in_seconds", 108000);
+pref("extensions.blocklist.url", "https://blocklist.addons.mozilla.org/blocklist/3/%APP_ID%/%APP_VERSION%/%PRODUCT%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/%PING_COUNT%/%TOTAL_PING_COUNT%/%DAYS_SINCE_LAST_PING%/");
+pref("extensions.blocklist.detailsURL", "https://www.mozilla.com/%LOCALE%/blocklist/");
+pref("extensions.blocklist.itemURL", "https://blocklist.addons.mozilla.org/%LOCALE%/%APP%/blocked/%blockID%");
+// Controls what level the blocklist switches from warning about items to forcibly
+// blocking them.
+pref("extensions.blocklist.level", 2);
+// Blocklist via settings server (Kinto)
+pref("services.blocklist.changes.path", "/buckets/monitor/collections/changes/records");
+pref("services.blocklist.bucket", "blocklists");
+pref("services.blocklist.onecrl.collection", "certificates");
+pref("services.blocklist.onecrl.checked", 0);
+pref("services.blocklist.addons.collection", "addons");
+pref("services.blocklist.addons.checked", 0);
+pref("services.blocklist.plugins.collection", "plugins");
+pref("services.blocklist.plugins.checked", 0);
+pref("services.blocklist.gfx.collection", "gfx");
+pref("services.blocklist.gfx.checked", 0);
+
+// For now, let's keep settings server update out of the release builds
 #ifdef RELEASE_BUILD
+pref("services.blocklist.update_enabled", false);
 pref("security.onecrl.via.amo", true);
 #else
+pref("services.blocklist.update_enabled", true);
 pref("security.onecrl.via.amo", false);
 #endif
 
@@ -2404,11 +2447,7 @@ pref("layout.css.prefixes.font-features", true);
 pref("layout.css.prefixes.gradients", true);
 
 // Are webkit-prefixed properties & property-values supported?
-#ifdef RELEASE_BUILD
-pref("layout.css.prefixes.webkit", false);
-#else
 pref("layout.css.prefixes.webkit", true);
-#endif
 
 // Are "-webkit-{min|max}-device-pixel-ratio" media queries supported?
 // (Note: this pref has no effect if the master 'layout.css.prefixes.webkit'
@@ -2431,12 +2470,8 @@ pref("layout.css.scope-pseudo.enabled", true);
 // Is support for background-blend-mode enabled?
 pref("layout.css.background-blend-mode.enabled", true);
 
-// Is support for background-clip:text enabled? (bug 1264905)
-#ifdef RELEASE_BUILD
-pref("layout.css.background-clip-text.enabled", false);
-#else
+// Is support for background-clip:text enabled?
 pref("layout.css.background-clip-text.enabled", true);
-#endif
 
 // Is support for CSS vertical text enabled?
 pref("layout.css.vertical-text.enabled", true);
@@ -2586,6 +2621,9 @@ pref("dom.animations-api.core.enabled", true);
 // Note that if dom.animations-api.core.enabled is true, this preference is
 // ignored.
 pref("dom.animations-api.element-animate.enabled", true);
+
+// Pref to throttle offsreen animations
+pref("dom.animations.offscreen-throttling", true);
 
 // pref to permit users to make verified SOAP calls by default
 pref("capability.policy.default.SOAPCall.invokeVerifySourceHeader", "allAccess");
@@ -3284,20 +3322,12 @@ pref("plugin.scan.plid.all", true);
 // Whether sending WM_MOUSEWHEEL and WM_MOUSEHWHEEL to plugins on Windows.
 pref("plugin.mousewheel.enabled", true);
 
-// Help Windows NT, 2000, and XP dialup a RAS connection
-// when a network address is unreachable.
-pref("network.autodial-helper.enabled", false);
-
 // Switch the keyboard layout per window
 pref("intl.keyboard.per_window_layout", false);
 
 #ifdef NS_ENABLE_TSF
 // Enable/Disable TSF support on Vista or later.
 pref("intl.tsf.enable", true);
-
-// Force enable TSF even on WinXP or WinServer 2003.
-// Be aware, TSF framework on prior to Vista is not enough stable.
-pref("intl.tsf.force_enable", false);
 
 // Support IMEs implemented with IMM in TSF mode.
 pref("intl.tsf.support_imm", true);
@@ -4368,10 +4398,11 @@ pref("gfx.gralloc.fence-with-readpixels", false);
 pref("stagefright.force-enabled", false);
 pref("stagefright.disabled", false);
 
-#ifdef XP_WIN
-// The default TCP send window on Windows is too small, and autotuning only occurs on receive
-pref("network.tcp.sendbuffer", 131072);
-#endif
+// sendbuffer of 0 means use OS default, sendbuffer unset means use
+// gecko default which varies depending on windows version and is OS
+// default on non windows
+// pref("network.tcp.sendbuffer", 0);
+
 // TCP Keepalive
 pref("network.tcp.keepalive.enabled", true);
 // Default idle time before first TCP keepalive probe; same time for interval
@@ -5006,6 +5037,8 @@ pref("browser.safebrowsing.downloads.remote.block_potentially_unwanted", true);
 pref("browser.safebrowsing.downloads.remote.block_uncommon",             true);
 pref("browser.safebrowsing.debug", false);
 
+// The protocol version we communicate with google server.
+pref("browser.safebrowsing.provider.google.pver", "2.2");
 pref("browser.safebrowsing.provider.google.lists", "goog-badbinurl-shavar,goog-downloadwhite-digest256,goog-phish-shavar,goog-malware-shavar,goog-unwanted-shavar");
 pref("browser.safebrowsing.provider.google.updateURL", "https://safebrowsing.google.com/safebrowsing/downloads?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2&key=%GOOGLE_API_KEY%");
 pref("browser.safebrowsing.provider.google.gethashURL", "https://safebrowsing.google.com/safebrowsing/gethash?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2");
@@ -5023,6 +5056,8 @@ pref("urlclassifier.forbiddenTable", "test-forbid-simple");
 pref("browser.safebrowsing.blockedURIs.enabled", false);
 pref("urlclassifier.blockedTable", "test-block-simple,mozplugin-block-digest256");
 
+// The protocol version we communicate with mozilla server.
+pref("browser.safebrowsing.provider.mozilla.pver", "2.2");
 pref("browser.safebrowsing.provider.mozilla.lists", "mozstd-track-digest256,mozstd-trackwhite-digest256,mozfull-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256");
 pref("browser.safebrowsing.provider.mozilla.updateURL", "https://shavar.services.mozilla.com/downloads?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2");
 pref("browser.safebrowsing.provider.mozilla.gethashURL", "https://shavar.services.mozilla.com/gethash?client=SAFEBROWSING_ID&appver=%MAJOR_VERSION%&pver=2.2");

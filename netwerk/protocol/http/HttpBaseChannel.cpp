@@ -1243,7 +1243,10 @@ HttpBaseChannel::SetReferrerWithPolicy(nsIURI *referrer,
 
   // clear existing referrer, if any
   mReferrer = nullptr;
-  mRequestHead.ClearHeader(nsHttp::Referer);
+  nsresult rv = mRequestHead.ClearHeader(nsHttp::Referer);
+  if(NS_FAILED(rv)) {
+    return rv;
+  }
   mReferrerPolicy = REFERRER_POLICY_NO_REFERRER_WHEN_DOWNGRADE;
 
   if (!referrer) {
@@ -1287,7 +1290,6 @@ HttpBaseChannel::SetReferrerWithPolicy(nsIURI *referrer,
   }
 
   nsCOMPtr<nsIURI> referrerGrip;
-  nsresult rv;
   bool match;
 
   //
@@ -1660,9 +1662,38 @@ HttpBaseChannel::SetResponseHeader(const nsACString& header,
 NS_IMETHODIMP
 HttpBaseChannel::VisitResponseHeaders(nsIHttpHeaderVisitor *visitor)
 {
-  if (!mResponseHead)
+  if (!mResponseHead) {
     return NS_ERROR_NOT_AVAILABLE;
-  return mResponseHead->Headers().VisitHeaders(visitor);
+  }
+  return mResponseHead->Headers().VisitHeaders(visitor,
+    nsHttpHeaderArray::eFilterResponse);
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetOriginalResponseHeader(const nsACString& aHeader,
+                                           nsIHttpHeaderVisitor *aVisitor)
+{
+  if (!mResponseHead) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  nsHttpAtom atom = nsHttp::ResolveAtom(aHeader);
+  if (!atom) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return mResponseHead->Headers().GetOriginalHeader(atom, aVisitor);
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::VisitOriginalResponseHeaders(nsIHttpHeaderVisitor *aVisitor)
+{
+  if (!mResponseHead) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return mResponseHead->Headers().VisitHeaders(aVisitor,
+      nsHttpHeaderArray::eFilterResponseOriginal);
 }
 
 NS_IMETHODIMP
@@ -1883,15 +1914,16 @@ HttpBaseChannel::GetTopWindowURI(nsIURI **aTopWindowURI)
       return NS_ERROR_NOT_AVAILABLE;
     }
     nsCOMPtr<mozIDOMWindowProxy> win;
-    nsresult rv = util->GetTopWindowForChannel(this, getter_AddRefs(win));
+    rv = util->GetTopWindowForChannel(this, getter_AddRefs(win));
     if (NS_SUCCEEDED(rv)) {
       rv = util->GetURIFromWindow(win, getter_AddRefs(mTopWindowURI));
 #if DEBUG
       if (mTopWindowURI) {
         nsCString spec;
-        rv = mTopWindowURI->GetSpec(spec);
-        LOG(("HttpChannelBase::Setting topwindow URI spec %s [this=%p]\n",
-             spec.get(), this));
+        if (NS_SUCCEEDED(mTopWindowURI->GetSpec(spec))) {
+          LOG(("HttpChannelBase::Setting topwindow URI spec %s [this=%p]\n",
+               spec.get(), this));
+        }
       }
 #endif
     }

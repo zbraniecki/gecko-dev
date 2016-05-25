@@ -60,6 +60,7 @@ aboutSupport-showDir = { OS() ->
 aboutSupport-appBasicsEnabledPlugins = Enabled Plugins
 aboutSupport-appBasicsBuildConfig = Build Configuration
 aboutSupport-appBasicsMemoryUse = Memory Use
+aboutSupport-appBasicsPerformance = Wydajnosc
 aboutSupport-appBasicsServiceWorkers = Registered Service Workers
 aboutSupport-appBasicsMultiProcessSupport = Multiprocess Windows
 aboutSupport-appBasicsSafeMode = Safe Mode

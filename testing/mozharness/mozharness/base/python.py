@@ -454,9 +454,9 @@ class ResourceMonitoringMixin(object):
     def __init__(self, *args, **kwargs):
         super(ResourceMonitoringMixin, self).__init__(*args, **kwargs)
 
-        self.register_virtualenv_module('psutil>=0.7.1', method='pip',
+        self.register_virtualenv_module('psutil>=3.1.1', method='pip',
                                         optional=True)
-        self.register_virtualenv_module('mozsystemmonitor==0.0.0',
+        self.register_virtualenv_module('mozsystemmonitor==0.3',
                                         method='pip', optional=True)
         self._resource_monitor = None
 
@@ -506,6 +506,17 @@ class ResourceMonitoringMixin(object):
         try:
             self._resource_monitor.stop()
             self._log_resource_usage()
+
+            # Upload a JSON file containing the raw resource data.
+            try:
+                upload_dir = self.query_abs_dirs()['abs_blob_upload_dir']
+                with open(os.path.join(upload_dir, 'resource-usage.json'), 'wb') as fh:
+                    json.dump(self._resource_monitor.as_dict(), fh,
+                              sort_keys=True, indent=4)
+            except (AttributeError, KeyError):
+                self.exception('could not upload resource usage JSON',
+                               level=WARNING)
+
         except Exception:
             self.warning("Exception when reporting resource usage: %s" %
                          traceback.format_exc())
@@ -782,18 +793,18 @@ class InfluxRecordingMixin(object):
                 }
 
             # The top-level data has the overall resource usage, which we record
-            # under the name 'TOTAL' to separate it from the individual tiers.
+            # under the name 'TOTAL' to separate it from the individual phases.
             data['points'].append(self._get_resource_usage(resources, 'TOTAL', iolen, cpulen))
 
-            # Each tier also has the same resource stats as the top-level.
-            for tier in resources['tiers']:
-                data['points'].append(self._get_resource_usage(tier, tier['name'], iolen, cpulen))
-                if 'duration' not in tier:
+            # Each phases also has the same resource stats as the top-level.
+            for phase in resources['phases']:
+                data['points'].append(self._get_resource_usage(phase, phase['name'], iolen, cpulen))
+                if 'duration' not in phase:
                     self.build_metrics_summary = None
                 elif self.build_metrics_summary:
                     self.build_metrics_summary['subtests'].append({
-                        'name': tier['name'],
-                        'value': tier['duration'],
+                        'name': phase['name'],
+                        'value': phase['duration'],
                     })
 
             self.record_influx_stat([data])

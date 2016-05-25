@@ -497,6 +497,19 @@ nsDOMWindowUtils::SetResolutionAndScaleTo(float aResolution)
 }
 
 NS_IMETHODIMP
+nsDOMWindowUtils::SetRestoreResolution(float aResolution)
+{
+  nsIPresShell* presShell = GetPresShell();
+  if (!presShell) {
+    return NS_ERROR_FAILURE;
+  }
+
+  presShell->SetRestoreResolution(aResolution);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDOMWindowUtils::GetResolution(float* aResolution)
 {
   nsIPresShell* presShell = GetPresShell();
@@ -2484,6 +2497,10 @@ nsDOMWindowUtils::ZoomToFocusedInput()
     }
 
     CSSRect bounds = nsLayoutUtils::GetBoundingContentRect(content, rootScrollFrame);
+    if (bounds.IsEmpty()) {
+      // Do not zoom on empty bounds. Bail out.
+      return NS_OK;
+    }
     bounds.Inflate(15.0f, 0.0f);
     widget->ZoomToRect(presShellId, viewId, bounds, flags);
   }

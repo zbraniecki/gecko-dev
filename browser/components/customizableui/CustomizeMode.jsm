@@ -1177,6 +1177,8 @@ CustomizeMode.prototype = {
 
       CustomizableUI.reset();
 
+      this.swatchForTheme(this.document);
+
       yield this._wrapToolbarItems();
       this.populatePalette();
 
@@ -1202,6 +1204,8 @@ CustomizeMode.prototype = {
       yield this._unwrapToolbarItems();
 
       CustomizableUI.undoReset();
+
+      this.swatchForTheme(this.document);
 
       yield this._wrapToolbarItems();
       this.populatePalette();
@@ -1436,17 +1440,6 @@ CustomizeMode.prototype = {
       }
       let hideRecommendedLabel = (footer.previousSibling == recommendedLabel);
       recommendedLabel.hidden = hideRecommendedLabel;
-
-      let hideMyThemesSection = themesInMyThemesSection < 2 && hideRecommendedLabel;
-      let headerLabel = doc.getElementById("customization-lwtheme-menu-header");
-      if (hideMyThemesSection) {
-        let element = recommendedLabel.previousSibling;
-        while (element && element != headerLabel) {
-          element.hidden = true;
-          element = element.previousSibling;
-        }
-      }
-      headerLabel.hidden = hideMyThemesSection;
     }.bind(this));
   },
 
@@ -1462,6 +1455,10 @@ CustomizeMode.prototype = {
       }
     }
     target.removeAttribute("height");
+
+    if (LightweightThemeManager.currentTheme) {
+      this._onUIChange();
+    }
   },
 
   _onUIChange: function() {

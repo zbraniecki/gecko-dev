@@ -632,7 +632,7 @@ PostGlobalWriteBarrier(JSRuntime* rt, JSObject* obj)
     MOZ_ASSERT(obj->is<GlobalObject>());
     if (!obj->compartment()->globalWriteBarriered) {
         PostWriteBarrier(rt, obj);
-        obj->compartment()->globalWriteBarriered = true;
+        obj->compartment()->globalWriteBarriered = 1;
     }
 }
 
@@ -1270,7 +1270,7 @@ MarkObjectGroupFromIon(JSRuntime* rt, ObjectGroup** groupp)
 bool
 ThrowRuntimeLexicalError(JSContext* cx, unsigned errorNumber)
 {
-    ScriptFrameIter iter(cx);
+    ScriptFrameIter iter(cx, FrameIter::GO_THROUGH_SAVED);
     RootedScript script(cx, iter.script());
     ReportRuntimeLexicalError(cx, errorNumber, script, iter.pc());
     return false;

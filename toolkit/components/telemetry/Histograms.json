@@ -336,6 +336,26 @@
     "n_buckets": 50,
     "description": "Max time spent on one forget skippable (ms)"
   },
+  "FULLSCREEN_TRANSITION_BLACK_MS": {
+    "alert_emails": ["xquan@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "low": 100,
+    "high": 5000,
+    "n_buckets": 50,
+    "bug_numbers": [1271160],
+    "description": "The time spent in the fully-black screen in fullscreen transition"
+  },
+  "FULLSCREEN_CHANGE_MS": {
+    "alert_emails": ["xquan@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "low": 100,
+    "high": 5000,
+    "n_buckets": 50,
+    "bug_numbers": [1271160],
+    "description": "The time content uses to enter/exit fullscreen regardless of fullscreen transition timeout"
+  },
   "GC_REASON_2": {
     "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
     "expires_in_version": "never",
@@ -1033,10 +1053,13 @@
     "kind": "boolean",
     "description": "2D canvas used"
   },
-  "CANVAS_WEBGL_USED": {
+  "CANVAS_WEBGL_FAILURE_ID": {
+    "alert_emails": ["bgirard@mozilla.com"],
     "expires_in_version": "never",
-    "kind": "boolean",
-    "description": "WebGL canvas used"
+    "kind": "count",
+    "keyed": true,
+    "description": "WebGL runtime and dynamic failure IDs. This will record a count for each context creation success or failure. Each failure id is a unique identifier that can be traced back to a particular failure branch or blocklist rule.",
+    "bug_numbers": [1272808]
   },
   "CANVAS_WEBGL_SUCCESS": {
     "alert_emails": ["jmuizelaar@mozilla.com"],
@@ -1044,6 +1067,11 @@
     "kind": "boolean",
     "description": "WebGL1 creation success",
     "bug_numbers": [1247327]
+  },
+  "CANVAS_WEBGL_USED": {
+    "expires_in_version": "never",
+    "kind": "boolean",
+    "description": "WebGL canvas used"
   },
   "CANVAS_WEBGL2_SUCCESS": {
     "alert_emails": ["jmuizelaar@mozilla.com"],
@@ -1372,6 +1400,12 @@
     "n_values": 10,
     "description": "Was the URL upgraded to HTTPS?  (0=already HTTPS, 1=no reason to upgrade, 2=STS upgrade blocked by pref, 3=upgraded with STS, 4=upgraded with CSP)"
   },
+  "HTTP_RESPONSE_STATUS_CODE": {
+    "expires_in_version": "never",
+    "kind": "enumerated",
+    "n_values": 12,
+    "description": "Whether the URL gets redirected?  (0=200, 1=301, 2=302, 3=304, 4=307, 5=308, 6=400, 7=401, 8=403, 9=404, 10=500, 11=other)"
+  },
   "HTTP_AUTH_DIALOG_STATS": {
     "expires_in_version": "never",
     "kind": "enumerated",
@@ -1388,12 +1422,15 @@
     "description": "Recorded once for each HTTP 401 response. The value records the type of authentication and the TLS-enabled status. (0=basic/clear, 1=basic/tls, 2=digest/clear, 3=digest/tls, 4=ntlm/clear, 5=ntlm/tls, 6=negotiate/clear, 7=negotiate/tls)"
   },
   "SSL_HANDSHAKE_VERSION": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
+    "bug_numbers": [1250568],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 16,
-    "description": "SSL Version (1=tls1, 2=tls1.1, 3=tls1.2)"
+    "description": "SSL Version (1=tls1, 2=tls1.1, 3=tls1.2, 4=tls1.3)"
   },
   "SSL_TIME_UNTIL_READY": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 60000,
@@ -1401,6 +1438,7 @@
     "description": "ms of SSL wait time including TCP and proxy tunneling"
   },
   "SSL_TIME_UNTIL_HANDSHAKE_FINISHED": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 60000,
@@ -1408,6 +1446,7 @@
     "description": "ms of SSL wait time for full handshake including TCP and proxy tunneling"
   },
   "SSL_BYTES_BEFORE_CERT_CALLBACK": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 32000,
@@ -1415,23 +1454,27 @@
     "description": "plaintext bytes read before a server certificate authenticated"
   },
   "SSL_NPN_TYPE": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 16,
     "description": "NPN Results (0=none, 1=negotiated, 2=no-overlap, 3=selected(alpn))"
   },
   "SSL_RESUMED_SESSION": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "boolean",
     "description": "complete TLS connect that used TLS Sesison Resumption"
   },
   "CERT_VALIDATION_HTTP_REQUEST_RESULT": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 16,
     "description": "HTTP result of OCSP, etc.. (0=canceled, 1=OK, 2=FAILED, 3=internal-error)"
   },
   "CERT_VALIDATION_HTTP_REQUEST_CANCELED_TIME": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 60000,
@@ -1439,6 +1482,7 @@
     "description": "ms elapsed time of OCSP etc.. that was canceled"
   },
   "CERT_VALIDATION_HTTP_REQUEST_SUCCEEDED_TIME": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 60000,
@@ -1446,6 +1490,7 @@
     "description": "ms elapsed time of OCSP etc.. that succeeded"
   },
   "CERT_VALIDATION_HTTP_REQUEST_FAILED_TIME": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 60000,
@@ -1453,12 +1498,14 @@
     "description": "ms elapsed time of OCSP etc.. that failed"
   },
   "SSL_KEY_EXCHANGE_ALGORITHM_FULL": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 16,
     "description": "SSL Handshake Key Exchange Algorithm for full handshake (null=0, rsa=1, dh=2, fortezza=3, ecdh=4)"
   },
   "SSL_KEY_EXCHANGE_ALGORITHM_RESUMED": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 16,
@@ -2835,18 +2882,6 @@
     "kind": "boolean",
     "description": "The URL path contains !//"
   },
-  "NETWORK_AUTODIAL": {
-    "expires_in_version": "never",
-    "kind": "boolean",
-    "description": "session used autodialer"
-  },
-  "NETWORK_SESSION_AT_256FD": {
-    "expires_in_version": "49",
-    "kind": "boolean",
-    "description": "session exceeded old 256 limit",
-    "bug_numbers": [1260218],
-    "alert_emails": ["necko@mozilla.com"]
-  },
   "NETWORK_SESSION_AT_900FD": {
     "expires_in_version": "never",
     "kind": "boolean",
@@ -3629,6 +3664,16 @@
     "n_buckets": 10,
     "cpp_guard": "ANDROID",
     "description": "Number of reading list items stored in the browser DB *** No longer needed (bug 1156565). Delete histogram and accumulation code! ***"
+  },
+  "FENNEC_READER_VIEW_CACHE_SIZE": {
+    "expires_in_version": "60",
+    "alert_emails": ["mobile-frontend@mozilla.com"],
+    "kind": "exponential",
+    "low": 32,
+    "high": 51200,
+    "n_buckets": 20,
+    "description": "Total disk space used by items in the reader view cache (KB)",
+    "bug_numbers": [1246159]
   },
   "PLACES_SORTED_BOOKMARKS_PERC": {
     "expires_in_version": "never",
@@ -5484,6 +5529,16 @@
     "kind": "boolean",
     "description": "search service has been initialized synchronously"
   },
+  "SEARCH_SERVICE_ENGINE_COUNT": {
+    "releaseChannelCollection": "opt-out",
+    "alert_emails": ["florian@mozilla.com"],
+    "expires_in_version": "55",
+    "bug_numbers": [1268424],
+    "kind": "linear",
+    "high": 200,
+    "n_buckets": 50,
+    "description": "Recorded once per session near startup: records the search plugin count, including both built-in plugins (including the ones the user has hidden) and user-installed plugins."
+  },
   "SEARCH_SERVICE_HAS_UPDATES": {
     "alert_emails": ["florian@mozilla.com"],
     "expires_in_version": "50",
@@ -5613,6 +5668,7 @@
     "description": "Time (ms) it takes to run memory reporters when sending a telemetry ping"
   },
   "SSL_SUCCESFUL_CERT_VALIDATION_TIME_MOZILLAPKIX" : {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 60000,
@@ -5620,6 +5676,7 @@
     "description": "Time spent on a successful cert verification in mozilla::pkix mode (ms)"
   },
   "SSL_INITIAL_FAILED_CERT_VALIDATION_TIME_MOZILLAPKIX" : {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 60000,
@@ -8232,151 +8289,185 @@
     "n_values": 10,
     "description": "The number of errors using the HomeProvider due to a locked DB. *** No longer needed (bug 1156565). Delete histogram and accumulation code! ***"
   },
-  "SSL_TLS12_INTOLERANCE_REASON_PRE": {
+  "SSL_TLS13_INTOLERANCE_REASON_PRE": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
+    "bug_numbers": [1250568],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 64,
-    "description": "detected symptom of TLS 1.2 intolerance, before considering historical info"
+    "description": "Potential TLS 1.3 intolerance, before considering historical info (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp)."
+  },
+  "SSL_TLS13_INTOLERANCE_REASON_POST": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
+    "bug_numbers": [1250568],
+    "expires_in_version": "never",
+    "kind": "enumerated",
+    "n_values": 64,
+    "description": "Potential TLS 1.3 intolerance, after considering historical info (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp)."
+  },
+  "SSL_TLS12_INTOLERANCE_REASON_PRE": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "enumerated",
+    "n_values": 64,
+    "description": "Potential TLS 1.2 intolerance, before considering historical info (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp)."
   },
   "SSL_TLS12_INTOLERANCE_REASON_POST": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 64,
-    "description": "detected symptom of TLS 1.2 intolerance, after considering historical info"
+    "description": "Potential TLS 1.2 intolerance, after considering historical info (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp)."
   },
   "SSL_TLS11_INTOLERANCE_REASON_PRE": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 64,
-    "description": "detected symptom of TLS 1.1 intolerance, before considering historical info"
+    "description": "Potential TLS 1.1 intolerance, before considering historical info (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp)."
   },
   "SSL_TLS11_INTOLERANCE_REASON_POST": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 64,
-    "description": "detected symptom of TLS 1.1 intolerance, after considering historical info"
+    "description": "Potential TLS 1.1 intolerance, after considering historical info (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp)."
   },
   "SSL_TLS10_INTOLERANCE_REASON_PRE": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 64,
-    "description": "detected symptom of TLS 1.0 intolerance, before considering historical info"
+    "description": "Potential TLS 1.0 intolerance, before considering historical info (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp)."
   },
   "SSL_TLS10_INTOLERANCE_REASON_POST": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 64,
-    "description": "detected symptom of TLS 1.0 intolerance, after considering historical info"
+    "description": "Potential TLS 1.0 intolerance, after considering historical info (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp)."
   },
   "SSL_VERSION_FALLBACK_INAPPROPRIATE": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 64,
-    "description": "TLS/SSL version intolerance was falsely detected, server rejected handshake"
+    "description": "TLS/SSL version intolerance was falsely detected, server rejected handshake (see tlsIntoleranceTelemetryBucket() in nsNSSIOLayer.cpp)."
   },
   "SSL_FALLBACK_LIMIT_REACHED": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "default",
     "kind": "enumerated",
     "n_values": 16,
     "description": "TLS/SSL version fallback reached the minimum version (1=TLS 1.0, 2=TLS 1.1, 3=TLS 1.2) or the fallback limit (4=TLS 1.0, 8=TLS 1.1, 12=TLS 1.2), stopped the fallback"
   },
   "SSL_WEAK_CIPHERS_FALLBACK": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 64,
     "description": "Fallback attempted when server did not support any strong cipher suites"
   },
   "SSL_CIPHER_SUITE_FULL": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 128,
     "description": "Negotiated cipher suite in full handshake (see key in HandshakeCallback in nsNSSCallbacks.cpp)"
   },
   "SSL_CIPHER_SUITE_RESUMED": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 128,
     "description": "Negotiated cipher suite in resumed handshake (see key in HandshakeCallback in nsNSSCallbacks.cpp)"
   },
   "SSL_KEA_RSA_KEY_SIZE_FULL": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 24,
     "description": "RSA KEA (TLS_RSA_*) key size in full handshake"
   },
   "SSL_KEA_DHE_KEY_SIZE_FULL": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 24,
     "description": "DHE KEA (TLS_DHE_*) key size in full handshake"
   },
   "SSL_KEA_ECDHE_CURVE_FULL": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 36,
     "description": "ECDHE KEA (TLS_ECDHE_*) curve (23=P-256, 24=P-384, 25=P-521) in full handshake"
   },
   "SSL_AUTH_ALGORITHM_FULL": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 16,
     "description": "SSL Authentication Algorithm (null=0, rsa=1, dsa=2, ecdsa=4) in full handshake"
   },
   "SSL_AUTH_RSA_KEY_SIZE_FULL": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 24,
     "description": "RSA signature key size for TLS_*_RSA_* in full handshake"
   },
-  "SSL_AUTH_DSA_KEY_SIZE_FULL": {
-    "expires_in_version": "never",
-    "kind": "enumerated",
-    "n_values": 24,
-    "description": "DSA signature key size for TLS_*_DSS_* in full handshake"
-  },
   "SSL_AUTH_ECDSA_CURVE_FULL": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 36,
     "description": "ECDSA signature curve for TLS_*_ECDSA_* in full handshake (23=P-256, 24=P-384, 25=P-521)"
   },
   "SSL_SYMMETRIC_CIPHER_FULL": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 32,
     "description": "Symmetric cipher used in full handshake (null=0, rc4=1, 3des=4, aes-cbc=7, camellia=8, seed=9, aes-gcm=10)"
   },
   "SSL_SYMMETRIC_CIPHER_RESUMED": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 32,
     "description": "Symmetric cipher used in resumed handshake (null=0, rc4=1, 3des=4, aes-cbc=7, camellia=8, seed=9, aes-gcm=10)"
   },
   "SSL_REASONS_FOR_NOT_FALSE_STARTING": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 512,
     "description": "Bitmask of reasons we did not false start when libssl would have let us (see key in nsNSSCallbacks.cpp)"
   },
   "SSL_HANDSHAKE_TYPE": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 8,
     "description": "Type of handshake (1=resumption, 2=false started, 3=chose not to false start, 4=not allowed to false start)"
   },
   "SSL_OCSP_STAPLING": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 8,
     "description": "Status of OCSP stapling on this handshake (1=present, good; 2=none; 3=present, expired; 4=present, other error)"
   },
   "SSL_OCSP_MAY_FETCH": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "default",
     "kind": "enumerated",
     "n_values": 8,
     "description": "For non-stapling cases, is OCSP fetching a possibility? (0=yes, 1=no because missing/invalid OCSP URI, 2=no because fetching disabled, 3=no because both)"
   },
   "SSL_CERT_ERROR_OVERRIDES": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 24,
@@ -8398,6 +8489,7 @@
     "description": "How many permanent certificate overrides a user has stored."
   },
   "SSL_SERVER_AUTH_EKU": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "enumerated",
     "n_values": 10,
@@ -8415,11 +8507,13 @@
     "description": "User interaction with the TLS Error Reporter in about:neterror (0=Error seen, 1='auto' checked, 2='auto' unchecked, 3=Sent manually, 4=Sent automatically, 5=Send success, 6=Send failure, 7=Report section expanded)"
   },
   "CERT_OCSP_ENABLED": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "boolean",
     "description": "Is OCSP fetching enabled? (pref security.OCSP.enabled)"
   },
   "CERT_OCSP_REQUIRED": {
+    "alert_emails": ["seceng-telemetry@mozilla.com"],
     "expires_in_version": "never",
     "kind": "boolean",
     "description": "Is OCSP required when the cert has an OCSP URI? (pref security.OCSP.require)"
@@ -8816,11 +8910,6 @@
     "expires_in_version": "never",
     "kind": "boolean",
     "description": "Whether a browser window is set as an e10s window"
-  },
-  "E10S_STILL_ACCEPTED_FROM_PROMPT": {
-    "expires_in_version": "never",
-    "kind": "boolean",
-    "description": "Whether a user who accepted e10s from the prompt is still using e10s"
   },
   "E10S_BLOCKED_FROM_RUNNING": {
     "expires_in_version": "never",
@@ -9380,6 +9469,15 @@
     "kind": "count",
     "bug_numbers": [1251667],
     "description": "The number of pages that trigger slow script notices"
+  },
+  "SLOW_SCRIPT_NOTIFY_DELAY": {
+    "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "high": 60000,
+    "n_buckets": 50,
+    "bug_numbers": [1271978],
+    "description": "The difference between the js slow script timeout for content set in prefs and the actual time we waited before displaying the notification (msec)."
   },
   "PLUGIN_HANG_NOTICE_COUNT": {
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
@@ -10571,16 +10669,6 @@
     "bug_numbers": [1238433],
     "description": "Percentage of frames decoded frames dropped in an HTMLVideoElement"
   },
-  "VIDEO_DETAILED_DROPPED_FRAMES_PROPORTION" : {
-    "alert_emails": ["lchristie@mozilla.com", "cpearce@mozilla.com"],
-    "expires_in_version": "55",
-    "kind": "linear",
-    "high": 100,
-    "n_buckets": 50,
-    "keyed": true,
-    "bug_numbers": [1238433],
-    "description": "Percentage of frames decoded frames dropped in an HTMLVideoElement, keyed by MimeType, Resolution and Hardware Accelerated Decoding"
-  },
   "TAB_SWITCH_CACHE_POSITION": {
     "expires_in_version": "55",
     "bug_numbers": [1242013],
@@ -10654,6 +10742,54 @@
     "expires_in_version": "55",
     "kind": "boolean",
     "description": "Result of call to SandboxBroker::Initialize"
+  },
+  "SANDBOX_CAPABILITIES_SECCOMP_BPF": {
+    "alert_emails": ["gcp@mozilla.com"],
+    "bug_numbers": [1098428],
+    "expires_in_version": "55",
+    "kind": "flag",
+    "cpp_guard": "XP_LINUX",
+    "description": "Whether the system has seccomp-bpf capability"
+  },
+  "SANDBOX_CAPABILITIES_SECCOMP_TSYNC": {
+    "alert_emails": ["gcp@mozilla.com"],
+    "bug_numbers": [1098428],
+    "expires_in_version": "55",
+    "kind": "flag",
+    "cpp_guard": "XP_LINUX",
+    "description": "Whether the system has seccomp-bpf thread-sync capability"
+  },
+  "SANDBOX_CAPABILITIES_USER_NAMESPACES": {
+    "alert_emails": ["gcp@mozilla.com"],
+    "bug_numbers": [1098428],
+    "expires_in_version": "55",
+    "kind": "flag",
+    "cpp_guard": "XP_LINUX",
+    "description": "Whether our process succedeed in creating a user namespace"
+  },
+  "SANDBOX_CAPABILITIES_USER_NAMESPACES_PRIVILEGED": {
+    "alert_emails": ["gcp@mozilla.com"],
+    "bug_numbers": [1098428],
+    "expires_in_version": "55",
+    "kind": "flag",
+    "cpp_guard": "XP_LINUX",
+    "description": "Whether the system has the capability to create privileged user namespaces"
+  },
+ "SANDBOX_CAPABILITIES_ENABLED_MEDIA": {
+    "alert_emails": ["gcp@mozilla.com"],
+    "bug_numbers": [1098428],
+    "expires_in_version": "55",
+    "kind": "flag",
+    "cpp_guard": "XP_LINUX",
+    "description": "Whether the sandbox is enabled for media/GMP plugins"
+  },
+ "SANDBOX_CAPABILITIES_ENABLED_CONTENT": {
+    "alert_emails": ["gcp@mozilla.com"],
+    "bug_numbers": [1098428],
+    "expires_in_version": "55",
+    "kind": "flag",
+    "cpp_guard": "XP_LINUX",
+    "description": "Whether the sandbox is enabled for the content process"
   },
   "SYNC_WORKER_OPERATION": {
     "alert_emails": ["amarchesini@mozilla.com", "khuey@mozilla.com" ],

@@ -580,16 +580,6 @@ public:
     SetHTMLBoolAttr(nsGkAtoms::muted, aMuted, aRv);
   }
 
-  bool MozMediaStatisticsShowing() const
-  {
-    return mStatsShowing;
-  }
-
-  void SetMozMediaStatisticsShowing(bool aShow)
-  {
-    mStatsShowing = aShow;
-  }
-
   bool MozAllowCasting() const
   {
     return mAllowCasting;
@@ -742,9 +732,6 @@ protected:
     MOZ_ASSERT(aDecoder); // Use ShutdownDecoder() to clear.
     mDecoder = aDecoder;
   }
-
-  virtual void GetItemValueText(DOMString& text) override;
-  virtual void SetItemValueText(const nsAString& text) override;
 
   class WakeLockBoolWrapper {
   public:

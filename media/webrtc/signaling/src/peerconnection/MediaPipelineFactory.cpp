@@ -147,6 +147,7 @@ JsepCodecDescToCodecConfig(const JsepCodecDescription& aCodec,
   configRaw->mAckFbTypes = desc.mAckFbTypes;
   configRaw->mNackFbTypes = desc.mNackFbTypes;
   configRaw->mCcmFbTypes = desc.mCcmFbTypes;
+  configRaw->mRembFbSet = desc.RtcpFbRembIsSet();
 
   *aConfig = configRaw;
   return NS_OK;
@@ -458,6 +459,14 @@ MediaPipelineFactory::CreateOrUpdateMediaPipeline(
   } else {
     // We've created the TransportFlow, nothing else to do here.
     return NS_OK;
+  }
+
+  if (aTrack.GetActive()) {
+    auto error = conduit->StartTransmitting();
+    if (error) {
+      MOZ_MTLOG(ML_ERROR, "StartTransmitting failed: " << error);
+      return NS_ERROR_FAILURE;
+    }
   }
 
   RefPtr<MediaPipeline> pipeline =
@@ -786,6 +795,15 @@ MediaPipelineFactory::GetOrCreateVideoConduit(
   }
 
   if (receiving) {
+    if (!aTrackPair.mSending) {
+      // No send track, but we still need to configure an SSRC for receiver
+      // reports.
+      if (!conduit->SetLocalSSRC(aTrackPair.mRecvonlySsrc)) {
+        MOZ_MTLOG(ML_ERROR, "SetLocalSSRC failed");
+        return NS_ERROR_FAILURE;
+      }
+    }
+
     // Prune out stuff we cannot actually do. We should work to eliminate the
     // need for this.
     bool configuredH264 = false;
@@ -815,15 +833,6 @@ MediaPipelineFactory::GetOrCreateVideoConduit(
     if (error) {
       MOZ_MTLOG(ML_ERROR, "ConfigureRecvMediaCodecs failed: " << error);
       return NS_ERROR_FAILURE;
-    }
-
-    if (!aTrackPair.mSending) {
-      // No send track, but we still need to configure an SSRC for receiver
-      // reports.
-      if (!conduit->SetLocalSSRC(aTrackPair.mRecvonlySsrc)) {
-        MOZ_MTLOG(ML_ERROR, "SetLocalSSRC failed");
-        return NS_ERROR_FAILURE;
-      }
     }
   } else {
     // For now we only expect to have one ssrc per local track.
@@ -867,24 +876,18 @@ MediaPipelineFactory::ConfigureVideoCodecMode(const JsepTrack& aTrack,
 {
 #if !defined(MOZILLA_EXTERNAL_LINKAGE)
   RefPtr<LocalSourceStreamInfo> stream =
-    mPCMedia->GetLocalStreamById(aTrack.GetStreamId());
+    mPCMedia->GetLocalStreamByTrackId(aTrack.GetTrackId());
 
   //get video track
+  RefPtr<mozilla::dom::MediaStreamTrack> track =
+    stream->GetTrackById(aTrack.GetTrackId());
+
   RefPtr<mozilla::dom::VideoStreamTrack> videotrack =
-    stream->GetVideoTrackByTrackId(aTrack.GetTrackId());
+    track->AsVideoStreamTrack();
 
   if (!videotrack) {
     MOZ_MTLOG(ML_ERROR, "video track not available");
     return NS_ERROR_FAILURE;
-  }
-
-  //get video source type
-  RefPtr<DOMMediaStream> mediastream =
-    mPCMedia->GetLocalStreamById(aTrack.GetStreamId())->GetMediaStream();
-
-  DOMLocalMediaStream* domLocalStream = mediastream->AsDOMLocalMediaStream();
-  if (!domLocalStream) {
-    return NS_OK;
   }
 
   dom::MediaSourceEnum source = videotrack->GetSource().GetMediaSource();
@@ -942,9 +945,8 @@ MediaPipelineFactory::EnsureExternalCodec(VideoSessionConduit& aConduit,
                encoder = MediaCodecVideoCodec::CreateEncoder(MediaCodecVideoCodec::CodecType::CODEC_VP8);
                if (encoder) {
                  return aConduit.SetExternalSendCodec(aConfig, encoder);
-               } else {
-                 return kMediaConduitNoError;
                }
+               return kMediaConduitNoError;
              }
            }
          }
@@ -968,9 +970,8 @@ MediaPipelineFactory::EnsureExternalCodec(VideoSessionConduit& aConduit,
                decoder = MediaCodecVideoCodec::CreateDecoder(MediaCodecVideoCodec::CodecType::CODEC_VP8);
                if (decoder) {
                  return aConduit.SetExternalRecvCodec(aConfig, decoder);
-               } else {
-                 return kMediaConduitNoError;
                }
+               return kMediaConduitNoError;
              }
            }
          }
@@ -978,9 +979,11 @@ MediaPipelineFactory::EnsureExternalCodec(VideoSessionConduit& aConduit,
      }
 #endif
      return kMediaConduitNoError;
-  } else if (aConfig->mName == "VP9") {
+  }
+  if (aConfig->mName == "VP9") {
     return kMediaConduitNoError;
-  } else if (aConfig->mName == "H264") {
+  }
+  if (aConfig->mName == "H264") {
     if (aConduit.CodecPluginID() != 0) {
       return kMediaConduitNoError;
     }
@@ -995,32 +998,25 @@ MediaPipelineFactory::EnsureExternalCodec(VideoSessionConduit& aConduit,
 #endif
       if (encoder) {
         return aConduit.SetExternalSendCodec(aConfig, encoder);
-      } else {
-        return kMediaConduitInvalidSendCodec;
       }
-    } else {
-      VideoDecoder* decoder = nullptr;
-#ifdef MOZ_WEBRTC_OMX
-      decoder =
-          OMXVideoCodec::CreateDecoder(OMXVideoCodec::CodecType::CODEC_H264);
-#else
-      decoder = GmpVideoCodec::CreateDecoder();
-#endif
-      if (decoder) {
-        return aConduit.SetExternalRecvCodec(aConfig, decoder);
-      } else {
-        return kMediaConduitInvalidReceiveCodec;
-      }
+      return kMediaConduitInvalidSendCodec;
     }
-    NS_NOTREACHED("Shouldn't get here!");
-  } else {
-    MOZ_MTLOG(ML_ERROR,
-              "Invalid video codec configured: " << aConfig->mName.c_str());
-    return aIsSend ? kMediaConduitInvalidSendCodec
-                   : kMediaConduitInvalidReceiveCodec;
+    VideoDecoder* decoder = nullptr;
+#ifdef MOZ_WEBRTC_OMX
+    decoder =
+      OMXVideoCodec::CreateDecoder(OMXVideoCodec::CodecType::CODEC_H264);
+#else
+    decoder = GmpVideoCodec::CreateDecoder();
+#endif
+    if (decoder) {
+      return aConduit.SetExternalRecvCodec(aConfig, decoder);
+    }
+    return kMediaConduitInvalidReceiveCodec;
   }
-
-  NS_NOTREACHED("Shouldn't get here!");
+  MOZ_MTLOG(ML_ERROR,
+            "Invalid video codec configured: " << aConfig->mName.c_str());
+  return aIsSend ? kMediaConduitInvalidSendCodec
+                 : kMediaConduitInvalidReceiveCodec;
 }
 
 } // namespace mozilla
