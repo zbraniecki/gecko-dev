@@ -25,6 +25,77 @@
       'rtl' : 'ltr';
   }
 
+  // A document.ready shim
+  // https://github.com/whatwg/html/issues/127
+  function documentReady() {
+    if (document.readyState !== 'loading') {
+      return Promise.resolve();
+    }
+
+    return new Promise(resolve => {
+      document.addEventListener('readystatechange', function onrsc() {
+        document.removeEventListener('readystatechange', onrsc);
+        resolve();
+      });
+    });
+  }
+
+  function getResourceLinks(head) {
+    return Array.prototype.map.call(
+      head.querySelectorAll('link[rel="localization"]'),
+      el => el.getAttribute('href'));
+  }
+
+  const { classes: Cc, interfaces: Ci } = Components;
+
+  const HTTP_STATUS_CODE_OK = 200;
+
+  function load(url) {
+    return new Promise((resolve, reject) => {
+      const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
+        .createInstance(Ci.nsIXMLHttpRequest);
+
+      req.mozBackgroundRequest = true;
+      req.overrideMimeType('text/plain');
+      req.open('GET', url, true);
+
+      req.addEventListener('load', () => {
+        if (req.status === HTTP_STATUS_CODE_OK) {
+          resolve(req.responseText);
+        } else {
+          reject(new Error('Not found: ' + url));
+        }
+      });
+      req.addEventListener('error', reject);
+      req.addEventListener('timeout', reject);
+
+      req.send(null);
+    });
+  }
+
+  function fetchResource(res, lang) {
+    const url = res.replace('{locale}', lang);
+    return load(url).catch(e => e);
+  }
+
+  class ResourceBundle {
+    constructor(lang, resIds) {
+      this.lang = lang;
+      this.loaded = false;
+      this.resIds = resIds;
+    }
+
+    fetch() {
+      if (!this.loaded) {
+        this.loaded = Promise.all(
+          this.resIds.map(id => fetchResource(id, this.lang))
+        );
+      }
+
+      return this.loaded;
+    }
+  }
+
   class L10nError extends Error {
     constructor(message, id, lang) {
       super();
@@ -437,28 +508,8 @@
       );
     }
 
-    handleEvent(evt) {
-      switch (evt.type) {
-        case 'languagechange': {
-          return this.requestLanguages();
-        }
-      }
-    }
-
-    observe(subject, topic, data) {
-      switch (topic) {
-        case 'language-update': {
-          this.interactive = this.interactive.then(bundles => {
-            // just overwrite any existing messages in the first bundle
-            const ctx = contexts.get(bundles[0]);
-            ctx.addMessages(data);
-            return bundles;
-          });
-          return this.interactive.then(
-            bundles => translateDocument(this, bundles)
-          );
-        }
-      }
+    handleEvent() {
+      return this.requestLanguages();
     }
 
     formatEntities(...keys) {
@@ -562,79 +613,7 @@
       .then(next);
   }
 
-  // A document.ready shim
-  // https://github.com/whatwg/html/issues/127
-  function documentReady() {
-    if (document.readyState !== 'loading') {
-      return Promise.resolve();
-    }
-
-    return new Promise(resolve => {
-      document.addEventListener('readystatechange', function onrsc() {
-        document.removeEventListener('readystatechange', onrsc);
-        resolve();
-      });
-    });
-  }
-
-  function getResourceLinks(head) {
-    return Array.prototype.map.call(
-      head.querySelectorAll('link[rel="localization"]'),
-      el => el.getAttribute('href'));
-  }
-
-  const { classes: Cc, interfaces: Ci } = Components;
-
-  const HTTP_STATUS_CODE_OK = 200;
-
-  function load(url) {
-    return new Promise((resolve, reject) => {
-      const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
-        .createInstance(Ci.nsIXMLHttpRequest);
-
-      req.mozBackgroundRequest = true;
-      req.overrideMimeType('text/plain');
-      req.open('GET', url, true);
-
-      req.addEventListener('load', () => {
-        if (req.status === HTTP_STATUS_CODE_OK) {
-          resolve(req.responseText);
-        } else {
-          reject(new Error('Not found: ' + url));
-        }
-      });
-      req.addEventListener('error', reject);
-      req.addEventListener('timeout', reject);
-
-      req.send(null);
-    });
-  }
-
-  function fetchResource(res, lang) {
-    const url = res.replace('{locale}', lang);
-    return load(url).catch(e => e);
-  }
-
-  class ResourceBundle {
-    constructor(lang, resIds) {
-      this.lang = lang;
-      this.loaded = false;
-      this.resIds = resIds;
-    }
-
-    fetch() {
-      if (!this.loaded) {
-        this.loaded = Promise.all(
-          this.resIds.map(id => fetchResource(id, this.lang))
-        );
-      }
-
-      return this.loaded;
-    }
-  }
-
-  Components.utils.import('resource://gre/modules/Services.jsm');
-  Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
+  // Services.jsm is imported in entry points: l20n-html and l20n-xul
 
   const functions = {
     OS: function() {
@@ -653,6 +632,44 @@
     }
   };
 
+  function createContext(lang) {
+    return new MessageContext(lang, { functions });
+  }
+
+  class GeckoLocalization extends Localization {
+    constructor(doc, requestBundles) {
+      super(doc, requestBundles, createContext);
+
+      this.interactive.then(bundles => {
+        this.getValue = function(id, args) {
+          return valueFromContext(contexts.get(bundles[0]), id, args)[0];
+        };
+      });
+    }
+
+    observe(subject, topic, data) {
+      switch (topic) {
+        case 'language-update': {
+          this.interactive = this.interactive.then(bundles => {
+            // just overwrite any existing messages in the first bundle
+            const ctx = contexts.get(bundles[0]);
+            ctx.addMessages(data);
+            return bundles;
+          });
+          return this.interactive.then(
+            bundles => translateDocument(this, bundles)
+          );
+        }
+        default: {
+          throw new Error(`Unknown topic: ${topic}`);
+        }
+      }
+    }
+  }
+
+  Components.utils.import('resource://gre/modules/Services.jsm');
+  Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
+
   function requestBundles(requestedLangs = navigator.languages) {
     return documentReady().then(() => {
       const defaultLang = 'en-US';
@@ -669,22 +686,9 @@
     });
   }
 
-  function createContext(lang) {
-    return new MessageContext(lang, { functions });
-  }
-
-  document.l10n = new Localization(document, requestBundles, createContext);
-
-  document.l10n.interactive.then(bundles => {
-    document.l10n.getValue = function(id, args) {
-      return valueFromContext(
-        contexts.get(bundles[0]), id, args
-      )[0];
-    };
-  });
-
-  Services.obs.addObserver(document.l10n, 'language-update', false);
+  document.l10n = new GeckoLocalization(document, requestBundles);
 
   window.addEventListener('languagechange', document.l10n);
+  Services.obs.addObserver(document.l10n, 'language-update', false);
 
 }());
