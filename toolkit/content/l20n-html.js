@@ -417,13 +417,16 @@
 
   class Localization {
     constructor(doc, requestBundles, createContext) {
-      this.interactive = requestBundles();
-      this.createContext = createContext;
-      this.ready = this.interactive
-        .then(bundles => fetchFirstBundle(bundles, createContext))
-        .then(bundles => translateDocument(this, bundles));
+      this.interactive = requestBundles().then(
+        bundles => fetchFirstBundle(bundles, createContext)
+      );
+      this.ready = this.interactive.then(
+        bundles => translateDocument(this, bundles)
+      );
 
-      properties.set(this, { doc, requestBundles, ready: false });
+      properties.set(this, {
+        doc, requestBundles, createContext, ready: false
+      });
       initMutationObserver(this);
       this.observeRoot(doc.documentElement);
     }
@@ -480,7 +483,9 @@
   function createContextFromBundle(bundle, createContext) {
     return bundle.fetch().then(resources => {
       const ctx = createContext(bundle.lang);
-      resources.forEach(res => ctx.addMessages(res));
+      resources
+        .filter(res => !(res instanceof Error))
+        .forEach(res => ctx.addMessages(res));
       contexts.set(bundle, ctx);
       return ctx;
     });
@@ -494,11 +499,11 @@
   }
 
   function changeLanguages(l10n, oldBundles, requestedLangs) {
-    const { requestBundles } = properties.get(l10n);
+    const { requestBundles, createContext } = properties.get(l10n);
 
     l10n.interactive = requestBundles(requestedLangs).then(
       newBundles => equal(oldBundles, newBundles) ?
-        oldBundles : fetchFirstBundle(newBundles, l10n.createContext)
+        oldBundles : fetchFirstBundle(newBundles, createContext)
     );
 
     return l10n.interactive.then(
@@ -558,12 +563,14 @@
       el => el.getAttribute('href'));
   }
 
+  const { classes: Cc, interfaces: Ci } = Components;
+
   const HTTP_STATUS_CODE_OK = 200;
 
   function load(url) {
-    return new Promise((resolve) => {
-      const req = Components.classes['@mozilla.org/xmlextras/xmlhttprequest;1']
-                        .createInstance(Ci.nsIXMLHttpRequest)
+    return new Promise((resolve, reject) => {
+      const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
+        .createInstance(Ci.nsIXMLHttpRequest);
 
       req.mozBackgroundRequest = true;
       req.overrideMimeType('text/plain');
@@ -572,15 +579,20 @@
       req.addEventListener('load', () => {
         if (req.status === HTTP_STATUS_CODE_OK) {
           resolve(req.responseText);
+        } else {
+          reject(new Error('Not found: ' + url));
         }
       });
+      req.addEventListener('error', reject);
+      req.addEventListener('timeout', reject);
+
       req.send(null);
     });
   }
 
-  function fetchResource(res, code) {
-    const url = res.replace('{locale}', code);
-    return load(url);
+  function fetchResource(res, lang) {
+    const url = res.replace('{locale}', lang);
+    return load(url).catch(e => e);
   }
 
   class ResourceBundle {
@@ -645,8 +657,9 @@
 
   document.l10n.interactive.then(bundles => {
     document.l10n.getValue = function(id, args) {
-      return keysFromContext(
-        contexts.get(bundles[0]), [[id, args]], valueFromContext)[0];
+      return valueFromContext(
+        contexts.get(bundles[0]), id, args
+      )[0];
     };
   });
 
