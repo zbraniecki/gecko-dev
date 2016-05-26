@@ -1,8 +1,5 @@
 # This file is used to localize about:support in Firefox.
 
-# Firefox, as a brand name, should not be localized or transliterated.
-brandShortName = Firefox
-
 aboutSupport-pageTitle = Informacje dla pomocy technicznej 
 
 # Don’t translate “supportLink”, it’s an ID used for CSS.
@@ -11,9 +8,6 @@ aboutSupport-pageSubtitle =
   | This page contains technical information that might be useful when you’re
   | trying to solve a problem. If you are looking for answers to common questions
   | about { brandShortName } check out our <a id="supportLink">support website</a>.
-
-refreshProfile-title = Give { brandShortName } a tune up
-refreshProfile-button = Refresh { brandShortName}…
 
 aboutSupport-safeModeTitle = Sprobuj trybu bezpiecznego
 # This string is used as a button label. Be aware of length issues compared to

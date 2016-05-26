@@ -1,15 +1,11 @@
-brandShortName = Firefox
-vendorShortName = Mozilla
-trademarkInfo-part1 = ""
-
 aboutDialog-title =
-  [html/title] About Firefox
+  [html/title] O Firefoksie
 
-aboutDialog-releaseNotes-link = What's new
+aboutDialog-releaseNotes-link = Co nowego
 
 aboutDialog-channel-description = You are currently on the <label>{ $channelName }</label> update channel.
 
-aboutDialog-update-checkForUpdatesButton = Check for updates
+aboutDialog-update-checkForUpdatesButton = Sprawdz czy sa aktualizacje
   [html/accesskey] C
 aboutDialog-update-updateButton = Restart { brandShortName } to Update
   [html/accesskey] R
@@ -32,7 +28,7 @@ aboutDialog-community-exp = <label>{ vendorShortName }</label> is a <label>globa
 aboutDialog-community = { brandShortName } is designed by <label>{ vendorShortName }</label>, a <label>global community</label> working together to keep the Web open, public and accessible to all.
 aboutDialog-helpus = Want to help? <label>Make a donation</label> or <label>get involved</label>!
 
-aboutDialog-bottomLinks-license = Licensing Information
-aboutDialog-bottomLinks-rights = End-User Rights
-aboutDialog-bottomLinks-privacy = Privacy Policy
+aboutDialog-bottomLinks-license = Informacje licencyjne
+aboutDialog-bottomLinks-rights = Prawa uzytkownika
+aboutDialog-bottomLinks-privacy = Polityka prywatnosci
 

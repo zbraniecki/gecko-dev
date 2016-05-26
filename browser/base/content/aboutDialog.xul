@@ -36,7 +36,8 @@
 #endif
   <script type="application/javascript" src="chrome://global/content/l20n-xul.js"/>
 
-  <messagebundle src="chrome://browser/locale/aboutDialog.ftl"/>
+  <messagebundle src="chrome://branding/locale/brand.{locale}.ftl"/>
+  <messagebundle src="chrome://browser/locale/aboutDialog.{locale}.ftl"/>
   <vbox id="aboutDialogContainer">
     <hbox id="clientBox">
       <vbox id="leftBox" flex="1"/>
