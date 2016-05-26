@@ -844,16 +844,16 @@ GfxInfo::GetGfxDriverInfo()
       DRIVER_LESS_THAN, V(8,17,11,8265), "FEATURE_FAILURE_NV_W7", "182.65" );
 
     /*
-     * AMD/ATI entries
+     * AMD/ATI entries. 8.56.1.15 is the driver that shipped with Windows 7 RTM
      */
     APPEND_TO_DRIVER_BLOCKLIST( DRIVER_OS_ALL,
       (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorATI), GfxDriverInfo::allDevices,
       GfxDriverInfo::allFeatures, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
-      DRIVER_LESS_THAN, V(8,62,0,0), "FEATURE_FAILURE_AMD1", "9.6" );
+      DRIVER_LESS_THAN, V(8,56,1,15), "FEATURE_FAILURE_AMD1", "8.56.1.15" );
     APPEND_TO_DRIVER_BLOCKLIST( DRIVER_OS_ALL,
       (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorAMD), GfxDriverInfo::allDevices,
       GfxDriverInfo::allFeatures, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
-      DRIVER_LESS_THAN, V(8,62,0,0), "FEATURE_FAILURE_AMD2", "9.6" );
+      DRIVER_LESS_THAN, V(8,56,1,15), "FEATURE_FAILURE_AMD2", "8.56.1.15" );
 
     // Bug 1099252
     APPEND_TO_DRIVER_BLOCKLIST2( DRIVER_OS_WINDOWS_7,
@@ -1078,12 +1078,6 @@ GfxInfo::GetGfxDriverInfo()
       nsIGfxInfo::FEATURE_DIRECT2D, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
       DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_1008759");
 
-    /* Bug 1151721: Black video on youtube, block DXVA for all older intel cards. */
-    APPEND_TO_DRIVER_BLOCKLIST2(DRIVER_OS_ALL,
-      (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI), (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(AMDRadeonHD5800),
-      nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-      DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_1151721");
-
     /* Bug 1139503: DXVA crashes with ATI cards on windows 10. */
     APPEND_TO_DRIVER_BLOCKLIST2(DRIVER_OS_WINDOWS_10,
       (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI), GfxDriverInfo::allDevices,
@@ -1159,7 +1153,8 @@ GfxInfo::GetFeatureStatusImpl(int32_t aFeature,
         NS_FAILED(GetAdapterDriverVersion(adapterDriverVersionString)))
     {
       aFailureId = "FEATURE_FAILURE_GET_ADAPTER";
-      return NS_ERROR_FAILURE;
+      *aStatus = FEATURE_BLOCKED_DEVICE;
+      return NS_OK;
     }
 
     if (!adapterVendorID.Equals(GfxDriverInfo::GetDeviceVendor(VendorIntel), nsCaseInsensitiveStringComparator()) &&
@@ -1175,15 +1170,16 @@ GfxInfo::GetFeatureStatusImpl(int32_t aFeature,
         !adapterVendorID.LowerCaseEqualsLiteral("0xabab") &&
         !adapterVendorID.LowerCaseEqualsLiteral("0xdcdc"))
     {
-      *aStatus = FEATURE_BLOCKED_DEVICE;
       aFailureId = "FEATURE_FAILURE_TEST";
+      *aStatus = FEATURE_BLOCKED_DEVICE;
       return NS_OK;
     }
 
     uint64_t driverVersion;
     if (!ParseDriverVersion(adapterDriverVersionString, &driverVersion)) {
       aFailureId = "FEATURE_FAILURE_PARSE_DRIVER";
-      return NS_ERROR_FAILURE;
+      *aStatus = FEATURE_BLOCKED_DRIVER_VERSION;
+      return NS_OK;
     }
 
     // special-case the WinXP test slaves: they have out-of-date drivers, but we still want to

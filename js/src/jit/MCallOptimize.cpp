@@ -3268,6 +3268,9 @@ IonBuilder::inlineSimd(CallInfo& callInfo, JSFunction* target, SimdType type)
       case SimdOperation::Fn_minNum:
         return inlineSimdBinary<MSimdBinaryArith>(callInfo, native, MSimdBinaryArith::Op_minNum,
                                                   type);
+      case SimdOperation::Fn_addSaturate:
+      case SimdOperation::Fn_subSaturate:
+        MOZ_CRASH("NYI");
 
         // Binary bitwise.
       case SimdOperation::Fn_and:
@@ -3407,7 +3410,10 @@ IonBuilder::inlineConstructSimdObject(CallInfo& callInfo, SimdTypeDescr* descr)
     // Take the templateObject out of Baseline ICs, such that we can box
     // SIMD value type in the same kind of objects.
     MOZ_ASSERT(size_t(descr->size(descr->type())) < InlineTypedObject::MaximumSize);
-    JSObject* templateObject = inspector->getTemplateObjectForClassHook(pc, descr->getClass());
+    MOZ_ASSERT(descr->getClass() == &SimdTypeDescr::class_,
+               "getTemplateObjectForSimdCtor needs an update");
+
+    JSObject* templateObject = inspector->getTemplateObjectForSimdCtor(pc, descr->type());
     if (!templateObject)
         return InliningStatus_NotInlined;
 
@@ -3459,7 +3465,7 @@ IonBuilder::inlineConstructSimdObject(CallInfo& callInfo, SimdTypeDescr* descr)
 
 bool
 IonBuilder::canInlineSimd(CallInfo& callInfo, JSNative native, unsigned numArgs,
-                            InlineTypedObject** templateObj)
+                          InlineTypedObject** templateObj)
 {
     if (callInfo.argc() != numArgs)
         return false;

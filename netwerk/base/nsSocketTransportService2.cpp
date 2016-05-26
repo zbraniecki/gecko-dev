@@ -27,8 +27,12 @@
 #include "nsIFile.h"
 #include "nsIWidget.h"
 
-using namespace mozilla;
-using namespace mozilla::net;
+#if defined(XP_WIN)
+#include "mozilla/WindowsVersion.h"
+#endif
+
+namespace mozilla {
+namespace net {
 
 LazyLogModule gSocketTransportLog("nsSocketTransport");
 LazyLogModule gUDPSocketLog("UDPSocket");
@@ -89,7 +93,6 @@ DebugMutexAutoLock::~DebugMutexAutoLock()
 
 nsSocketTransportService::nsSocketTransportService()
     : mThread(nullptr)
-    , mAutodialEnabled(false)
     , mLock("nsSocketTransportService::mLock")
     , mInitialized(false)
     , mShuttingDown(false)
@@ -102,8 +105,6 @@ nsSocketTransportService::nsSocketTransportService()
     , mIdleCount(0)
     , mSentBytesCount(0)
     , mReceivedBytesCount(0)
-    , mEventQueueLock("nsSocketTransportService::mEventQueueLock")
-    , mPendingSocketQ(mEventQueueLock)
     , mSendBufferSize(0)
     , mKeepaliveIdleTimeS(600)
     , mKeepaliveRetryIntervalS(1)
@@ -177,6 +178,12 @@ nsSocketTransportService::Dispatch(already_AddRefed<nsIRunnable>&& event, uint32
 }
 
 NS_IMETHODIMP
+nsSocketTransportService::DelayedDispatch(already_AddRefed<nsIRunnable>&&, uint32_t)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 nsSocketTransportService::IsOnCurrentThread(bool *result)
 {
     nsCOMPtr<nsIThread> thread = GetThreadSafely();
@@ -198,10 +205,8 @@ nsSocketTransportService::NotifyWhenCanAttachSocket(nsIRunnable *event)
         return Dispatch(event, NS_DISPATCH_NORMAL);
     }
 
-    {
-      MutexAutoLock lock(mEventQueueLock);
-      mPendingSocketQ.PutEvent(event, lock);
-    }
+    LinkedRunnableEvent *runnable = new LinkedRunnableEvent(event);
+    mPendingSocketQueue.insertBack(runnable);
     return NS_OK;
 }
 
@@ -237,20 +242,14 @@ bool
 nsSocketTransportService::CanAttachSocket()
 {
     static bool reported900FDLimit = false;
-    static bool reported256FDLimit = false;
 
     uint32_t total = mActiveCount + mIdleCount;
     bool rv = total < gMaxCount;
 
-    if (mTelemetryEnabledPref) {
-        if (((total >= 900) || !rv) && !reported900FDLimit) {
-            reported900FDLimit = true;
-            Telemetry::Accumulate(Telemetry::NETWORK_SESSION_AT_900FD, true);
-        }
-        if ((total >= 256) && !reported256FDLimit) {
-            reported256FDLimit = true;
-            Telemetry::Accumulate(Telemetry::NETWORK_SESSION_AT_256FD, true);
-        }
+    if (mTelemetryEnabledPref &&
+        (((total >= 900) || !rv) && !reported900FDLimit)) {
+        reported900FDLimit = true;
+        Telemetry::Accumulate(Telemetry::NETWORK_SESSION_AT_900FD, true);
     }
 
     return rv;
@@ -283,9 +282,11 @@ nsSocketTransportService::DetachSocket(SocketContext *listHead, SocketContext *s
     // notify the first element on the pending socket queue...
     //
     nsCOMPtr<nsIRunnable> event;
-    {
-      MutexAutoLock lock(mEventQueueLock);
-      mPendingSocketQ.GetPendingEvent(getter_AddRefs(event), lock);
+    LinkedRunnableEvent *runnable = mPendingSocketQueue.getFirst();
+    if (runnable) {
+        event = runnable->TakeEvent();
+        runnable->remove();
+        delete runnable;
     }
     if (event) {
         // move event from pending queue to dispatch queue
@@ -635,7 +636,7 @@ nsSocketTransportService::Shutdown()
         mAfterWakeUpTimer = nullptr;
     }
 
-    mozilla::net::NetworkActivityMonitor::Shutdown();
+    NetworkActivityMonitor::Shutdown();
 
     mInitialized = false;
     mShuttingDown = false;
@@ -757,20 +758,6 @@ nsSocketTransportService::CreateUnixDomainTransport(nsIFile *aPath,
         return rv;
 
     trans.forget(result);
-    return NS_OK;
-}
-
-NS_IMETHODIMP
-nsSocketTransportService::GetAutodialEnabled(bool *value)
-{
-    *value = mAutodialEnabled;
-    return NS_OK;
-}
-
-NS_IMETHODIMP
-nsSocketTransportService::SetAutodialEnabled(bool value)
-{
-    mAutodialEnabled = value;
     return NS_OK;
 }
 
@@ -1187,6 +1174,28 @@ nsSocketTransportService::DoPollIteration(TimeDuration *pollDuration)
     return NS_OK;
 }
 
+void
+nsSocketTransportService::UpdateSendBufferPref(nsIPrefBranch *pref)
+{
+    int32_t bufferSize;
+
+    // If the pref is set, honor it. 0 means use OS defaults.
+    nsresult rv = pref->GetIntPref(SEND_BUFFER_PREF, &bufferSize);
+    if (NS_SUCCEEDED(rv)) {
+        mSendBufferSize = bufferSize;
+        return;
+    }
+
+#if defined(XP_WIN)
+    // If the pref is not set but this is windows set it depending on windows version
+    if (!IsWin2003OrLater()) { // windows xp
+        mSendBufferSize = 131072;
+    } else { // vista or later
+        mSendBufferSize = 131072 * 4;
+    }
+#endif
+}
+
 nsresult
 nsSocketTransportService::UpdatePrefs()
 {
@@ -1194,14 +1203,11 @@ nsSocketTransportService::UpdatePrefs()
 
     nsCOMPtr<nsIPrefBranch> tmpPrefService = do_GetService(NS_PREFSERVICE_CONTRACTID);
     if (tmpPrefService) {
-        int32_t bufferSize;
-        nsresult rv = tmpPrefService->GetIntPref(SEND_BUFFER_PREF, &bufferSize);
-        if (NS_SUCCEEDED(rv) && bufferSize > 0)
-            mSendBufferSize = bufferSize;
+        UpdateSendBufferPref(tmpPrefService);
 
         // Default TCP Keepalive Values.
         int32_t keepaliveIdleTimeS;
-        rv = tmpPrefService->GetIntPref(KEEPALIVE_IDLE_TIME_PREF,
+        nsresult rv = tmpPrefService->GetIntPref(KEEPALIVE_IDLE_TIME_PREF,
                                         &keepaliveIdleTimeS);
         if (NS_SUCCEEDED(rv))
             mKeepaliveIdleTimeS = clamped(keepaliveIdleTimeS,
@@ -1362,7 +1368,7 @@ nsSocketTransportService::ClosePrivateConnections()
         }
     }
 
-    mozilla::ClearPrivateSSLState();
+    ClearPrivateSSLState();
 }
 
 NS_IMETHODIMP
@@ -1539,3 +1545,6 @@ nsSocketTransportService::GetSocketConnections(nsTArray<SocketInfo> *data)
     for (uint32_t i = 0; i < mIdleCount; i++)
         AnalyzeConnection(data, &mIdleList[i], false);
 }
+
+} // namespace net
+} // namespace mozilla

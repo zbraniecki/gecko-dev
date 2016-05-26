@@ -5,6 +5,7 @@
 var Cc = Components.classes;
 var Ci = Components.interfaces;
 var Cu = Components.utils;
+var Cr = Components.results;
 
 Cu.import("resource://gre/modules/AppConstants.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
@@ -359,6 +360,7 @@ var SecurityUI = {
 var ControllerCommands = {
   init: function () {
     addMessageListener("ControllerCommands:Do", this);
+    addMessageListener("ControllerCommands:DoWithParams", this);
   },
 
   receiveMessage: function(message) {
@@ -366,6 +368,23 @@ var ControllerCommands = {
       case "ControllerCommands:Do":
         if (docShell.isCommandEnabled(message.data))
           docShell.doCommand(message.data);
+        break;
+
+      case "ControllerCommands:DoWithParams":
+        var data = message.data;
+        if (docShell.isCommandEnabled(data.cmd)) {
+          var params = Cc["@mozilla.org/embedcomp/command-params;1"].
+                       createInstance(Ci.nsICommandParams);
+          for (var name in data.params) {
+            var value = data.params[name];
+            if (value.type == "long") {
+              params.setLongValue(name, parseInt(value.value));
+            } else {
+              throw Cr.NS_ERROR_NOT_IMPLEMENTED;
+            }
+          }
+          docShell.doCommandWithParams(data.cmd, params);
+        }
         break;
     }
   }
@@ -554,7 +573,6 @@ var AutoCompletePopup = {
     controller.attachToBrowser(docShell, this.QueryInterface(Ci.nsIAutoCompletePopup));
 
     this._input = null;
-    this._element = null;
     this._popupOpen = false;
 
     addMessageListener("FormAutoComplete:HandleEnter", message => {
@@ -593,14 +611,6 @@ var AutoCompletePopup = {
     return this._popupOpen;
   },
 
-  _attachClickListener(element) {
-    element.addEventListener("click", this);
-  },
-
-  _detachClickListener(element) {
-    element.removeEventListener("click", this);
-  },
-
   openAutocompletePopup: function (input, element) {
     if (!this._popupOpen) {
       // The search itself normally opens the popup itself, but in some cases,
@@ -608,23 +618,12 @@ var AutoCompletePopup = {
       // popup to reuse the last results.
       sendAsyncMessage("FormAutoComplete:MaybeOpenPopup", {});
     }
-    if (this._element !== element) {
-      if (this._element) {
-        this._detachClickListener(this._element);
-      }
-      this._attachClickListener(element);
-    }
     this._input = input;
-    this._element = element;
     this._popupOpen = true;
   },
 
   closePopup: function () {
     this._popupOpen = false;
-    if (this._element) {
-      this._detachClickListener(this._element);
-      this._element = null;
-    }
     sendAsyncMessage("FormAutoComplete:ClosePopup", {});
   },
 
@@ -636,11 +635,7 @@ var AutoCompletePopup = {
       reverse: reverse,
       page: page
     });
-  },
-
-  handleEvent(event) {
-    this._popupOpen = false;
-  },
+  }
 }
 
 addMessageListener("InPermitUnload", msg => {

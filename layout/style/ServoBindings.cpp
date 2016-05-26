@@ -11,6 +11,7 @@
 #include "nsIDOMNode.h"
 #include "nsIDocument.h"
 #include "nsINode.h"
+#include "nsIPrincipal.h"
 #include "nsNameSpaceManager.h"
 #include "nsString.h"
 #include "nsStyleStruct.h"
@@ -139,6 +140,19 @@ Gecko_IsRootElement(RawGeckoElement* aElement)
   return aElement->OwnerDoc()->GetRootElement() == aElement;
 }
 
+nsIAtom*
+Gecko_LocalName(RawGeckoElement* aElement)
+{
+  return aElement->NodeInfo()->NameAtom();
+}
+
+nsIAtom*
+Gecko_Namespace(RawGeckoElement* aElement)
+{
+  int32_t id = aElement->NodeInfo()->NamespaceID();
+  return nsContentUtils::NameSpaceManager()->NameSpaceURIAtom(id);
+}
+
 ServoNodeData*
 Gecko_GetNodeData(RawGeckoNode* aNode)
 {
@@ -149,6 +163,70 @@ void
 Gecko_SetNodeData(RawGeckoNode* aNode, ServoNodeData* aData)
 {
   aNode->SetServoNodeData(aData);
+}
+
+nsIAtom*
+Gecko_Atomize(const char* aString, uint32_t aLength)
+{
+  // XXXbholley: This isn't yet threadsafe, but will probably need to be.
+  MOZ_ASSERT(NS_IsMainThread());
+  return NS_Atomize(nsDependentCSubstring(aString, aLength)).take();
+}
+
+void
+Gecko_AddRefAtom(nsIAtom* aAtom)
+{
+  // XXXbholley: This isn't yet threadsafe, but will probably need to be.
+  MOZ_ASSERT(NS_IsMainThread());
+  NS_ADDREF(aAtom);
+}
+
+void
+Gecko_ReleaseAtom(nsIAtom* aAtom)
+{
+  // XXXbholley: This isn't yet threadsafe, but will probably need to be.
+  MOZ_ASSERT(NS_IsMainThread());
+  NS_RELEASE(aAtom);
+}
+
+uint32_t
+Gecko_HashAtom(nsIAtom* aAtom)
+{
+  return aAtom->hash();
+}
+
+const uint16_t*
+Gecko_GetAtomAsUTF16(nsIAtom* aAtom, uint32_t* aLength)
+{
+  static_assert(sizeof(char16_t) == sizeof(uint16_t), "Servo doesn't know what a char16_t is");
+  MOZ_ASSERT(aAtom);
+  *aLength = aAtom->GetLength();
+
+  // We need to manually cast from char16ptr_t to const char16_t* to handle the
+  // MOZ_USE_CHAR16_WRAPPER we use on WIndows.
+  return reinterpret_cast<const uint16_t*>(static_cast<const char16_t*>(aAtom->GetUTF16String()));
+}
+
+bool
+Gecko_AtomEqualsUTF8(nsIAtom* aAtom, const char* aString, uint32_t aLength)
+{
+  // XXXbholley: We should be able to do this without converting, I just can't
+  // find the right thing to call.
+  nsAutoString atomStr;
+  aAtom->ToString(atomStr);
+  NS_ConvertUTF8toUTF16 inStr(nsDependentCSubstring(aString, aLength));
+  return atomStr.Equals(inStr);
+}
+
+bool
+Gecko_AtomEqualsUTF8IgnoreCase(nsIAtom* aAtom, const char* aString, uint32_t aLength)
+{
+  // XXXbholley: We should be able to do this without converting, I just can't
+  // find the right thing to call.
+  nsAutoString atomStr;
+  aAtom->ToString(atomStr);
+  NS_ConvertUTF8toUTF16 inStr(nsDependentCSubstring(aString, aLength));
+  return nsContentUtils::EqualsIgnoreASCIICase(atomStr, inStr);
 }
 
 void
@@ -163,6 +241,41 @@ void
 Gecko_CopyListStyleTypeFrom(nsStyleList* dst, const nsStyleList* src)
 {
   dst->SetCounterStyle(src->GetCounterStyle());
+}
+
+NS_IMPL_HOLDER_FFI_REFCOUNTING(nsIPrincipal, Principal)
+NS_IMPL_HOLDER_FFI_REFCOUNTING(nsIURI, URI)
+
+void
+Gecko_SetMozBinding(nsStyleDisplay* aDisplay,
+                    const uint8_t* aURLString, uint32_t aURLStringLength,
+                    ThreadSafeURIHolder* aBaseURI,
+                    ThreadSafeURIHolder* aReferrer,
+                    ThreadSafePrincipalHolder* aPrincipal)
+{
+  MOZ_ASSERT(aDisplay);
+  MOZ_ASSERT(aURLString);
+  MOZ_ASSERT(aBaseURI);
+  MOZ_ASSERT(aReferrer);
+  MOZ_ASSERT(aPrincipal);
+
+  nsString url;
+  nsDependentCSubstring urlString(reinterpret_cast<const char*>(aURLString),
+                                  aURLStringLength);
+  AppendUTF8toUTF16(urlString, url);
+  RefPtr<nsStringBuffer> urlBuffer = nsCSSValue::BufferFromString(url);
+
+  aDisplay->mBinding =
+    new css::URLValue(urlBuffer,
+                      nsMainThreadPtrHandle<nsIURI>(aBaseURI),
+                      nsMainThreadPtrHandle<nsIURI>(aReferrer),
+                      nsMainThreadPtrHandle<nsIPrincipal>(aPrincipal));
+}
+
+void
+Gecko_CopyMozBindingFrom(nsStyleDisplay* aDest, const nsStyleDisplay* aSrc)
+{
+  aDest->mBinding = aSrc->mBinding;
 }
 
 #define STYLE_STRUCT(name, checkdata_cb)                                      \
@@ -200,7 +313,10 @@ Servo_DropNodeData(ServoNodeData* data)
 
 RawServoStyleSheet*
 Servo_StylesheetFromUTF8Bytes(const uint8_t* bytes, uint32_t length,
-                              mozilla::css::SheetParsingMode mode)
+                              mozilla::css::SheetParsingMode mode,
+                              ThreadSafeURIHolder* base,
+                              ThreadSafeURIHolder* referrer,
+                              ThreadSafePrincipalHolder* principal)
 {
   MOZ_CRASH("stylo: shouldn't be calling Servo_StylesheetFromUTF8Bytes in a "
             "non-MOZ_STYLO build");
@@ -328,6 +444,12 @@ void
 Servo_RestyleDocument(RawGeckoDocument* doc, RawServoStyleSet* set)
 {
   MOZ_CRASH("stylo: shouldn't be calling Servo_RestyleDocument in a "
+            "non-MOZ_STYLO build");
+}
+
+void Servo_RestyleSubtree(RawGeckoNode* node, RawServoStyleSet* set)
+{
+  MOZ_CRASH("stylo: shouldn't be calling Servo_RestyleSubtree in a "
             "non-MOZ_STYLO build");
 }
 

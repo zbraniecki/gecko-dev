@@ -124,16 +124,30 @@ EvaluateConstantOperands(TempAllocator& alloc, MBinaryInstruction* ins, bool* pt
         ret.setNumber(lhs->numberToDouble() * rhs->numberToDouble());
         break;
       case MDefinition::Op_Div:
-        if (ins->toDiv()->isUnsigned())
-            ret.setInt32(rhs->isInt32(0) ? 0 : uint32_t(lhs->toInt32()) / uint32_t(rhs->toInt32()));
-        else
+        if (ins->toDiv()->isUnsigned()) {
+            if (rhs->isInt32(0)) {
+                if (ins->toDiv()->trapOnError())
+                    return nullptr;
+                ret.setInt32(0);
+            } else {
+                ret.setInt32(uint32_t(lhs->toInt32()) / uint32_t(rhs->toInt32()));
+            }
+        } else {
             ret.setNumber(NumberDiv(lhs->numberToDouble(), rhs->numberToDouble()));
+        }
         break;
       case MDefinition::Op_Mod:
-        if (ins->toMod()->isUnsigned())
-            ret.setInt32(rhs->isInt32(0) ? 0 : uint32_t(lhs->toInt32()) % uint32_t(rhs->toInt32()));
-        else
+        if (ins->toMod()->isUnsigned()) {
+            if (rhs->isInt32(0)) {
+                if (ins->toMod()->trapOnError())
+                    return nullptr;
+                ret.setInt32(0);
+            } else {
+                ret.setInt32(uint32_t(lhs->toInt32()) % uint32_t(rhs->toInt32()));
+            }
+        } else {
             ret.setNumber(NumberMod(lhs->numberToDouble(), rhs->numberToDouble()));
+        }
         break;
       default:
         MOZ_CRASH("NYI");
@@ -1045,6 +1059,9 @@ MConstant::valueToBoolean(bool* res) const
         return true;
       case MIRType::Int32:
         *res = toInt32() != 0;
+        return true;
+      case MIRType::Int64:
+        *res = toInt64() != 0;
         return true;
       case MIRType::Double:
         *res = !mozilla::IsNaN(toDouble()) && toDouble() != 0.0;
@@ -4330,6 +4347,8 @@ MNot::foldsTo(TempAllocator& alloc)
         if (inputConst->valueToBoolean(&b)) {
             if (type() == MIRType::Int32)
                 return MConstant::New(alloc, Int32Value(!b));
+            if (type() == MIRType::Int64)
+                return MConstant::NewInt64(alloc, int64_t(!b));
             return MConstant::New(alloc, BooleanValue(!b));
         }
     }
@@ -4587,12 +4606,13 @@ MArrayState::Copy(TempAllocator& alloc, MArrayState* state)
 }
 
 MNewArray::MNewArray(CompilerConstraintList* constraints, uint32_t length, MConstant* templateConst,
-                     gc::InitialHeap initialHeap, jsbytecode* pc)
+                     gc::InitialHeap initialHeap, jsbytecode* pc, bool vmCall)
   : MUnaryInstruction(templateConst),
     length_(length),
     initialHeap_(initialHeap),
     convertDoubleElements_(false),
-    pc_(pc)
+    pc_(pc),
+    vmCall_(vmCall)
 {
     setResultType(MIRType::Object);
     if (templateObject()) {
@@ -4843,148 +4863,6 @@ MLoadUnboxedObjectOrNull::foldsTo(TempAllocator& alloc)
         return this;
 
     return foldsToStoredValue(alloc, store->value());
-}
-
-// Gets the MDefinition* representing the source/target object's storage.
-// Usually this is just an MElements*, but sometimes there are layers
-// of indirection or inlining, which are handled elsewhere.
-static inline const MElements*
-MaybeUnwrapElements(const MDefinition* elementsOrObj)
-{
-    // Sometimes there is a level of indirection for conversion.
-    if (elementsOrObj->isConvertElementsToDoubles())
-        return MaybeUnwrapElements(elementsOrObj->toConvertElementsToDoubles()->elements());
-
-    // For inline elements, the object may be passed directly, for example as MUnbox.
-    if (elementsOrObj->type() == MIRType::Object)
-        return nullptr;
-
-    // MTypedArrayElements and MTypedObjectElements aren't handled.
-    if (!elementsOrObj->isElements())
-        return nullptr;
-
-    return elementsOrObj->toElements();
-}
-
-static inline const MDefinition*
-GetElementsObject(const MDefinition* elementsOrObj)
-{
-    if (elementsOrObj->type() == MIRType::Object)
-        return elementsOrObj;
-
-    const MDefinition* elements = MaybeUnwrapElements(elementsOrObj);
-    if (elements)
-        return elements->toElements()->input();
-
-    return nullptr;
-}
-
-// Gets the MDefinition of the target Object for the given store operation.
-static inline const MDefinition*
-GetStoreObject(const MDefinition* store)
-{
-    switch (store->op()) {
-      case MDefinition::Op_StoreElement:
-        return GetElementsObject(store->toStoreElement()->elements());
-
-      case MDefinition::Op_StoreElementHole:
-        return store->toStoreElementHole()->object();
-
-      case MDefinition::Op_StoreUnboxedObjectOrNull:
-        return GetElementsObject(store->toStoreUnboxedObjectOrNull()->elements());
-
-      case MDefinition::Op_StoreUnboxedString:
-        return GetElementsObject(store->toStoreUnboxedString()->elements());
-
-      case MDefinition::Op_StoreUnboxedScalar:
-        return GetElementsObject(store->toStoreUnboxedScalar()->elements());
-
-      default:
-        return nullptr;
-    }
-}
-
-// Implements mightAlias() logic common to all load operations.
-static MDefinition::AliasType
-GenericLoadMightAlias(const MDefinition* elementsOrObj, const MDefinition* store)
-{
-    const MElements* elements = MaybeUnwrapElements(elementsOrObj);
-    if (elements)
-        return elements->mightAlias(store);
-
-    // Unhandled Elements kind.
-    if (elementsOrObj->type() != MIRType::Object)
-        return MDefinition::AliasType::MayAlias;
-
-    // Inline storage for objects.
-    // Refer to IsValidElementsType().
-    const MDefinition* object = elementsOrObj;
-    MOZ_ASSERT(object->type() == MIRType::Object);
-    if (!object->resultTypeSet())
-        return MDefinition::AliasType::MayAlias;
-
-    const MDefinition* storeObject = GetStoreObject(store);
-    if (!storeObject)
-        return MDefinition::AliasType::MayAlias;
-    if (!storeObject->resultTypeSet())
-        return MDefinition::AliasType::MayAlias;
-
-    if (object->resultTypeSet()->objectsIntersect(storeObject->resultTypeSet()))
-        return MDefinition::AliasType::MayAlias;
-    return MDefinition::AliasType::NoAlias;
-}
-
-MDefinition::AliasType
-MElements::mightAlias(const MDefinition* store) const
-{
-    if (!input()->resultTypeSet())
-        return AliasType::MayAlias;
-
-    const MDefinition* storeObj = GetStoreObject(store);
-    if (!storeObj)
-        return AliasType::MayAlias;
-    if (!storeObj->resultTypeSet())
-        return AliasType::MayAlias;
-
-    if (input()->resultTypeSet()->objectsIntersect(storeObj->resultTypeSet()))
-        return AliasType::MayAlias;
-    return AliasType::NoAlias;
-}
-
-MDefinition::AliasType
-MLoadElement::mightAlias(const MDefinition* store) const
-{
-    return GenericLoadMightAlias(elements(), store);
-}
-
-MDefinition::AliasType
-MInitializedLength::mightAlias(const MDefinition* store) const
-{
-    return GenericLoadMightAlias(elements(), store);
-}
-
-MDefinition::AliasType
-MLoadUnboxedObjectOrNull::mightAlias(const MDefinition* store) const
-{
-    return GenericLoadMightAlias(elements(), store);
-}
-
-MDefinition::AliasType
-MLoadUnboxedString::mightAlias(const MDefinition* store) const
-{
-    return GenericLoadMightAlias(elements(), store);
-}
-
-MDefinition::AliasType
-MLoadUnboxedScalar::mightAlias(const MDefinition* store) const
-{
-    return GenericLoadMightAlias(elements(), store);
-}
-
-MDefinition::AliasType
-MUnboxedArrayInitializedLength::mightAlias(const MDefinition* store) const
-{
-    return GenericLoadMightAlias(object(), store);
 }
 
 bool
@@ -5249,10 +5127,17 @@ MDefinition*
 MClz::foldsTo(TempAllocator& alloc)
 {
     if (num()->isConstant()) {
-        int32_t n = num()->toConstant()->toInt32();
+        MConstant* c = num()->toConstant();
+        if (type() == MIRType::Int32) {
+            int32_t n = c->toInt32();
+            if (n == 0)
+                return MConstant::New(alloc, Int32Value(32));
+            return MConstant::New(alloc, Int32Value(mozilla::CountLeadingZeroes32(n)));
+        }
+        int64_t n = c->toInt64();
         if (n == 0)
-            return MConstant::New(alloc, Int32Value(32));
-        return MConstant::New(alloc, Int32Value(mozilla::CountLeadingZeroes32(n)));
+            return MConstant::NewInt64(alloc, int64_t(64));
+        return MConstant::NewInt64(alloc, int64_t(mozilla::CountLeadingZeroes64(n)));
     }
 
     return this;
@@ -5262,10 +5147,17 @@ MDefinition*
 MCtz::foldsTo(TempAllocator& alloc)
 {
     if (num()->isConstant()) {
-        int32_t n = num()->toConstant()->toInt32();
+        MConstant* c = num()->toConstant();
+        if (type() == MIRType::Int32) {
+            int32_t n = num()->toConstant()->toInt32();
+            if (n == 0)
+                return MConstant::New(alloc, Int32Value(32));
+            return MConstant::New(alloc, Int32Value(mozilla::CountTrailingZeroes32(n)));
+        }
+        int64_t n = c->toInt64();
         if (n == 0)
-            return MConstant::New(alloc, Int32Value(32));
-        return MConstant::New(alloc, Int32Value(mozilla::CountTrailingZeroes32(n)));
+            return MConstant::NewInt64(alloc, int64_t(64));
+        return MConstant::NewInt64(alloc, int64_t(mozilla::CountTrailingZeroes64(n)));
     }
 
     return this;
@@ -5275,8 +5167,13 @@ MDefinition*
 MPopcnt::foldsTo(TempAllocator& alloc)
 {
     if (num()->isConstant()) {
-        int32_t n = num()->toConstant()->toInt32();
-        return MConstant::New(alloc, Int32Value(mozilla::CountPopulation32(n)));
+        MConstant* c = num()->toConstant();
+        if (type() == MIRType::Int32) {
+            int32_t n = num()->toConstant()->toInt32();
+            return MConstant::New(alloc, Int32Value(mozilla::CountPopulation32(n)));
+        }
+        int64_t n = c->toInt64();
+        return MConstant::NewInt64(alloc, int64_t(mozilla::CountPopulation64(n)));
     }
 
     return this;

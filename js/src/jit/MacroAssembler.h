@@ -481,7 +481,7 @@ class MacroAssembler : public MacroAssemblerSpecific
     void call(JitCode* c) PER_SHARED_ARCH;
 
     inline void call(const wasm::CallSiteDesc& desc, const Register reg);
-    inline void call(const wasm::CallSiteDesc& desc, AsmJSInternalCallee callee);
+    inline void call(const wasm::CallSiteDesc& desc, uint32_t callee);
 
     CodeOffset callWithPatch() PER_SHARED_ARCH;
     void patchCall(uint32_t callerOffset, uint32_t calleeOffset) PER_SHARED_ARCH;
@@ -813,8 +813,12 @@ class MacroAssembler : public MacroAssemblerSpecific
     inline void clz32(Register src, Register dest, bool knownNotZero) DEFINED_ON(x86_shared);
     inline void ctz32(Register src, Register dest, bool knownNotZero) DEFINED_ON(x86_shared);
 
+    inline void clz64(Register64 src, Register64 dest) DEFINED_ON(x64);
+    inline void ctz64(Register64 src, Register64 dest) DEFINED_ON(x64);
+
     // temp may be invalid only if the chip has the POPCNT instruction.
     inline void popcnt32(Register src, Register dest, Register temp) DEFINED_ON(x86_shared);
+    inline void popcnt64(Register64 src, Register64 dest, Register64 temp) DEFINED_ON(x64);
 
     // ===============================================================
     // Branch functions

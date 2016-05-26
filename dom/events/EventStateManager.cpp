@@ -816,6 +816,7 @@ EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
   case eContentCommandUndo:
   case eContentCommandRedo:
   case eContentCommandPasteTransferable:
+  case eContentCommandLookUpDictionary:
     DoContentCommandEvent(aEvent->AsContentCommandEvent());
     break;
   case eContentCommandScroll:
@@ -1725,8 +1726,12 @@ EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
         KillClickHoldTimer();
       }
 
-      nsCOMPtr<nsISupports> container = aPresContext->GetContainerWeak();
-      nsCOMPtr<nsPIDOMWindowOuter> window = do_GetInterface(container);
+      nsCOMPtr<nsIDocShell> docshell = aPresContext->GetDocShell();
+      if (!docshell) {
+        return;
+      }
+
+      nsCOMPtr<nsPIDOMWindowOuter> window = docshell->GetWindow();
       if (!window)
         return;
 
@@ -2026,8 +2031,9 @@ EventStateManager::GetContentViewer(nsIContentViewer** aCv)
 {
   *aCv = nullptr;
 
-  nsCOMPtr<nsPIDOMWindowOuter> rootWindow;
-  rootWindow = mDocument->GetWindow()->GetPrivateRoot();
+  nsPIDOMWindowOuter* window = mDocument->GetWindow();
+  if (!window) return NS_ERROR_FAILURE;
+  nsCOMPtr<nsPIDOMWindowOuter> rootWindow = window->GetPrivateRoot();
   if (!rootWindow) return NS_ERROR_FAILURE;
 
   TabChild* tabChild = TabChild::GetFrom(rootWindow);
@@ -2723,7 +2729,7 @@ EventStateManager::DecideGestureEvent(WidgetGestureNotifyEvent* aEvent,
    *
    * Note: we'll have to one-off various cases to ensure a good usable behavior
    */
-  WidgetGestureNotifyEvent::ePanDirection panDirection =
+  WidgetGestureNotifyEvent::PanDirection panDirection =
     WidgetGestureNotifyEvent::ePanNone;
   bool displayPanFeedback = false;
   for (nsIFrame* current = targetFrame; current;
@@ -2804,9 +2810,8 @@ EventStateManager::DecideGestureEvent(WidgetGestureNotifyEvent* aEvent,
       }
     } //scrollableFrame
   } //ancestor chain
-
-  aEvent->displayPanFeedback = displayPanFeedback;
-  aEvent->panDirection = panDirection;
+  aEvent->mDisplayPanFeedback = displayPanFeedback;
+  aEvent->mPanDirection = panDirection;
 }
 
 #ifdef XP_MACOSX
@@ -2844,7 +2849,7 @@ EventStateManager::PostHandleKeyboardEvent(WidgetKeyboardEvent* aKeyboardEvent,
 
   // XXX Currently, our automated tests don't support mKeyNameIndex.
   //     Therefore, we still need to handle this with keyCode.
-  switch(aKeyboardEvent->keyCode) {
+  switch(aKeyboardEvent->mKeyCode) {
     case NS_VK_TAB:
     case NS_VK_F6:
       // This is to prevent keyboard scrolling while alt modifier in use.
@@ -2863,7 +2868,7 @@ EventStateManager::PostHandleKeyboardEvent(WidgetKeyboardEvent* aKeyboardEvent,
         if (fm && mDocument) {
           // Shift focus forward or back depending on shift key
           bool isDocMove =
-            aKeyboardEvent->IsControl() || aKeyboardEvent->keyCode == NS_VK_F6;
+            aKeyboardEvent->IsControl() || aKeyboardEvent->mKeyCode == NS_VK_F6;
           uint32_t dir = aKeyboardEvent->IsShift() ?
             (isDocMove ? static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_BACKWARDDOC) :
                          static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_BACKWARD)) :
@@ -5217,6 +5222,9 @@ EventStateManager::DoContentCommandEvent(WidgetContentCommandEvent* aEvent)
     case eContentCommandPasteTransferable:
       cmd = "cmd_pasteTransferable";
       break;
+    case eContentCommandLookUpDictionary:
+      cmd = "cmd_lookUpDictionary";
+      break;
     default:
       return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -5247,7 +5255,34 @@ EventStateManager::DoContentCommandEvent(WidgetContentCommandEvent* aEvent)
           rv = commandController->DoCommandWithParams(cmd, params);
           break;
         }
-        
+
+        case eContentCommandLookUpDictionary: {
+          nsCOMPtr<nsICommandController> commandController =
+            do_QueryInterface(controller);
+          if (NS_WARN_IF(!commandController)) {
+            return NS_ERROR_FAILURE;
+          }
+
+          nsCOMPtr<nsICommandParams> params =
+            do_CreateInstance("@mozilla.org/embedcomp/command-params;1", &rv);
+          if (NS_WARN_IF(NS_FAILED(rv))) {
+            return rv;
+          }
+
+          rv = params->SetLongValue("x", aEvent->mRefPoint.x);
+          if (NS_WARN_IF(NS_FAILED(rv))) {
+            return rv;
+          }
+
+          rv = params->SetLongValue("y", aEvent->mRefPoint.y);
+          if (NS_WARN_IF(NS_FAILED(rv))) {
+            return rv;
+          }
+
+          rv = commandController->DoCommandWithParams(cmd, params);
+          break;
+        }
+
         default:
           rv = controller->DoCommand(cmd);
           break;

@@ -613,7 +613,8 @@
       .then(next);
   }
 
-  // Services.jsm is imported in entry points: l20n-html and l20n-xul
+  Components.utils.import('resource://gre/modules/Services.jsm');
+  Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
 
   const functions = {
     OS: function() {
@@ -668,7 +669,6 @@
   }
 
   Components.utils.import('resource://gre/modules/Services.jsm');
-  Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
 
   function requestBundles(requestedLangs = navigator.languages) {
     return documentReady().then(() => {

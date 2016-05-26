@@ -32,6 +32,7 @@ import java.security.GeneralSecurityException;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -90,11 +91,11 @@ public class TelemetryUploadService extends IntentService {
         }
 
         final String serverSchemeHostPort = getServerSchemeHostPort(context);
-        final HashSet<Integer> successfulUploadIDs = new HashSet<>(pingsToUpload.size()); // used for side effects.
+        final HashSet<String> successfulUploadIDs = new HashSet<>(pingsToUpload.size()); // used for side effects.
         final PingResultDelegate delegate = new PingResultDelegate(successfulUploadIDs);
         for (final TelemetryPing ping : pingsToUpload) {
             // TODO: It'd be great to re-use the same HTTP connection for each upload request.
-            delegate.setPingID(ping.getUniqueID());
+            delegate.setDocID(ping.getDocID());
             final String url = serverSchemeHostPort + "/" + ping.getURLPath();
             uploadPayload(url, ping.getPayload(), delegate);
 
@@ -148,6 +149,11 @@ public class TelemetryUploadService extends IntentService {
             return false;
         }
 
+        if (!NetworkUtils.isConnected(context)) {
+            Log.w(LOGTAG, "Network is not connected; returning");
+            return false;
+        }
+
         if (!isIntentValid(intent)) {
             Log.w(LOGTAG, "Received invalid Intent; returning");
             return false;
@@ -166,6 +172,8 @@ public class TelemetryUploadService extends IntentService {
      * {@link #isUploadEnabledByProfileConfig(Context, GeckoProfile)} if the profile is available as it takes into
      * account more information.
      *
+     * You may wish to also check if the network is connected when calling this method.
+     *
      * Note that this method logs debug statements when upload is disabled.
      */
     public static boolean isUploadEnabledByAppConfig(final Context context) {
@@ -179,17 +187,14 @@ public class TelemetryUploadService extends IntentService {
             return false;
         }
 
-        if (!NetworkUtils.isBackgroundDataEnabled(context)) {
-            Log.d(LOGTAG, "Background data is disabled");
-            return false;
-        }
-
         return true;
     }
 
     /**
      * Determines if the telemetry upload feature is enabled via profile & application level configurations. This is the
      * preferred method.
+     *
+     * You may wish to also check if the network is connected when calling this method.
      *
      * Note that this method logs debug statements when upload is disabled.
      */
@@ -230,13 +235,13 @@ public class TelemetryUploadService extends IntentService {
         private static final int SOCKET_TIMEOUT_MILLIS = (int) TimeUnit.SECONDS.toMillis(30);
         private static final int CONNECTION_TIMEOUT_MILLIS = (int) TimeUnit.SECONDS.toMillis(30);
 
-        /** The store ID of the ping currently being uploaded. Use {@link #getPingID()} to access it. */
-        private int pingID = -1;
-        private final HashSet<Integer> successfulUploadIDs;
+        /** The store ID of the ping currently being uploaded. Use {@link #getDocID()} to access it. */
+        private String docID = null;
+        private final Set<String> successfulUploadIDs;
 
         private boolean hadConnectionError = false;
 
-        public PingResultDelegate(final HashSet<Integer> successfulUploadIDs) {
+        public PingResultDelegate(final Set<String> successfulUploadIDs) {
             super();
             this.successfulUploadIDs = successfulUploadIDs;
         }
@@ -251,15 +256,15 @@ public class TelemetryUploadService extends IntentService {
             return CONNECTION_TIMEOUT_MILLIS;
         }
 
-        private int getPingID() {
-            if (pingID < 0) {
+        private String getDocID() {
+            if (docID == null) {
                 throw new IllegalStateException("Expected ping ID to have been updated before retrieval");
             }
-            return pingID;
+            return docID;
         }
 
-        public void setPingID(final int id) {
-            pingID = id;
+        public void setDocID(final String id) {
+            docID = id;
         }
 
         @Override
@@ -273,7 +278,7 @@ public class TelemetryUploadService extends IntentService {
             switch (status) {
                 case 200:
                 case 201:
-                    successfulUploadIDs.add(getPingID());
+                    successfulUploadIDs.add(getDocID());
                     break;
                 default:
                     Log.w(LOGTAG, "Telemetry upload failure. HTTP status: " + status);

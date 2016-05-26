@@ -1872,22 +1872,25 @@ class MemberCondition:
 
     pref: The name of the preference.
     func: The name of the function.
+    secureContext: A bool indicating whether a secure context is required.
     available: A string indicating where we should be available.
     checkAnyPermissions: An integer index for the anypermissions_* to use.
     checkAllPermissions: An integer index for the allpermissions_* to use.
     nonExposedGlobals: A set of names of globals.  Can be empty, in which case
                        it's treated the same way as None.
     """
-    def __init__(self, pref=None, func=None, available=None,
+    def __init__(self, pref=None, func=None, secureContext=False, available=None,
                  checkAnyPermissions=None, checkAllPermissions=None,
                  nonExposedGlobals=None):
         assert pref is None or isinstance(pref, str)
         assert func is None or isinstance(func, str)
+        assert isinstance(secureContext, bool)
         assert available is None or isinstance(available, str)
         assert checkAnyPermissions is None or isinstance(checkAnyPermissions, int)
         assert checkAllPermissions is None or isinstance(checkAllPermissions, int)
         assert nonExposedGlobals is None or isinstance(nonExposedGlobals, set)
         self.pref = pref
+        self.secureContext = secureContext
 
         def toFuncPtr(val):
             if val is None:
@@ -1914,6 +1917,7 @@ class MemberCondition:
 
     def __eq__(self, other):
         return (self.pref == other.pref and self.func == other.func and
+                self.secureContext == other.secureContext and
                 self.available == other.available and
                 self.checkAnyPermissions == other.checkAnyPermissions and
                 self.checkAllPermissions == other.checkAllPermissions and
@@ -1924,6 +1928,7 @@ class MemberCondition:
 
     def hasDisablers(self):
         return (self.pref is not None or
+                self.secureContext or
                 self.func != "nullptr" or
                 self.available != "nullptr" or
                 self.checkAnyPermissions != "nullptr" or
@@ -2012,6 +2017,7 @@ class PropertyDefiner:
                                           "Pref"),
             PropertyDefiner.getStringAttr(interfaceMember,
                                           "Func"),
+            interfaceMember.getExtendedAttribute("SecureContext") is not None,
             getAvailableInTestFunc(interfaceMember),
             descriptor.checkAnyPermissionsIndicesForMembers.get(interfaceMember.identifier.name),
             descriptor.checkAllPermissionsIndicesForMembers.get(interfaceMember.identifier.name),
@@ -2058,7 +2064,7 @@ class PropertyDefiner:
         disablersTemplate = dedent(
             """
             static PrefableDisablers %s_disablers%d = {
-              true, %s, %s, %s, %s, %s
+              true, %s, %s, %s, %s, %s, %s
             };
             """)
         prefableWithDisablersTemplate = '  { &%s_disablers%d, &%s_specs[%d] }'
@@ -2078,6 +2084,7 @@ class PropertyDefiner:
                                      (name, len(specs), name, len(specs)))
                 disablers.append(disablersTemplate %
                                  (name, len(specs),
+                                  toStringBool(condition.secureContext),
                                   condition.nonExposedGlobals,
                                   condition.func,
                                   condition.available,
@@ -3331,6 +3338,8 @@ class CGConstructorEnabled(CGAbstractMethod):
         if func:
             assert isinstance(func, list) and len(func) == 1
             conditions.append("%s(aCx, aObj)" % func[0])
+        if iface.getExtendedAttribute("SecureContext"):
+            conditions.append("mozilla::dom::IsSecureContextOrObjectIsFromSecureContext(aCx, aObj)")
         availableIn = getAvailableInTestFunc(iface)
         if availableIn:
             conditions.append("%s(aCx, aObj)" % availableIn)
@@ -4175,6 +4184,37 @@ class CGCallbackTempRoot(CGGeneric):
             }
             """) % name
         CGGeneric.__init__(self, define=define)
+
+
+def getCallbackConversionInfo(type, idlObject, isMember, isCallbackReturnValue,
+                              isOptional):
+    """
+    Returns a tuple containing the declType, declArgs, and basic
+    conversion for the given callback type, with the given callback
+    idl object in the given context (isMember/isCallbackReturnValue/isOptional).
+    """
+    name = idlObject.identifier.name
+
+    # We can't use fast callbacks if isOptional because then we get an
+    # Optional<RootedCallback> thing, which is not transparent to consumers.
+    useFastCallback = (not isMember and not isCallbackReturnValue and
+                       not isOptional)
+    if useFastCallback:
+        name = "binding_detail::Fast%s" % name
+
+    if type.nullable() or isCallbackReturnValue:
+        declType = CGGeneric("RefPtr<%s>" % name)
+    else:
+        declType = CGGeneric("OwningNonNull<%s>" % name)
+
+    if useFastCallback:
+        declType = CGTemplatedType("RootedCallback", declType)
+        declArgs = "cx"
+    else:
+        declArgs = None
+
+    conversion = indent(CGCallbackTempRoot(name).define())
+    return (declType, declArgs, conversion)
 
 
 class JSToNativeConversionInfo():
@@ -5079,17 +5119,16 @@ def getJSToNativeConversionInfo(type, descriptorProvider, failureCode=None,
         assert descriptor.nativeType != 'JSObject'
 
         if descriptor.interface.isCallback():
-            name = descriptor.interface.identifier.name
-            if type.nullable() or isCallbackReturnValue:
-                declType = CGGeneric("RefPtr<%s>" % name)
-            else:
-                declType = CGGeneric("OwningNonNull<%s>" % name)
-            conversion = indent(CGCallbackTempRoot(name).define())
-
+            (declType, declArgs,
+             conversion) = getCallbackConversionInfo(type, descriptor.interface,
+                                                     isMember,
+                                                     isCallbackReturnValue,
+                                                     isOptional)
             template = wrapObjectTemplate(conversion, type,
                                           "${declName} = nullptr;\n",
                                           failureCode)
             return JSToNativeConversionInfo(template, declType=declType,
+                                            declArgs=declArgs,
                                             dealWithOptional=isOptional)
 
         # This is an interface that we implement as a concrete class
@@ -5569,11 +5608,10 @@ def getJSToNativeConversionInfo(type, descriptorProvider, failureCode=None,
 
         callback = type.unroll().callback
         name = callback.identifier.name
-        if type.nullable():
-            declType = CGGeneric("RefPtr<%s>" % name)
-        else:
-            declType = CGGeneric("OwningNonNull<%s>" % name)
-        conversion = indent(CGCallbackTempRoot(name).define())
+        (declType, declArgs,
+         conversion) = getCallbackConversionInfo(type, callback, isMember,
+                                                 isCallbackReturnValue,
+                                                 isOptional)
 
         if allowTreatNonCallableAsNull and type.treatNonCallableAsNull():
             haveCallable = "JS::IsCallable(&${val}.toObject())"
@@ -5610,6 +5648,7 @@ def getJSToNativeConversionInfo(type, descriptorProvider, failureCode=None,
                 "${declName} = nullptr;\n",
                 failureCode)
         return JSToNativeConversionInfo(template, declType=declType,
+                                        declArgs=declArgs,
                                         dealWithOptional=isOptional)
 
     if type.isAny():
@@ -13527,8 +13566,14 @@ class CGBindingRoot(CGThing):
         cgthings.extend(CGCallbackFunction(c, config.getDescriptorProvider(False))
                         for c in mainCallbacks)
 
+        cgthings.extend([CGNamespace('binding_detail', CGFastCallback(c))
+                         for c in mainCallbacks])
+
         cgthings.extend(CGCallbackFunction(c, config.getDescriptorProvider(True))
                         for c in workerCallbacks if c not in mainCallbacks)
+
+        cgthings.extend([CGNamespace('binding_detail', CGFastCallback(c))
+                         for c in workerCallbacks if c not in mainCallbacks])
 
         # Do codegen for all the descriptors
         cgthings.extend([CGDescriptor(x) for x in descriptors])
@@ -13536,6 +13581,10 @@ class CGBindingRoot(CGThing):
         # Do codegen for all the callback interfaces.  Skip worker callbacks.
         cgthings.extend([CGCallbackInterface(x) for x in callbackDescriptors if
                          not x.workers])
+
+        cgthings.extend([CGNamespace('binding_detail',
+                                     CGFastCallback(x.interface))
+                         for x in callbackDescriptors if not x.workers])
 
         # Do codegen for JS implemented classes
         def getParentDescriptor(desc):
@@ -14811,6 +14860,18 @@ class CGCallback(CGClass):
                 ],
                 body=body),
             ClassConstructor(
+                [Argument("JSContext*", "aCx"),
+                 Argument("JS::Handle<JSObject*>", "aCallback"),
+                 Argument("nsIGlobalObject*", "aIncumbentGlobal"),
+                 Argument("const FastCallbackConstructor&", "")],
+                bodyInHeader=True,
+                visibility="public",
+                explicit=True,
+                baseConstructors=[
+                    "%s(aCx, aCallback, aIncumbentGlobal, FastCallbackConstructor())" % self.baseName,
+                ],
+                body=body),
+            ClassConstructor(
                 [Argument("JS::Handle<JSObject*>", "aCallback"),
                  Argument("JS::Handle<JSObject*>", "aAsyncStack"),
                  Argument("nsIGlobalObject*", "aIncumbentGlobal")],
@@ -14973,6 +15034,47 @@ class CGCallbackFunction(CGCallback):
                 visibility="public",
                 explicit=True,
                 baseConstructors=["CallbackFunction(aOther)"])]
+
+
+class CGFastCallback(CGClass):
+    def __init__(self, idlObject):
+        self._deps = idlObject.getDeps()
+        baseName = idlObject.identifier.name
+        constructor = ClassConstructor(
+            [Argument("JSContext*", "aCx"),
+             Argument("JS::Handle<JSObject*>", "aCallback"),
+             Argument("nsIGlobalObject*", "aIncumbentGlobal")],
+            bodyInHeader=True,
+            visibility="public",
+            explicit=True,
+            baseConstructors=[
+                "%s(aCx, aCallback, aIncumbentGlobal, FastCallbackConstructor())" %
+                baseName,
+            ],
+            body="")
+
+        traceMethod = ClassMethod("Trace", "void",
+                                  [Argument("JSTracer*", "aTracer")],
+                                  inline=True,
+                                  bodyInHeader=True,
+                                  visibility="public",
+                                  body="%s::Trace(aTracer);\n" % baseName)
+        holdMethod = ClassMethod("HoldJSObjectsIfMoreThanOneOwner", "void",
+                                 [],
+                                 inline=True,
+                                 bodyInHeader=True,
+                                 visibility="public",
+                                 body=(
+                                     "%s::HoldJSObjectsIfMoreThanOneOwner();\n" %
+                                     baseName))
+
+        CGClass.__init__(self, "Fast%s" % baseName,
+                         bases=[ClassBase(baseName)],
+                         constructors=[constructor],
+                         methods=[traceMethod, holdMethod])
+
+    def deps(self):
+        return self._deps
 
 
 class CGCallbackInterface(CGCallback):

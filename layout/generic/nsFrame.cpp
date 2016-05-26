@@ -92,6 +92,7 @@
 
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/EffectCompositor.h"
+#include "mozilla/EffectSet.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
@@ -700,7 +701,7 @@ nsFrame::DestroyFrom(nsIFrame* aDestructRoot)
     }
   }
 
-  if (HasCSSAnimations() || HasCSSTransitions()) {
+  if (EffectSet::GetEffectSet(this)) {
     // If no new frame for this element is created by the end of the
     // restyling process, stop animations and transitions for this frame
     if (presContext->RestyleManager()->IsGecko()) {
@@ -966,7 +967,11 @@ nsIFrame::GetUsedMargin() const
   if (m) {
     margin = *m;
   } else {
-    StyleMargin()->GetMarginNoPercentage(margin);
+    if (!StyleMargin()->GetMargin(margin)) {
+      // If we get here, our caller probably shouldn't be calling us...
+      NS_ERROR("Returning bogus 0-sized margin, because this margin "
+               "depends on layout & isn't cached!");
+    }
   }
   return margin;
 }
@@ -1040,7 +1045,11 @@ nsIFrame::GetUsedPadding() const
   if (p) {
     padding = *p;
   } else {
-    StylePadding()->GetPaddingNoPercentage(padding);
+    if (!StylePadding()->GetPadding(padding)) {
+      // If we get here, our caller probably shouldn't be calling us...
+      NS_ERROR("Returning bogus 0-sized padding, because this padding "
+               "depends on layout & isn't cached!");
+    }
   }
   return padding;
 }
@@ -2510,9 +2519,14 @@ nsIFrame::BuildDisplayListForStackingContext(nsDisplayListBuilder* aBuilder,
     buildingDisplayList.SetReferenceFrameAndCurrentOffset(outerReferenceFrame,
       GetOffsetToCrossDoc(outerReferenceFrame));
 
-    if (!aBuilder->IsForGenerateGlyphPath()) {
+    if (!aBuilder->IsForGenerateGlyphMask() &&
+        !aBuilder->IsForPaintingSelectionBG()) {
+      bool isFullyVisible =
+        dirtyRectOutsideSVGEffects.Contains(GetVisualOverflowRectRelativeToSelf());
       nsDisplayTransform *transformItem =
-        new (aBuilder) nsDisplayTransform(aBuilder, this, &resultList, dirtyRect);
+        new (aBuilder) nsDisplayTransform(aBuilder, this,
+                                          &resultList, dirtyRect, 0,
+                                          isFullyVisible);
       resultList.AppendNewToTop(transformItem);
     }
 
@@ -2604,7 +2618,8 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
   if (aBuilder->IsBackgroundOnly())
     return;
 
-  if (aBuilder->IsForGenerateGlyphPath()) {
+  if (aBuilder->IsForGenerateGlyphMask() ||
+      aBuilder->IsForPaintingSelectionBG()) {
     if (nsGkAtoms::textFrame != aChild->GetType() && aChild->IsLeaf()) {
       return;
     }
@@ -4723,15 +4738,35 @@ nsFrame::ComputeSize(nsRenderingContext *aRenderingContext,
   result.ISize(aWM) = std::max(minISize, result.ISize(aWM));
 
   // Compute block-axis size
-  // (but not if we're auto-height or if we recieved the "eUseAutoHeight"
-  // flag -- then, we'll just stick with the height that we already calculated
+  // (but not if we have auto bsize or if we recieved the "eUseAutoBSize"
+  // flag -- then, we'll just stick with the bsize that we already calculated
   // in the initial ComputeAutoSize() call.)
-  if (!nsLayoutUtils::IsAutoBSize(*blockStyleCoord, aCBSize.BSize(aWM)) &&
-      !(aFlags & nsIFrame::eUseAutoHeight)) {
-    result.BSize(aWM) =
-      nsLayoutUtils::ComputeBSizeValue(aCBSize.BSize(aWM),
-                                       boxSizingAdjust.BSize(aWM),
-                                       *blockStyleCoord);
+  if (!(aFlags & nsIFrame::eUseAutoBSize)) {
+    if (!nsLayoutUtils::IsAutoBSize(*blockStyleCoord, aCBSize.BSize(aWM))) {
+      result.BSize(aWM) =
+        nsLayoutUtils::ComputeBSizeValue(aCBSize.BSize(aWM),
+                                         boxSizingAdjust.BSize(aWM),
+                                         *blockStyleCoord);
+    } else if (MOZ_UNLIKELY(isGridItem) &&
+               blockStyleCoord->GetUnit() == eStyleUnit_Auto &&
+               !IS_TRUE_OVERFLOW_CONTAINER(this)) {
+      // 'auto' block-size for grid-level box - apply 'stretch' as needed:
+      auto cbSize = aCBSize.BSize(aWM);
+      if (cbSize != NS_AUTOHEIGHT &&
+          !StyleMargin()->HasBlockAxisAuto(aWM)) {
+        auto blockAxisAlignment =
+          !aWM.IsOrthogonalTo(GetParent()->GetWritingMode()) ?
+            StylePosition()->ComputedAlignSelf(StyleContext()->GetParent()) :
+            StylePosition()->ComputedJustifySelf(StyleContext()->GetParent());
+        if (blockAxisAlignment == NS_STYLE_ALIGN_NORMAL ||
+            blockAxisAlignment == NS_STYLE_ALIGN_STRETCH) {
+          result.BSize(aWM) = std::max(nscoord(0), cbSize -
+                                                   aPadding.BSize(aWM) -
+                                                   aBorder.BSize(aWM) -
+                                                   aMargin.BSize(aWM));
+        }
+      }
+    }
   }
 
   const nsStyleCoord& maxBSizeCoord = stylePos->MaxBSize(aWM);
@@ -9153,8 +9188,9 @@ nsFrame::BoxReflow(nsBoxLayoutState&        aState,
         AddStateBits(NS_FRAME_IS_DIRTY);
       }
     }
-    if (metrics->mLastSize.height != aHeight)
+    if (metrics->mLastSize.height != aHeight) {
       reflowState.SetVResize(true);
+    }
 
     #ifdef DEBUG_REFLOW
       nsAdaptorAddIndents();
@@ -9403,6 +9439,44 @@ nsIFrame::GetPseudoElement(CSSPseudoElementType aType)
   }
 
   return nullptr;
+}
+
+static bool
+IsFrameScrolledOutOfView(nsIFrame *aFrame)
+{
+  nsIScrollableFrame* scrollableFrame =
+    nsLayoutUtils::GetNearestScrollableFrame(aFrame,
+      nsLayoutUtils::SCROLLABLE_SAME_DOC |
+      nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
+  if (!scrollableFrame) {
+    return false;
+  }
+
+  nsIFrame *scrollableParent = do_QueryFrame(scrollableFrame);
+  nsRect rect = aFrame->GetVisualOverflowRect();
+
+  nsRect transformedRect =
+    nsLayoutUtils::TransformFrameRectToAncestor(aFrame,
+                                                rect,
+                                                scrollableParent);
+
+  nsRect scrollableRect = scrollableParent->GetVisualOverflowRect();
+  if (!transformedRect.Intersects(scrollableRect)) {
+    return true;
+  }
+
+  nsIFrame* parent = scrollableParent->GetParent();
+  if (!parent) {
+    return false;
+  }
+
+  return IsFrameScrolledOutOfView(parent);
+}
+
+bool
+nsIFrame::IsScrolledOutOfView()
+{
+  return IsFrameScrolledOutOfView(this);
 }
 
 nsIFrame::CaretPosition::CaretPosition()

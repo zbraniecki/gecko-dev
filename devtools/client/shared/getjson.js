@@ -2,7 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const {Cu, CC} = require("chrome");
+"use strict";
+
+const {CC} = require("chrome");
 const promise = require("promise");
 const Services = require("Services");
 
@@ -15,7 +17,9 @@ exports.getJSON = function (prefName, bypassCache) {
       let str = Services.prefs.getCharPref(prefName + "_cache");
       let json = JSON.parse(str);
       return promise.resolve(json);
-    } catch(e) {/* no pref or invalid json. Let's continue */}
+    } catch (e) {
+      // no pref or invalid json. Let's continue
+    }
   }
 
   let deferred = promise.defer();
@@ -25,19 +29,19 @@ exports.getJSON = function (prefName, bypassCache) {
     let json;
     try {
       json = JSON.parse(xhr.responseText);
-    } catch(e) {
+    } catch (e) {
       return deferred.reject("Invalid JSON");
     }
     Services.prefs.setCharPref(prefName + "_cache", xhr.responseText);
-    deferred.resolve(json);
-  }
+    return deferred.resolve(json);
+  };
 
   xhr.onerror = (e) => {
     deferred.reject("Network error");
-  }
+  };
 
   xhr.open("get", Services.prefs.getCharPref(prefName));
   xhr.send();
 
   return deferred.promise;
-}
+};

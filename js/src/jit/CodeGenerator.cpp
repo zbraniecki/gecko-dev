@@ -3470,8 +3470,20 @@ CodeGenerator::emitPostWriteBarrier(Register objreg)
 void
 CodeGenerator::visitOutOfLineCallPostWriteBarrier(OutOfLineCallPostWriteBarrier* ool)
 {
-    saveLiveVolatile(ool->lir());
     const LAllocation* obj = ool->object();
+
+    // Check whether the object is a global that we have already barriered
+    // before calling into the VM.
+    if (obj->isConstant()) {
+        JSObject* object = &obj->toConstant()->toObject();
+        if (object->is<GlobalObject>()) {
+            JSCompartment* comp = object->compartment();
+            AbsoluteAddress addr(&comp->globalWriteBarriered);
+            masm.branch32(Assembler::NotEqual, addr, Imm32(0), ool->rejoin());
+        }
+    }
+
+    saveLiveVolatile(ool->lir());
     emitPostWriteBarrier(obj);
     restoreLiveVolatile(ool->lir());
 
@@ -4939,6 +4951,42 @@ CodeGenerator::emitDebugResultChecks(LInstruction* ins)
         break;
     }
 }
+
+void
+CodeGenerator::emitDebugForceBailing(LInstruction* lir)
+{
+    if (!lir->snapshot())
+        return;
+    if (lir->isStart())
+        return;
+    if (lir->isOsiPoint())
+        return;
+
+    const void* bailAfterAddr = GetJitContext()->runtime->addressOfIonBailAfter();
+
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::All());
+
+    Label done, notBail, bail;
+    masm.branch32(Assembler::Equal, AbsoluteAddress(bailAfterAddr), Imm32(0), &done);
+    {
+        Register temp = regs.takeAny();
+
+        masm.push(temp);
+        masm.load32(AbsoluteAddress(bailAfterAddr), temp);
+        masm.sub32(Imm32(1), temp);
+        masm.store32(temp, AbsoluteAddress(bailAfterAddr));
+
+        masm.branch32(Assembler::NotEqual, temp, Imm32(0), &notBail);
+        {
+            masm.pop(temp);
+            masm.jump(&bail);
+            bailoutFrom(&bail, lir->snapshot());
+        }
+        masm.bind(&notBail);
+        masm.pop(temp);
+    }
+    masm.bind(&done);
+}
 #endif
 
 bool
@@ -5026,6 +5074,10 @@ CodeGenerator::generateBody()
                         return false;
                 }
             }
+
+#ifdef DEBUG
+            emitDebugForceBailing(*iter);
+#endif
 
             iter->accept(this);
 
@@ -5186,7 +5238,7 @@ CodeGenerator::visitNewArray(LNewArray* lir)
 
     MOZ_ASSERT(length <= NativeObject::MAX_DENSE_ELEMENTS_COUNT);
 
-    if (!templateObject) {
+    if (lir->mir()->isVMCall()) {
         visitNewArrayCallVM(lir);
         return;
     }
@@ -5443,7 +5495,7 @@ CodeGenerator::visitNewObject(LNewObject* lir)
     Register tempReg = ToRegister(lir->temp());
     JSObject* templateObject = lir->mir()->templateObject();
 
-    if (!templateObject) {
+    if (lir->mir()->isVMCall()) {
         visitNewObjectVMCall(lir);
         return;
     }

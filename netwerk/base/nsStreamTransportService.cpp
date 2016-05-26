@@ -19,6 +19,9 @@
 #include "nsIThreadPool.h"
 #include "mozilla/Services.h"
 
+namespace mozilla {
+namespace net {
+
 //-----------------------------------------------------------------------------
 // nsInputStreamTransport
 //
@@ -527,6 +530,12 @@ nsStreamTransportService::Dispatch(already_AddRefed<nsIRunnable>&& task, uint32_
 }
 
 NS_IMETHODIMP
+nsStreamTransportService::DelayedDispatch(already_AddRefed<nsIRunnable>&&, uint32_t)
+{
+    return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 nsStreamTransportService::IsOnCurrentThread(bool *result)
 {
     nsCOMPtr<nsIThreadPool> pool;
@@ -588,3 +597,6 @@ nsStreamTransportService::Observe(nsISupports *subject, const char *topic,
   }
   return NS_OK;
 }
+
+} // namespace net
+} // namespace mozilla

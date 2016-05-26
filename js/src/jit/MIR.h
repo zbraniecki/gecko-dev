@@ -3113,8 +3113,10 @@ class MNewArray
 
     jsbytecode* pc_;
 
+    bool vmCall_;
+
     MNewArray(CompilerConstraintList* constraints, uint32_t length, MConstant* templateConst,
-              gc::InitialHeap initialHeap, jsbytecode* pc);
+              gc::InitialHeap initialHeap, jsbytecode* pc, bool vmCall);
 
   public:
     INSTRUCTION_HEADER(NewArray)
@@ -3123,7 +3125,14 @@ class MNewArray
                           uint32_t length, MConstant* templateConst,
                           gc::InitialHeap initialHeap, jsbytecode* pc)
     {
-        return new(alloc) MNewArray(constraints, length, templateConst, initialHeap, pc);
+        return new(alloc) MNewArray(constraints, length, templateConst, initialHeap, pc, false);
+    }
+
+    static MNewArray* NewVM(TempAllocator& alloc, CompilerConstraintList* constraints,
+                            uint32_t length, MConstant* templateConst,
+                            gc::InitialHeap initialHeap, jsbytecode* pc)
+    {
+        return new(alloc) MNewArray(constraints, length, templateConst, initialHeap, pc, true);
     }
 
     uint32_t length() const {
@@ -3140,6 +3149,10 @@ class MNewArray
 
     jsbytecode* pc() const {
         return pc_;
+    }
+
+    bool isVMCall() const {
+        return vmCall_;
     }
 
     bool convertDoubleElements() const {
@@ -3257,12 +3270,14 @@ class MNewObject
   private:
     gc::InitialHeap initialHeap_;
     Mode mode_;
+    bool vmCall_;
 
     MNewObject(CompilerConstraintList* constraints, MConstant* templateConst,
-               gc::InitialHeap initialHeap, Mode mode)
+               gc::InitialHeap initialHeap, Mode mode, bool vmCall)
       : MUnaryInstruction(templateConst),
         initialHeap_(initialHeap),
-        mode_(mode)
+        mode_(mode),
+        vmCall_(vmCall)
     {
         MOZ_ASSERT_IF(mode != ObjectLiteral, templateObject());
         setResultType(MIRType::Object);
@@ -3286,7 +3301,14 @@ class MNewObject
                            MConstant* templateConst, gc::InitialHeap initialHeap,
                            Mode mode)
     {
-        return new(alloc) MNewObject(constraints, templateConst, initialHeap, mode);
+        return new(alloc) MNewObject(constraints, templateConst, initialHeap, mode, false);
+    }
+
+    static MNewObject* NewVM(TempAllocator& alloc, CompilerConstraintList* constraints,
+                             MConstant* templateConst, gc::InitialHeap initialHeap,
+                             Mode mode)
+    {
+        return new(alloc) MNewObject(constraints, templateConst, initialHeap, mode, true);
     }
 
     Mode mode() const {
@@ -3299,6 +3321,10 @@ class MNewObject
 
     gc::InitialHeap initialHeap() const {
         return initialHeap_;
+    }
+
+    bool isVMCall() const {
+        return vmCall_;
     }
 
     bool writeRecoverData(CompactBufferWriter& writer) const override;
@@ -6212,23 +6238,24 @@ class MClz
 {
     bool operandIsNeverZero_;
 
-    explicit MClz(MDefinition* num)
+    explicit MClz(MDefinition* num, MIRType type)
       : MUnaryInstruction(num),
         operandIsNeverZero_(false)
     {
+        MOZ_ASSERT(IsIntType(type));
         MOZ_ASSERT(IsNumberType(num->type()));
-        specialization_ = MIRType::Int32;
-        setResultType(MIRType::Int32);
+        specialization_ = type;
+        setResultType(type);
         setMovable();
     }
 
   public:
     INSTRUCTION_HEADER(Clz)
     static MClz* New(TempAllocator& alloc, MDefinition* num) {
-        return new(alloc) MClz(num);
+        return new(alloc) MClz(num, MIRType::Int32);
     }
     static MClz* NewAsmJS(TempAllocator& alloc, MDefinition* num) {
-        return new(alloc) MClz(num);
+        return new(alloc) MClz(num, num->type());
     }
     MDefinition* num() const {
         return getOperand(0);
@@ -6256,23 +6283,24 @@ class MCtz
 {
     bool operandIsNeverZero_;
 
-    explicit MCtz(MDefinition* num)
+    explicit MCtz(MDefinition* num, MIRType type)
       : MUnaryInstruction(num),
         operandIsNeverZero_(false)
     {
+        MOZ_ASSERT(IsIntType(type));
         MOZ_ASSERT(IsNumberType(num->type()));
-        specialization_ = MIRType::Int32;
-        setResultType(MIRType::Int32);
+        specialization_ = type;
+        setResultType(type);
         setMovable();
     }
 
   public:
     INSTRUCTION_HEADER(Ctz)
     static MCtz* New(TempAllocator& alloc, MDefinition* num) {
-        return new(alloc) MCtz(num);
+        return new(alloc) MCtz(num, MIRType::Int32);
     }
     static MCtz* NewAsmJS(TempAllocator& alloc, MDefinition* num) {
-        return new(alloc) MCtz(num);
+        return new(alloc) MCtz(num, num->type());
     }
     MDefinition* num() const {
         return getOperand(0);
@@ -6298,22 +6326,23 @@ class MPopcnt
   : public MUnaryInstruction
   , public BitwisePolicy::Data
 {
-    explicit MPopcnt(MDefinition* num)
+    explicit MPopcnt(MDefinition* num, MIRType type)
       : MUnaryInstruction(num)
     {
         MOZ_ASSERT(IsNumberType(num->type()));
-        specialization_ = MIRType::Int32;
-        setResultType(MIRType::Int32);
+        MOZ_ASSERT(IsIntType(type));
+        specialization_ = type;
+        setResultType(type);
         setMovable();
     }
 
   public:
     INSTRUCTION_HEADER(Popcnt)
     static MPopcnt* New(TempAllocator& alloc, MDefinition* num) {
-        return new(alloc) MPopcnt(num);
+        return new(alloc) MPopcnt(num, MIRType::Int32);
     }
     static MPopcnt* NewAsmJS(TempAllocator& alloc, MDefinition* num) {
-        return new(alloc) MPopcnt(num);
+        return new(alloc) MPopcnt(num, num->type());
     }
     MDefinition* num() const {
         return getOperand(0);
@@ -8505,7 +8534,6 @@ class MElements
     AliasSet getAliasSet() const override {
         return AliasSet::Load(AliasSet::ObjectFields);
     }
-    AliasType mightAlias(const MDefinition* store) const override;
 
     ALLOW_CLONE(MElements)
 };
@@ -8699,7 +8727,6 @@ class MInitializedLength
     AliasSet getAliasSet() const override {
         return AliasSet::Load(AliasSet::ObjectFields);
     }
-    AliasType mightAlias(const MDefinition* store) const override;
 
     void computeRange(TempAllocator& alloc) override;
 
@@ -8797,7 +8824,6 @@ class MUnboxedArrayInitializedLength
     AliasSet getAliasSet() const override {
         return AliasSet::Load(AliasSet::ObjectFields);
     }
-    AliasType mightAlias(const MDefinition* store) const override;
 
     ALLOW_CLONE(MUnboxedArrayInitializedLength)
 };
@@ -9185,13 +9211,15 @@ class MNot
     void cacheOperandMightEmulateUndefined(CompilerConstraintList* constraints);
 
   public:
-    static MNot* New(TempAllocator& alloc, MDefinition* elements,
+    static MNot* New(TempAllocator& alloc, MDefinition* input,
                      CompilerConstraintList* constraints = nullptr)
     {
-        return new(alloc) MNot(elements, constraints);
+        return new(alloc) MNot(input, constraints);
     }
-    static MNot* NewAsmJS(TempAllocator& alloc, MDefinition* elements) {
-        MNot* ins = new(alloc) MNot(elements);
+
+    static MNot* NewAsmJS(TempAllocator& alloc, MDefinition* input) {
+        MOZ_ASSERT(input->type() == MIRType::Int32 || input->type() == MIRType::Int64);
+        MNot* ins = new(alloc) MNot(input);
         ins->setResultType(MIRType::Int32);
         return ins;
     }
@@ -9427,7 +9455,6 @@ class MLoadElement
     AliasSet getAliasSet() const override {
         return AliasSet::Load(AliasSet::Element);
     }
-    AliasType mightAlias(const MDefinition* store) const override;
 
     ALLOW_CLONE(MLoadElement)
 };
@@ -9584,7 +9611,6 @@ class MLoadUnboxedObjectOrNull
         return AliasSet::Load(AliasSet::UnboxedElement);
     }
     MDefinition* foldsTo(TempAllocator& alloc) override;
-    AliasType mightAlias(const MDefinition* store) const override;
 
     ALLOW_CLONE(MLoadUnboxedObjectOrNull)
 };
@@ -9634,7 +9660,6 @@ class MLoadUnboxedString
     AliasSet getAliasSet() const override {
         return AliasSet::Load(AliasSet::UnboxedElement);
     }
-    AliasType mightAlias(const MDefinition* store) const override;
 
     ALLOW_CLONE(MLoadUnboxedString)
 };
@@ -10242,7 +10267,6 @@ class MLoadUnboxedScalar
             return AliasSet::Store(AliasSet::UnboxedElement);
         return AliasSet::Load(AliasSet::UnboxedElement);
     }
-    AliasType mightAlias(const MDefinition* store) const override;
 
     bool congruentTo(const MDefinition* ins) const override {
         if (requiresBarrier_)
@@ -11119,7 +11143,7 @@ class MGetPropertyPolymorphic
     PropertyName* name() const {
         return name_;
     }
-    MDefinition* obj() const {
+    MDefinition* object() const {
         return getOperand(0);
     }
     AliasSet getAliasSet() const override {
@@ -11192,7 +11216,7 @@ class MSetPropertyPolymorphic
     PropertyName* name() const {
         return name_;
     }
-    MDefinition* obj() const {
+    MDefinition* object() const {
         return getOperand(0);
     }
     MDefinition* value() const {
@@ -11478,7 +11502,7 @@ class MGuardShape
         return new(alloc) MGuardShape(obj, shape, bailoutKind);
     }
 
-    MDefinition* obj() const {
+    MDefinition* object() const {
         return getOperand(0);
     }
     const Shape* shape() const {
@@ -11525,7 +11549,7 @@ class MGuardReceiverPolymorphic
         return new(alloc) MGuardReceiverPolymorphic(alloc, obj);
     }
 
-    MDefinition* obj() const {
+    MDefinition* object() const {
         return getOperand(0);
     }
 
@@ -11580,7 +11604,7 @@ class MGuardObjectGroup
         return new(alloc) MGuardObjectGroup(obj, group, bailOnEquality, bailoutKind);
     }
 
-    MDefinition* obj() const {
+    MDefinition* object() const {
         return getOperand(0);
     }
     const ObjectGroup* group() const {
@@ -11632,7 +11656,7 @@ class MGuardObjectIdentity
         return new(alloc) MGuardObjectIdentity(obj, expected, bailOnEquality);
     }
 
-    MDefinition* obj() const {
+    MDefinition* object() const {
         return getOperand(0);
     }
     MDefinition* expected() const {
@@ -11675,7 +11699,7 @@ class MGuardClass
         return new(alloc) MGuardClass(obj, clasp);
     }
 
-    MDefinition* obj() const {
+    MDefinition* object() const {
         return getOperand(0);
     }
     const Class* getClass() const {
@@ -11721,7 +11745,7 @@ class MGuardUnboxedExpando
         return new(alloc) MGuardUnboxedExpando(obj, requireExpando, bailoutKind);
     }
 
-    MDefinition* obj() const {
+    MDefinition* object() const {
         return getOperand(0);
     }
     bool requireExpando() const {
@@ -12332,7 +12356,7 @@ class MSetDOMProperty
         return func_;
     }
 
-    MDefinition* object() {
+    MDefinition* object() const {
         return getOperand(0);
     }
 
@@ -12434,7 +12458,7 @@ class MGetDOMProperty
     bool valueMayBeInSlot() const {
         return info_->isLazilyCachedInSlot;
     }
-    MDefinition* object() {
+    MDefinition* object() const {
         return getOperand(0);
     }
 
@@ -13879,7 +13903,7 @@ public:
     static MGuardSharedTypedArray* New(TempAllocator& alloc, MDefinition* obj) {
         return new(alloc) MGuardSharedTypedArray(obj);
     }
-    MDefinition* obj() const {
+    MDefinition* object() const {
         return getOperand(0);
     }
     AliasSet getAliasSet() const override {
@@ -14547,17 +14571,17 @@ class MAsmJSCall final
       private:
         Which which_;
         union {
-            AsmJSInternalCallee internal_;
+            uint32_t internal_;
             MDefinition* dynamic_;
             wasm::SymbolicAddress builtin_;
         } u;
       public:
         Callee() {}
-        explicit Callee(AsmJSInternalCallee callee) : which_(Internal) { u.internal_ = callee; }
+        explicit Callee(uint32_t callee) : which_(Internal) { u.internal_ = callee; }
         explicit Callee(MDefinition* callee) : which_(Dynamic) { u.dynamic_ = callee; }
         explicit Callee(wasm::SymbolicAddress callee) : which_(Builtin) { u.builtin_ = callee; }
         Which which() const { return which_; }
-        AsmJSInternalCallee internal() const { MOZ_ASSERT(which_ == Internal); return u.internal_; }
+        uint32_t internal() const { MOZ_ASSERT(which_ == Internal); return u.internal_; }
         MDefinition* dynamic() const { MOZ_ASSERT(which_ == Dynamic); return u.dynamic_; }
         wasm::SymbolicAddress builtin() const { MOZ_ASSERT(which_ == Builtin); return u.builtin_; }
     };

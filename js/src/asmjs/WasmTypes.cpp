@@ -49,7 +49,7 @@ __aeabi_uidivmod(int, int);
 static void
 WasmReportOverRecursed()
 {
-    ReportOverRecursed(JSRuntime::innermostWasmActivation()->cx());
+    ReportOverRecursed(JSRuntime::innermostWasmActivation()->cx(), JSMSG_WASM_OVERRECURSED);
 }
 
 static bool
@@ -305,6 +305,14 @@ wasm::AddressOf(SymbolicAddress imm, ExclusiveContext* cx)
         return FuncCast<double (double)>(fdlibm::floor, Args_Double_Double);
       case SymbolicAddress::FloorF:
         return FuncCast<float (float)>(fdlibm::floorf, Args_Float32_Float32);
+      case SymbolicAddress::TruncD:
+        return FuncCast<double (double)>(fdlibm::trunc, Args_Double_Double);
+      case SymbolicAddress::TruncF:
+        return FuncCast<float (float)>(fdlibm::truncf, Args_Float32_Float32);
+      case SymbolicAddress::NearbyIntD:
+        return FuncCast<double (double)>(nearbyint, Args_Double_Double);
+      case SymbolicAddress::NearbyIntF:
+        return FuncCast<float (float)>(nearbyintf, Args_Float32_Float32);
       case SymbolicAddress::ExpD:
         return FuncCast<double (double)>(fdlibm::exp, Args_Double_Double);
       case SymbolicAddress::LogD:

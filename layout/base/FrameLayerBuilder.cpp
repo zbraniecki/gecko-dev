@@ -422,7 +422,7 @@ public:
     mIsSolidColorInVisibleRegion(false),
     mFontSmoothingBackgroundColor(NS_RGBA(0,0,0,0)),
     mExclusiveToOneItem(false),
-    mSingleItemFixedToViewport(false),
+    mClipMovesWithLayer(true),
     mIsCaret(false),
     mNeedComponentAlpha(false),
     mForceTransparentSurface(false),
@@ -581,10 +581,10 @@ public:
    */
   bool mExclusiveToOneItem;
   /**
-   * True if the layer contains exactly one item that returned true for
-   * ShouldFixToViewport.
+   * True unless the layer contains exactly one item whose clip scrolls
+   * relative to the layer rather than moving with the layer.
    */
-  bool mSingleItemFixedToViewport;
+  bool mClipMovesWithLayer;
   /**
    * True if the layer contains exactly one item for the caret.
    */
@@ -2512,9 +2512,9 @@ ContainerState::FindOpaqueBackgroundColorInLayer(const PaintedLayerData* aData,
       return NS_RGBA(0,0,0,0);
     }
 
-    nscolor color;
-    if (item->IsUniform(mBuilder, &color) && NS_GET_A(color) == 255)
-      return color;
+    Maybe<nscolor> color = item->IsUniform(mBuilder);
+    if (color && NS_GET_A(*color) == 255)
+      return *color;
 
     return NS_RGBA(0,0,0,0);
   }
@@ -3141,7 +3141,7 @@ void ContainerState::FinishPaintedLayerData(PaintedLayerData& aData, FindOpaqueB
   // ContainerState::ComputeOpaqueRect(), but was saved in data->mItemClip.
   // Apply it to the opaque region now. Note that it's important to do this
   // before the opaque region is propagated to the NewLayerEntry below.
-  if (data->mSingleItemFixedToViewport && data->mItemClip.HasClip()) {
+  if (!data->mClipMovesWithLayer && data->mItemClip.HasClip()) {
     nsRect clipRect = data->mItemClip.GetClipRect();
     nsRect insideRoundedCorners = data->mItemClip.ApproximateIntersectInward(clipRect);
     nsIntRect insideRoundedCornersScaled = ScaleToInsidePixels(insideRoundedCorners);
@@ -3215,7 +3215,7 @@ void ContainerState::FinishPaintedLayerData(PaintedLayerData& aData, FindOpaqueB
     // If the layer contains a single item fixed to the viewport, we removed
     // its clip in ProcessDisplayItems() and saved it to set on the layer instead.
     // Set the clip on the layer now.
-    if (data->mSingleItemFixedToViewport && data->mItemClip.HasClip()) {
+    if (!data->mClipMovesWithLayer && data->mItemClip.HasClip()) {
       nsIntRect layerClipRect = ScaleToNearestPixels(data->mItemClip.GetClipRect());
       layerClipRect.MoveBy(mParameters.mOffset);
       // The clip from such an item becomes part of the layer's scrolled clip,
@@ -3281,30 +3281,35 @@ void ContainerState::FinishPaintedLayerData(PaintedLayerData& aData, FindOpaqueB
         containingPaintedLayerData->mMaybeHitRegion, rect);
       containingPaintedLayerData->mMaybeHitRegion.SimplifyOutward(8);
     }
+    Maybe<Matrix4x4> matrixCache;
     nsLayoutUtils::TransformToAncestorAndCombineRegions(
-      data->mHitRegion.GetBounds(),
+      data->mHitRegion,
       mContainerReferenceFrame,
       containingPaintedLayerData->mReferenceFrame,
       &containingPaintedLayerData->mHitRegion,
-      &containingPaintedLayerData->mMaybeHitRegion);
+      &containingPaintedLayerData->mMaybeHitRegion,
+      &matrixCache);
     nsLayoutUtils::TransformToAncestorAndCombineRegions(
-      data->mNoActionRegion.GetBounds(),
+      data->mNoActionRegion,
       mContainerReferenceFrame,
       containingPaintedLayerData->mReferenceFrame,
       &containingPaintedLayerData->mNoActionRegion,
-      &containingPaintedLayerData->mDispatchToContentHitRegion);
+      &containingPaintedLayerData->mDispatchToContentHitRegion,
+      &matrixCache);
     nsLayoutUtils::TransformToAncestorAndCombineRegions(
-      data->mHorizontalPanRegion.GetBounds(),
+      data->mHorizontalPanRegion,
       mContainerReferenceFrame,
       containingPaintedLayerData->mReferenceFrame,
       &containingPaintedLayerData->mHorizontalPanRegion,
-      &containingPaintedLayerData->mDispatchToContentHitRegion);
+      &containingPaintedLayerData->mDispatchToContentHitRegion,
+      &matrixCache);
     nsLayoutUtils::TransformToAncestorAndCombineRegions(
-      data->mVerticalPanRegion.GetBounds(),
+      data->mVerticalPanRegion,
       mContainerReferenceFrame,
       containingPaintedLayerData->mReferenceFrame,
       &containingPaintedLayerData->mVerticalPanRegion,
-      &containingPaintedLayerData->mDispatchToContentHitRegion);
+      &containingPaintedLayerData->mDispatchToContentHitRegion,
+      &matrixCache);
 
   } else {
     EventRegions regions;
@@ -3417,34 +3422,33 @@ PaintedLayerData::Accumulate(ContainerState* aState,
     }
   }
 
-  nscolor uniformColor;
-  bool isUniform = aItem->IsUniform(aState->mBuilder, &uniformColor);
+  Maybe<nscolor> uniformColor = aItem->IsUniform(aState->mBuilder);
 
   // Some display items have to exist (so they can set forceTransparentSurface
   // below) but don't draw anything. They'll return true for isUniform but
   // a color with opacity 0.
-  if (!isUniform || NS_GET_A(uniformColor) > 0) {
+  if (!uniformColor || NS_GET_A(*uniformColor) > 0) {
     // Make sure that the visible area is covered by uniform pixels. In
     // particular this excludes cases where the edges of the item are not
     // pixel-aligned (thus the item will not be truly uniform).
-    if (isUniform) {
+    if (uniformColor) {
       bool snap;
       nsRect bounds = aItem->GetBounds(aState->mBuilder, &snap);
       if (!aState->ScaleToInsidePixels(bounds, snap).Contains(aVisibleRect)) {
-        isUniform = false;
+        uniformColor = Nothing();
         FLB_LOG_PAINTED_LAYER_DECISION(this, "  Display item does not cover the visible rect\n");
       }
     }
-    if (isUniform) {
+    if (uniformColor) {
       if (isFirstVisibleItem) {
         // This color is all we have
-        mSolidColor = uniformColor;
+        mSolidColor = *uniformColor;
         mIsSolidColorInVisibleRegion = true;
       } else if (mIsSolidColorInVisibleRegion &&
                  mVisibleRegion.IsEqual(nsIntRegion(aVisibleRect)) &&
                  clipMatches) {
         // we can just blend the colors together
-        mSolidColor = NS_ComposeColors(mSolidColor, uniformColor);
+        mSolidColor = NS_ComposeColors(mSolidColor, *uniformColor);
       } else {
         FLB_LOG_PAINTED_LAYER_DECISION(this, "  Layer not a solid color: Can't blend colors togethers\n");
         mIsSolidColorInVisibleRegion = false;
@@ -3526,14 +3530,14 @@ ContainerState::NewPaintedLayerData(nsDisplayItem* aItem,
                                     AnimatedGeometryRoot* aAnimatedGeometryRoot,
                                     const DisplayItemScrollClip* aScrollClip,
                                     const nsPoint& aTopLeft,
-                                    bool aShouldFixToViewport)
+                                    bool aClipMovesWithLayer)
 {
   PaintedLayerData data;
   data.mAnimatedGeometryRoot = aAnimatedGeometryRoot;
   data.mScrollClip = aScrollClip;
   data.mAnimatedGeometryRootOffset = aTopLeft;
   data.mReferenceFrame = aItem->ReferenceFrame();
-  data.mSingleItemFixedToViewport = aShouldFixToViewport;
+  data.mClipMovesWithLayer = aClipMovesWithLayer;
   data.mBackfaceHidden = aItem->Frame()->In3DContextAndBackfaceIsHidden();
   data.mIsCaret = aItem->GetType() == nsDisplayItem::TYPE_CARET;
 
@@ -3876,16 +3880,15 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList)
       item->SetClip(mBuilder, clip);
     }
 
-    bool shouldFixToViewport = !(*animatedGeometryRoot)->GetParent() &&
-      item->ShouldFixToViewport(mBuilder);
+    bool clipMovesWithLayer = (animatedGeometryRoot == animatedGeometryRootForClip);
 
-    // For items that are fixed to the viewport, remove their clip at the
-    // display item level because additional areas could be brought into
-    // view by async scrolling. Save the clip so we can set it on the layer
-    // instead later.
-    DisplayItemClip fixedToViewportClip = DisplayItemClip::NoClip();
-    if (shouldFixToViewport) {
-      fixedToViewportClip = item->GetClip();
+    // For items whose clip scrolls relative to the layer rather than moving
+    // with the layer, remove their clip at the display item level because
+    // additional areas could be brought into view by async scrolling.
+    // Save the clip so we can set it on the layer instead later.
+    DisplayItemClip scrollingClip = DisplayItemClip::NoClip();
+    if (!clipMovesWithLayer) {
+      scrollingClip = item->GetClip();
       item->SetClip(mBuilder, DisplayItemClip::NoClip());
     }
 
@@ -3898,7 +3901,7 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList)
     }
     nsIntRect itemDrawRect = ScaleToOutsidePixels(itemContent, snap);
     bool prerenderedTransform = itemType == nsDisplayItem::TYPE_TRANSFORM &&
-        static_cast<nsDisplayTransform*>(item)->ShouldPrerender(mBuilder);
+        static_cast<nsDisplayTransform*>(item)->MayBeAnimated(mBuilder);
     ParentLayerIntRect clipRect;
     const DisplayItemClip& itemClip = item->GetClip();
     if (itemClip.HasClip()) {
@@ -3918,7 +3921,7 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList)
         bounds.IntersectRect(bounds, itemClip.GetClipRect());
       }
     }
-    bounds = fixedToViewportClip.ApplyNonRoundedIntersection(bounds);
+    bounds = scrollingClip.ApplyNonRoundedIntersection(bounds);
     if (!bounds.IsEmpty()) {
       for (const DisplayItemScrollClip* scrollClip = itemScrollClip;
            scrollClip && scrollClip != mContainerScrollClip;
@@ -3936,16 +3939,11 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList)
 #endif
 
     nsIntRect itemVisibleRect = itemDrawRect;
-    if (!shouldFixToViewport) {
-      // We haven't computed visibility at this point, so item->GetVisibleRect()
-      // is just the dirty rect that item was initialized with. We intersect it
-      // with the clipped item bounds to get a tighter visible rect.
-      // However, we don't do this for fixed background images, because their
-      // clips can move asynchronously so we want the layer to contain the
-      // whole bounds of the display item.
-      itemVisibleRect = itemVisibleRect.Intersect(
-        ScaleToOutsidePixels(item->GetVisibleRect(), false));
-    }
+    // We haven't computed visibility at this point, so item->GetVisibleRect()
+    // is just the dirty rect that item was initialized with. We intersect it
+    // with the clipped item bounds to get a tighter visible rect.
+    itemVisibleRect = itemVisibleRect.Intersect(
+      ScaleToOutsidePixels(item->GetVisibleRect(), false));
 
     if (maxLayers != -1 && layerCount >= maxLayers) {
       forceInactive = true;
@@ -4016,7 +4014,7 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList)
       nscolor* uniformColorPtr = (mayDrawOutOfOrder || IsInInactiveLayer()) ? nullptr :
                                                                               &uniformColor;
       nsIntRect clipRectUntyped;
-      const DisplayItemClip& layerClip = shouldFixToViewport ? fixedToViewportClip : itemClip;
+      const DisplayItemClip& layerClip = clipMovesWithLayer ? itemClip : scrollingClip;
       ParentLayerIntRect layerClipRect;
       nsIntRect* clipPtr = nullptr;
       if (layerClip.HasClip()) {
@@ -4116,17 +4114,9 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList)
       ownLayer->SetClipRect(Nothing());
       ownLayer->SetScrolledClip(Nothing());
       if (layerClip.HasClip()) {
-        if (shouldFixToViewport) {
-          // For layers fixed to the viewport, the clip becomes part of the
-          // layer's scrolled clip.
-          LayerClip scrolledClip;
-          scrolledClip.SetClipRect(layerClipRect);
-          if (layerClip.IsRectClippedByRoundedCorner(itemContent)) {
-            scrolledClip.SetMaskLayerIndex(
-                SetupMaskLayerForScrolledClip(ownLayer.get(), layerClip));
-          }
-          ownLayer->SetScrolledClip(Some(scrolledClip));
-        } else {
+        // If the clip moves with the layer, it becomes part of the layer
+        // clip. Otherwise, it becomes part of the scrolled clip.
+        if (clipMovesWithLayer) {
           ownLayer->SetClipRect(Some(layerClipRect));
 
           // rounded rectangle clipping using mask layers
@@ -4134,6 +4124,14 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList)
           if (layerClip.IsRectClippedByRoundedCorner(itemContent)) {
             SetupMaskLayer(ownLayer, layerClip, itemVisibleRect);
           }
+        } else {
+          LayerClip scrolledClip;
+          scrolledClip.SetClipRect(layerClipRect);
+          if (layerClip.IsRectClippedByRoundedCorner(itemContent)) {
+            scrolledClip.SetMaskLayerIndex(
+                SetupMaskLayerForScrolledClip(ownLayer.get(), layerClip));
+          }
+          ownLayer->SetScrolledClip(Some(scrolledClip));
         }
       }
 
@@ -4227,7 +4225,7 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList)
                                                   [&]() {
           layerCount++;
           return NewPaintedLayerData(item, animatedGeometryRoot, agrScrollClip,
-                                     topLeft, shouldFixToViewport);
+                                     topLeft, clipMovesWithLayer);
         });
 
       if (itemType == nsDisplayItem::TYPE_LAYER_EVENT_REGIONS) {
@@ -4252,8 +4250,8 @@ ContainerState::ProcessDisplayItems(nsDisplayList* aList)
         // If we removed the clip from the display item above because it's
         // fixed to the viewport, save it on the PaintedLayerData so we can
         // set it on the layer later.
-        if (fixedToViewportClip.HasClip()) {
-          paintedLayerData->mItemClip = fixedToViewportClip;
+        if (scrollingClip.HasClip()) {
+          paintedLayerData->mItemClip = scrollingClip;
         }
 
         if (!paintedLayerData->mLayer) {

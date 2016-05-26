@@ -168,7 +168,7 @@ Zone::sweepBreakpoints(FreeOp* fop)
             Breakpoint* nextbp;
             for (Breakpoint* bp = site->firstBreakpoint(); bp; bp = nextbp) {
                 nextbp = bp->nextInSite();
-                HeapPtrNativeObject& dbgobj = bp->debugger->toJSObjectRef();
+                GCPtrNativeObject& dbgobj = bp->debugger->toJSObjectRef();
 
                 // If we are sweeping, then we expect the script and the
                 // debugger object to be swept in the same zone group, except if
@@ -218,6 +218,12 @@ Zone::discardJitCode(FreeOp* fop)
 
         /* Only mark OSI points if code is being discarded. */
         jit::InvalidateAll(fop, this);
+
+        /* The storebuffer may contain pointers into data owned by BaselineScript. */
+        JSRuntime* rt = runtimeFromMainThread();
+        if (!rt->isHeapCollecting())
+            rt->gc.evictNursery();
+        MOZ_ASSERT(rt->gc.nursery.isEmpty());
 
         for (ZoneCellIter i(this, AllocKind::SCRIPT); !i.done(); i.next()) {
             JSScript* script = i.get<JSScript>();

@@ -98,7 +98,7 @@ this.GeckoDriver = function(appName, device, stopSignal, emulator) {
   this.emulator.sendToListener = this.sendAsync.bind(this);
 
   this.sessionId = null;
-  // holds list of browser.Context's
+  this.wins = new browser.Windows();
   this.browsers = {};
   // points to current browser
   this.curBrowser = null;
@@ -218,7 +218,7 @@ GeckoDriver.prototype.sendAsync = function(name, msg, cmdId) {
       if (this.curBrowser.curFrameId) {
         this.mm.broadcastAsyncMessage(name + this.curBrowser.curFrameId, msg);
       } else {
-        throw new NoSuchFrameError(
+        throw new NoSuchWindowError(
             "No such content frame; perhaps the listener was not registered?");
       }
     });
@@ -281,18 +281,16 @@ GeckoDriver.prototype.addFrameCloseListener = function(action) {
  *     Returns the unique server-assigned ID of the window.
  */
 GeckoDriver.prototype.addBrowser = function(win) {
-  logger.info("addBrowser");
   let bc = new browser.Context(win, this);
-  logger.info("bc=" + bc);
   let winId = win.QueryInterface(Ci.nsIInterfaceRequestor)
       .getInterface(Ci.nsIDOMWindowUtils).outerWindowID;
   winId = winId + ((this.appName == "B2G") ? "-b2g" : "");
   this.browsers[winId] = bc;
   this.curBrowser = this.browsers[winId];
-  if (typeof this.curBrowser.elementManager.seenItems[winId] == "undefined") {
+  if (!this.wins.has(winId)) {
     // add this to seenItems so we can guarantee
     // the user will get winId as this window's id
-    this.curBrowser.elementManager.seenItems[winId] = Cu.getWeakReference(win);
+    this.wins.set(winId, win);
   }
 };
 
@@ -418,8 +416,7 @@ GeckoDriver.prototype.registerBrowser = function(id, be) {
     this.mainContentFrameId = this.curBrowser.curFrameId;
   }
 
-  this.curBrowser.elementManager.seenItems[reg.id] =
-      Cu.getWeakReference(listenerWindow);
+  this.wins.set(reg.id, listenerWindow);
   if (nullPrevious && (this.curBrowser.curFrameId !== null)) {
     this.sendAsync("newSession", this.sessionCapabilities, this.newSessionCommandId);
     if (this.curBrowser.isNewSession) {
@@ -1754,9 +1751,12 @@ GeckoDriver.prototype.clickElement = function*(cmd, resp) {
  * Get a given attribute of an element.
  *
  * @param {string} id
- *     Reference ID to the element that will be inspected.
+ *     Web element reference ID to the element that will be inspected.
  * @param {string} name
- *     Name of the attribute to retrieve.
+ *     Name of the attribute which value to retrieve.
+ *
+ * @return {string}
+ *     Value of the attribute.
  */
 GeckoDriver.prototype.getElementAttribute = function*(cmd, resp) {
   let {id, name} = cmd.parameters;
@@ -1771,6 +1771,29 @@ GeckoDriver.prototype.getElementAttribute = function*(cmd, resp) {
     case Context.CONTENT:
       resp.body.value = yield this.listener.getElementAttribute(id, name);
       break;
+  }
+};
+
+/**
+ * Returns the value of a property associated with given element.
+ *
+ * @param {string} id
+ *     Web element reference ID to the element that will be inspected.
+ * @param {string} name
+ *     Name of the property which value to retrieve.
+ *
+ * @return {string}
+ *     Value of the property.
+ */
+GeckoDriver.prototype.getElementProperty = function*(cmd, resp) {
+  let {id, name} = cmd.parameters;
+
+  switch (this.context) {
+    case Context.CHROME:
+      throw new UnsupportedOperationError();
+
+    case Context.CONTENT:
+      return this.listener.getElementProperty(id, name);
   }
 };
 
@@ -2450,8 +2473,8 @@ GeckoDriver.prototype.setWindowSize = function(cmd, resp) {
   let height = parseInt(cmd.parameters.height);
 
   let win = this.getCurrentWindow();
-  if (width >= win.screen.availWidth && height >= win.screen.availHeight) {
-    throw new UnsupportedOperationError("Invalid requested size, cannot maximize");
+  if (width >= win.screen.availWidth || height >= win.screen.availHeight) {
+    throw new UnsupportedOperationError("Requested size exceeds screen size")
   }
 
   win.resizeTo(width, height);
@@ -2477,10 +2500,7 @@ GeckoDriver.prototype.maximizeWindow = function(cmd, resp) {
  * no modal is displayed.
  */
 GeckoDriver.prototype.dismissDialog = function(cmd, resp) {
-  if (!this.dialog) {
-    throw new NoAlertOpenError(
-        "No tab modal was open when attempting to dismiss the dialog");
-  }
+  this._checkIfAlertIsPresent();
 
   let {button0, button1} = this.dialog.ui;
   (button1 ? button1 : button0).click();
@@ -2492,10 +2512,7 @@ GeckoDriver.prototype.dismissDialog = function(cmd, resp) {
  * no modal is displayed.
  */
 GeckoDriver.prototype.acceptDialog = function(cmd, resp) {
-  if (!this.dialog) {
-    throw new NoAlertOpenError(
-        "No tab modal was open when attempting to accept the dialog");
-  }
+  this._checkIfAlertIsPresent();
 
   let {button0} = this.dialog.ui;
   button0.click();
@@ -2507,10 +2524,7 @@ GeckoDriver.prototype.acceptDialog = function(cmd, resp) {
  * alert error if no modal is currently displayed.
  */
 GeckoDriver.prototype.getTextFromDialog = function(cmd, resp) {
-  if (!this.dialog) {
-    throw new NoAlertOpenError(
-        "No tab modal was open when attempting to get the dialog text");
-  }
+  this._checkIfAlertIsPresent();
 
   let {infoBody} = this.dialog.ui;
   resp.body.value = infoBody.textContent;
@@ -2523,10 +2537,7 @@ GeckoDriver.prototype.getTextFromDialog = function(cmd, resp) {
  * an element not visible error is returned.
  */
 GeckoDriver.prototype.sendKeysToDialog = function(cmd, resp) {
-  if (!this.dialog) {
-    throw new NoAlertOpenError(
-        "No tab modal was open when attempting to send keys to a dialog");
-  }
+  this._checkIfAlertIsPresent();
 
   // see toolkit/components/prompts/content/commonDialog.js
   let {loginContainer, loginTextbox} = this.dialog.ui;
@@ -2540,6 +2551,13 @@ GeckoDriver.prototype.sendKeysToDialog = function(cmd, resp) {
       loginTextbox,
       {ignoreVisibility: true},
       win);
+};
+
+GeckoDriver.prototype._checkIfAlertIsPresent = function() {
+  if (!this.dialog || !this.dialog.ui) {
+    throw new NoAlertOpenError(
+        "No tab modal was open when attempting to get the dialog text");
+  }
 };
 
 /**
@@ -2716,6 +2734,7 @@ GeckoDriver.prototype.commands = {
   "findElements": GeckoDriver.prototype.findElements,
   "clickElement": GeckoDriver.prototype.clickElement,
   "getElementAttribute": GeckoDriver.prototype.getElementAttribute,
+  "getElementProperty": GeckoDriver.prototype.getElementProperty,
   "getElementText": GeckoDriver.prototype.getElementText,
   "getElementTagName": GeckoDriver.prototype.getElementTagName,
   "isElementDisplayed": GeckoDriver.prototype.isElementDisplayed,

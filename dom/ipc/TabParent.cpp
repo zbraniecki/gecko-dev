@@ -25,12 +25,12 @@
 #include "mozilla/EventStateManager.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
+#include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/Hal.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/ipc/DocumentRendererParent.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
-#include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layout/RenderFrameParent.h"
 #include "mozilla/LookAndFeel.h"
@@ -105,6 +105,7 @@ using namespace mozilla::layout;
 using namespace mozilla::services;
 using namespace mozilla::widget;
 using namespace mozilla::jsipc;
+using namespace mozilla::gfx;
 
 // The flags passed by the webProgress notifications are 16 bits shifted
 // from the ones registered by webProgressListeners.
@@ -469,6 +470,13 @@ TabParent::DestroyInternal()
   if (RenderFrameParent* frame = GetRenderFrame()) {
     RemoveTabParentFromTable(frame->GetLayersId());
     frame->Destroy();
+
+    // Notify our layer tree update observer that we're going away. It's
+    // possible that we race with a notification and there can be an
+    // LayerTreeUpdateRunnable on the main thread's event queue with a pointer
+    // to us. However, our actual destruction won't be until yet another event
+    // *after* that one is processed, so this should be safe.
+    mLayerUpdateObserver->TabParentDestroyed();
   }
 
   // Let all PluginWidgets know we are tearing down. Prevents
@@ -2262,6 +2270,10 @@ TabParent::GetTabIdFrom(nsIDocShell *docShell)
 RenderFrameParent*
 TabParent::GetRenderFrame()
 {
+  if (!mLayerUpdateObserver) {
+    mLayerUpdateObserver = new LayerTreeUpdateObserver(this);
+  }
+
   PRenderFrameParent* p = LoneManagedOrNullAsserts(ManagedPRenderFrameParent());
   return static_cast<RenderFrameParent*>(p);
 }
@@ -2847,6 +2859,8 @@ TabParent::GetUseAsyncPanZoom(bool* useAsyncPanZoom)
 NS_IMETHODIMP
 TabParent::SetDocShellIsActive(bool isActive)
 {
+  // docshell is consider prerendered only if not active yet
+  mIsPrerendered &= !isActive;
   mDocShellIsActive = isActive;
   Unused << SendSetDocShellIsActive(isActive, true);
   return NS_OK;
@@ -2860,8 +2874,17 @@ TabParent::GetDocShellIsActive(bool* aIsActive)
 }
 
 NS_IMETHODIMP
+TabParent::GetIsPrerendered(bool* aIsPrerendered)
+{
+  *aIsPrerendered = mIsPrerendered;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 TabParent::SetDocShellIsActiveAndForeground(bool isActive)
 {
+  // docshell is consider prerendered only if not active yet
+  mIsPrerendered &= !isActive;
   mDocShellIsActive = isActive;
   Unused << SendSetDocShellIsActive(isActive, false);
   return NS_OK;
@@ -2917,33 +2940,36 @@ TabParent::NavigateByKey(bool aForward, bool aForDocumentNavigation)
 class LayerTreeUpdateRunnable final
   : public mozilla::Runnable
 {
-  uint64_t mLayersId;
+  RefPtr<LayerTreeUpdateObserver> mUpdateObserver;
   bool mActive;
 
 public:
-  explicit LayerTreeUpdateRunnable(uint64_t aLayersId, bool aActive)
-    : mLayersId(aLayersId), mActive(aActive) {}
+  explicit LayerTreeUpdateRunnable(LayerTreeUpdateObserver* aObs, bool aActive)
+    : mUpdateObserver(aObs), mActive(aActive)
+  {
+    MOZ_ASSERT(!NS_IsMainThread());
+  }
 
 private:
   NS_IMETHOD Run() {
     MOZ_ASSERT(NS_IsMainThread());
-    TabParent* tabParent = TabParent::GetTabParentFromLayersId(mLayersId);
-    if (tabParent) {
+    if (RefPtr<TabParent> tabParent = mUpdateObserver->GetTabParent()) {
       tabParent->LayerTreeUpdate(mActive);
     }
     return NS_OK;
   }
 };
 
-// This observer runs on the compositor thread, so we dispatch a runnable to the
-// main thread to actually dispatch the event.
-class LayerTreeUpdateObserver : public CompositorUpdateObserver
+void
+LayerTreeUpdateObserver::ObserveUpdate(uint64_t aLayersId, bool aActive)
 {
-  virtual void ObserveUpdate(uint64_t aLayersId, bool aActive) {
-    RefPtr<LayerTreeUpdateRunnable> runnable = new LayerTreeUpdateRunnable(aLayersId, aActive);
-    NS_DispatchToMainThread(runnable);
-  }
-};
+  MOZ_ASSERT(!NS_IsMainThread());
+
+  RefPtr<LayerTreeUpdateRunnable> runnable =
+    new LayerTreeUpdateRunnable(this, aActive);
+  NS_DispatchToMainThread(runnable);
+}
+
 
 bool
 TabParent::RequestNotifyLayerTreeReady()
@@ -2952,9 +2978,9 @@ TabParent::RequestNotifyLayerTreeReady()
   if (!frame || !frame->IsInitted()) {
     mNeedLayerTreeReadyNotification = true;
   } else {
-    CompositorBridgeParent::RequestNotifyLayerTreeReady(
+    GPUProcessManager::Get()->RequestNotifyLayerTreeReady(
       frame->GetLayersId(),
-      new LayerTreeUpdateObserver());
+      mLayerUpdateObserver);
   }
   return true;
 }
@@ -2967,9 +2993,9 @@ TabParent::RequestNotifyLayerTreeCleared()
     return false;
   }
 
-  CompositorBridgeParent::RequestNotifyLayerTreeCleared(
+  GPUProcessManager::Get()->RequestNotifyLayerTreeCleared(
     frame->GetLayersId(),
-    new LayerTreeUpdateObserver());
+    mLayerUpdateObserver);
   return true;
 }
 
@@ -3008,9 +3034,17 @@ TabParent::SwapLayerTreeObservers(TabParent* aOther)
     return;
   }
 
-  CompositorBridgeParent::SwapLayerTreeObservers(
+  // The swap that happens for the observers in GPUProcessManager has to
+  // happen in a lock so that an update being processed on the compositor thread
+  // can't grab the layer update observer for the wrong tab parent.
+  GPUProcessManager::Get()->SwapLayerTreeObservers(
     rfp->GetLayersId(),
     otherRfp->GetLayersId());
+
+  // No need for a lock, destruction can only happen on the main thread and we
+  // only read mLayerUpdateObserver::mTabParent on the main thread.
+  Swap(mLayerUpdateObserver, aOther->mLayerUpdateObserver);
+  mLayerUpdateObserver->SwapTabParent(aOther->mLayerUpdateObserver);
 }
 
 bool
@@ -3202,7 +3236,8 @@ TabParent::RecvInvokeDragSession(nsTArray<IPCDataTransfer>&& aTransfers,
   nsIPresShell* shell = mFrameElement->OwnerDoc()->GetShell();
   if (!shell) {
     if (Manager()->IsContentParent()) {
-      Unused << Manager()->AsContentParent()->SendEndDragSession(true, true);
+      Unused << Manager()->AsContentParent()->SendEndDragSession(true, true,
+                                                                 LayoutDeviceIntPoint());
     }
     return true;
   }
@@ -3325,12 +3360,15 @@ TabParent::GetShowInfo()
       mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::allowfullscreen) ||
       mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::mozallowfullscreen);
     bool isPrivate = mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::mozprivatebrowsing);
+    bool isTransparent =
+      nsContentUtils::IsChromeDoc(mFrameElement->OwnerDoc()) &&
+      mFrameElement->HasAttr(kNameSpaceID_None, nsGkAtoms::transparent);
     return ShowInfo(name, allowFullscreen, isPrivate, false,
-                    mDPI, mDefaultScale.scale);
+                    isTransparent, mDPI, mDefaultScale.scale);
   }
 
   return ShowInfo(EmptyString(), false, false, false,
-                  mDPI, mDefaultScale.scale);
+                  false, mDPI, mDefaultScale.scale);
 }
 
 void
@@ -3373,6 +3411,22 @@ TabParent::RecvGetTabCount(uint32_t* aValue)
   NS_ENSURE_SUCCESS(rv, true);
 
   *aValue = tabCount;
+  return true;
+}
+
+bool
+TabParent::RecvLookUpDictionary(const nsString& aText,
+                                nsTArray<FontRange>&& aFontRangeArray,
+                                const bool& aIsVertical,
+                                const LayoutDeviceIntPoint& aPoint)
+{
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (!widget) {
+    return true;
+  }
+
+  widget->LookUpDictionary(aText, aFontRangeArray, aIsVertical,
+                           aPoint - GetChildProcessOffset());
   return true;
 }
 

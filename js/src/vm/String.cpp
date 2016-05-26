@@ -779,7 +779,7 @@ bool
 StaticStrings::init(JSContext* cx)
 {
     AutoLockForExclusiveAccess lock(cx);
-    AutoCompartment ac(cx, cx->runtime()->atomsCompartment());
+    AutoCompartment ac(cx, cx->runtime()->atomsCompartment(lock));
 
     static_assert(UNIT_STATIC_LIMIT - 1 <= JSString::MAX_LATIN1_CHAR,
                   "Unit strings must fit in Latin1Char.");
@@ -944,7 +944,7 @@ AutoStableStringChars::allocOwnChars(JSContext* cx, size_t count)
 
     static_assert((JSString::MAX_LENGTH & mozilla::tl::MulOverflowMask<sizeof(T)>::value) == 0,
                   "Size calculation can overflow");
-    MOZ_ASSERT(count <= JSString::MAX_LENGTH);
+    MOZ_ASSERT(count <= (JSString::MAX_LENGTH + 1));
     size_t size = sizeof(T) * count;
 
     ownChars_.emplace(cx);

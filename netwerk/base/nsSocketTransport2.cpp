@@ -39,7 +39,6 @@
 
 #if defined(XP_WIN)
 #include "mozilla/WindowsVersion.h"
-#include "nsNativeConnectionHelper.h"
 #include "ShutdownLayer.h"
 #endif
 
@@ -59,15 +58,15 @@
 #define SUCCESSFUL_CONNECTING_TO_IPV6_ADDRESS 2
 #define UNSUCCESSFUL_CONNECTING_TO_IPV6_ADDRESS 3
 
-using namespace mozilla;
-using namespace mozilla::net;
-
 //-----------------------------------------------------------------------------
 
 static NS_DEFINE_CID(kSocketProviderServiceCID, NS_SOCKETPROVIDERSERVICE_CID);
 static NS_DEFINE_CID(kDNSServiceCID, NS_DNSSERVICE_CID);
 
 //-----------------------------------------------------------------------------
+
+namespace mozilla {
+namespace net {
 
 class nsSocketEvent : public Runnable
 {
@@ -206,8 +205,8 @@ ErrorAccordingToNSPR(PRErrorCode errorCode)
         rv = NS_ERROR_FILE_READ_ONLY;
         break;
     default:
-        if (mozilla::psm::IsNSSErrorCode(errorCode)) {
-            rv = mozilla::psm::GetXPCOMFromNSSError(errorCode);
+        if (psm::IsNSSErrorCode(errorCode)) {
+            rv = psm::GetXPCOMFromNSSError(errorCode);
         }
         break;
 
@@ -1325,7 +1324,7 @@ nsSocketTransport::InitiateSocket()
     }
 
     // Attach network activity monitor
-    mozilla::net::NetworkActivityMonitor::AttachIOLayer(fd);
+    NetworkActivityMonitor::AttachIOLayer(fd);
 
     PRStatus status;
 
@@ -1611,19 +1610,6 @@ nsSocketTransport::RecoverFromError()
         }
     }
 
-#if defined(XP_WIN)
-    // If not trying next address, try to make a connection using dialup. 
-    // Retry if that connection is made.
-    if (!tryAgain) {
-        bool autodialEnabled;
-        mSocketTransportService->GetAutodialEnabled(&autodialEnabled);
-        if (autodialEnabled) {
-          tryAgain = nsNativeConnectionHelper::OnConnectionFailed(
-                       NS_ConvertUTF8toUTF16(SocketHost()).get());
-	    }
-    }
-#endif
-
     // prepare to try again.
     if (tryAgain) {
         uint32_t msg;
@@ -1713,7 +1699,7 @@ nsSocketTransport::OnSocketConnected()
         mFDconnected = true;
 
 #ifdef XP_WIN
-        if (!mozilla::IsWin2003OrLater()) { // windows xp
+        if (!IsWin2003OrLater()) { // windows xp
             PRSocketOptionData opt;
             opt.option = PR_SockOpt_RecvBufferSize;
             if (PR_GetSocketOption(mFD, &opt) == PR_SUCCESS) {
@@ -3126,7 +3112,7 @@ void
 nsSocketTransport::CloseSocket(PRFileDesc *aFd, bool aTelemetryEnabled)
 {
 #if defined(XP_WIN)
-    mozilla::net::AttachShutdownLayer(aFd);
+    AttachShutdownLayer(aFd);
 #endif
 
     // We use PRIntervalTime here because we need
@@ -3180,3 +3166,6 @@ nsSocketTransport::SendPRBlockingTelemetry(PRIntervalTime aStart,
                               PR_IntervalToMilliseconds(now - aStart));
     }
 }
+
+} // namespace net
+} // namespace mozilla

@@ -7,7 +7,7 @@
 
 "use strict";
 
-add_task(function*() {
+add_task(function* () {
   const TEST_URI = "http://example.com/browser/devtools/client/webconsole/" +
                    "test/test-console.html";
 
@@ -53,7 +53,8 @@ add_task(function*() {
 
   info("try ctrl-l to clear output");
   executeSoon(() => {
-    let clearKey = hud.ui.window.document.querySelector("key[command=consoleCmd_clearOutput]:not([disabled])");
+    let selector = "key[command=consoleCmd_clearOutput]:not([disabled])";
+    let clearKey = hud.ui.window.document.querySelector(selector);
     synthesizeKeyFromKeyTag(clearKey);
   });
   yield hud.jsterm.once("messages-cleared");

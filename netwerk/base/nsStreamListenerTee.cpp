@@ -5,6 +5,9 @@
 #include "nsStreamListenerTee.h"
 #include "nsProxyRelease.h"
 
+namespace mozilla {
+namespace net {
+
 NS_IMPL_ISUPPORTS(nsStreamListenerTee,
                   nsIStreamListener,
                   nsIRequestObserver,
@@ -46,9 +49,10 @@ nsStreamListenerTee::OnStopRequest(nsIRequest *request,
     }
 
     nsresult rv = mListener->OnStopRequest(request, context, status);
+    mListener = nullptr;
     if (mObserver)
         mObserver->OnStopRequest(request, context, status);
-    mObserver = 0;
+    mObserver = nullptr;
     return rv;
 }
 
@@ -134,3 +138,6 @@ nsStreamListenerTee::InitAsync(nsIStreamListener *listener,
     mEventTarget = eventTarget;
     return Init(listener, sink, requestObserver);
 }
+
+} // namespace net
+} // namespace mozilla

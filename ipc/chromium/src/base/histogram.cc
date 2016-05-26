@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -1074,7 +1076,7 @@ void
 CountHistogram::Accumulate(Sample value, Count count, size_t index)
 {
   size_t zero_index = BucketIndex(0);
-  LinearHistogram::Accumulate(1, 1, zero_index);
+  LinearHistogram::Accumulate(value, 1, zero_index);
 }
 
 void

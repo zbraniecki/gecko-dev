@@ -1642,8 +1642,10 @@ IonBuilder::inspectOpcode(JSOp op)
 
     switch (op) {
       case JSOP_NOP:
+      case JSOP_NOP_DESTRUCTURING:
       case JSOP_LINENO:
       case JSOP_LOOPENTRY:
+      case JSOP_JUMPTARGET:
         return true;
 
       case JSOP_LABEL:
@@ -2487,6 +2489,8 @@ IonBuilder::finishLoop(CFGState& state, MBasicBlock* successor)
 IonBuilder::ControlStatus
 IonBuilder::restartLoop(const CFGState& state)
 {
+    AutoTraceLog logCompile(traceLogger(), TraceLogger_IonBuilderRestartLoop);
+
     spew("New types at loop header, restarting loop body");
 
     if (JitOptions.limitScriptSize) {
@@ -3003,7 +3007,8 @@ IonBuilder::processContinue(JSOp op)
     CFGState* found = nullptr;
     jsbytecode* target = pc + GetJumpOffset(pc);
     for (size_t i = loops_.length() - 1; i < loops_.length(); i--) {
-        if (loops_[i].continuepc == target ||
+        // +1 to skip JSOP_JUMPTARGET.
+        if (loops_[i].continuepc == target + 1 ||
             EffectiveContinue(loops_[i].continuepc) == target)
         {
             found = &cfgStack_[loops_[i].cfgEntry];
@@ -4068,7 +4073,8 @@ IonBuilder::jsop_condswitch()
         jssrcnote* caseSn = info().getNote(gsn, curCase);
         MOZ_ASSERT(caseSn && SN_TYPE(caseSn) == SRC_NEXTCASE);
         ptrdiff_t off = GetSrcNoteOffset(caseSn, 0);
-        curCase = off ? curCase + off : GetNextPc(curCase);
+        MOZ_ASSERT_IF(off == 0, JSOp(*GetNextPc(curCase)) == JSOP_JUMPTARGET);
+        curCase = off ? curCase + off : GetNextPc(GetNextPc(curCase));
         MOZ_ASSERT(pc < curCase && curCase <= exitpc);
 
         // Count non-aliased cases.
@@ -4148,7 +4154,8 @@ IonBuilder::processCondSwitchCase(CFGState& state)
     // Fetch the following case in which we will continue.
     jssrcnote* sn = info().getNote(gsn, pc);
     ptrdiff_t off = GetSrcNoteOffset(sn, 0);
-    jsbytecode* casePc = off ? pc + off : GetNextPc(pc);
+    MOZ_ASSERT_IF(off == 0, JSOp(*GetNextPc(pc)) == JSOP_JUMPTARGET);
+    jsbytecode* casePc = off ? pc + off : GetNextPc(GetNextPc(pc));
     bool caseIsDefault = JSOp(*casePc) == JSOP_DEFAULT;
     MOZ_ASSERT(JSOp(*casePc) == JSOP_CASE || caseIsDefault);
 
@@ -7272,7 +7279,7 @@ IonBuilder::newArrayTrySharedStub(bool* emitted)
 }
 
 bool
-IonBuilder::newArrayTryVM(bool* emitted, uint32_t length)
+IonBuilder::newArrayTryVM(bool* emitted, JSObject* templateObject, uint32_t length)
 {
     MOZ_ASSERT(*emitted == false);
 
@@ -7280,9 +7287,15 @@ IonBuilder::newArrayTryVM(bool* emitted, uint32_t length)
 
     gc::InitialHeap heap = gc::DefaultHeap;
     MConstant* templateConst = MConstant::New(alloc(), NullValue());
+
+    if (templateObject) {
+        heap = templateObject->group()->initialHeap(constraints());
+        templateConst = MConstant::NewConstraintlessObject(alloc(), templateObject);
+    }
+
     current->add(templateConst);
 
-    MNewArray* ins = MNewArray::New(alloc(), constraints(), length, templateConst, heap, pc);
+    MNewArray* ins = MNewArray::NewVM(alloc(), constraints(), length, templateConst, heap, pc);
     current->add(ins);
     current->push(ins);
 
@@ -7320,7 +7333,7 @@ IonBuilder::jsop_newarray(JSObject* templateObject, uint32_t length)
     if (!newArrayTrySharedStub(&emitted) || emitted)
         return emitted;
 
-    if (!newArrayTryVM(&emitted, length) || emitted)
+    if (!newArrayTryVM(&emitted, templateObject, length) || emitted)
         return emitted;
 
     MOZ_CRASH("newarray should have been emited");
@@ -7404,16 +7417,23 @@ IonBuilder::newObjectTrySharedStub(bool* emitted)
 }
 
 bool
-IonBuilder::newObjectTryVM(bool* emitted)
+IonBuilder::newObjectTryVM(bool* emitted, JSObject* templateObject)
 {
     // Emit a VM call.
+    MOZ_ASSERT(JSOp(*pc) == JSOP_NEWOBJECT || JSOp(*pc) == JSOP_NEWINIT);
 
     gc::InitialHeap heap = gc::DefaultHeap;
     MConstant* templateConst = MConstant::New(alloc(), NullValue());
+
+    if (templateObject) {
+        heap = templateObject->group()->initialHeap(constraints());
+        templateConst = MConstant::NewConstraintlessObject(alloc(), templateObject);
+    }
+
     current->add(templateConst);
 
-    MNewObject* ins = MNewObject::New(alloc(), constraints(), templateConst, heap,
-                                     MNewObject::ObjectLiteral);
+    MNewObject* ins = MNewObject::NewVM(alloc(), constraints(), templateConst, heap,
+                                        MNewObject::ObjectLiteral);
     current->add(ins);
     current->push(ins);
 
@@ -7429,15 +7449,16 @@ IonBuilder::jsop_newobject()
 {
     bool emitted = false;
 
+    JSObject* templateObject = inspector->getTemplateObject(pc);
+
     if (!forceInlineCaches()) {
-        JSObject* templateObject = inspector->getTemplateObject(pc);
         if (!newObjectTryTemplateObject(&emitted, templateObject) || emitted)
             return emitted;
     }
     if (!newObjectTrySharedStub(&emitted) || emitted)
         return emitted;
 
-    if (!newObjectTryVM(&emitted) || emitted)
+    if (!newObjectTryVM(&emitted, templateObject) || emitted)
         return emitted;
 
     MOZ_CRASH("newobject should have been emited");
@@ -8455,28 +8476,7 @@ IonBuilder::getStaticName(JSObject* staticObject, PropertyName* name, bool* psuc
 
     *psucceeded = true;
 
-    if (staticObject->is<GlobalObject>()) {
-        // Known values on the global definitely don't need TDZ checks.
-        if (lexicalCheck)
-            lexicalCheck->setNotGuardUnchecked();
-
-        // Optimize undefined, NaN, and Infinity.
-        if (name == names().undefined) {
-            pushConstant(UndefinedValue());
-            return true;
-        }
-        if (name == names().NaN) {
-            pushConstant(compartment->runtime()->NaNValue());
-            return true;
-        }
-        if (name == names().Infinity) {
-            pushConstant(compartment->runtime()->positiveInfinityValue());
-            return true;
-        }
-    }
-
-    // When not loading a known value on the global with a lexical check,
-    // always emit the lexical check. This could be optimized, but is
+    // Always emit the lexical check. This could be optimized, but is
     // currently not for simplicity's sake.
     if (lexicalCheck) {
         *psucceeded = false;
@@ -8684,6 +8684,23 @@ IonBuilder::testGlobalLexicalBinding(PropertyName* name)
 bool
 IonBuilder::jsop_getgname(PropertyName* name)
 {
+    // Optimize undefined/NaN/Infinity first. We must ensure we handle these
+    // cases *exactly* like Baseline, because it's invalid to add an Ion IC or
+    // VM call (that might trigger invalidation) if there's no Baseline IC for
+    // this op.
+    if (name == names().undefined) {
+        pushConstant(UndefinedValue());
+        return true;
+    }
+    if (name == names().NaN) {
+        pushConstant(compartment->runtime()->NaNValue());
+        return true;
+    }
+    if (name == names().Infinity) {
+        pushConstant(compartment->runtime()->positiveInfinityValue());
+        return true;
+    }
+
     if (JSObject* obj = testGlobalLexicalBinding(name)) {
         bool emitted = false;
         if (!getStaticName(obj, name, &emitted) || emitted)

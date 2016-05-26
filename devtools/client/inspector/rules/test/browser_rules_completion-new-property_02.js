@@ -18,12 +18,12 @@
 //  ]
 var testData = [
   ["d", {}, "display", 1, 3, false],
-  ["VK_TAB", {}, "", -1, 41, true],
-  ["VK_DOWN", {}, "block", 0, 41, true],
+  ["VK_TAB", {}, "", -1, 43, true],
+  ["VK_DOWN", {}, "block", 0, 43, true],
   ["n", {}, "none", -1, 0, true],
   ["VK_TAB", {shiftKey: true}, "display", -1, 0, true],
   ["VK_BACK_SPACE", {}, "", -1, 0, false],
-  ["o", {}, "overflow", 13, 16, false],
+  ["o", {}, "overflow", 13, 17, false],
   ["u", {}, "outline", 0, 5, false],
   ["VK_DOWN", {}, "outline-color", 1, 5, false],
   ["VK_TAB", {}, "none", -1, 0, true],
