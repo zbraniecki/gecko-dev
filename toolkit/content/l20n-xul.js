@@ -669,20 +669,17 @@
   }
 
   Components.utils.import('resource://gre/modules/Services.jsm');
+  Components.utils.import('resource://gre/modules/L10nService.jsm');
 
-  function requestBundles(requestedLangs = navigator.languages) {
+  function requestBundles(requestedLangs = new Set(navigator.languages)) {
     return documentReady().then(() => {
-      const defaultLang = 'en-US';
-      const availableLangs = ['pl', 'en-US'];
       const resIds = getXULResourceLinks(document);
+      const {
+        availableLangs,
+        resBundles
+      } = L10nService.getResource(requestLangs, resIDs);
 
-      const newLangs = prioritizeLocales(
-        defaultLang, availableLangs, requestedLangs
-      );
-
-      return newLangs.map(
-        lang => new ResourceBundle(lang, resIds)
-      );
+      return resBundles;
     });
   }
 
