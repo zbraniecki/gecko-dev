@@ -8,7 +8,9 @@ this.EXPORTED_SYMBOLS = ['L10nService', 'ResourceBundle'];
 
 const resIndex = {
   'chrome://global/locale/aboutSupport.{locale}.ftl': ['pl', 'en-US'],
-  'chrome://browser/locale/aboutDialog.ftl': ['en-US']
+  'chrome://branding/locale/brand.{locale}.ftl': ['pl', 'en-US'],
+  'chrome://global/locale/resetProfile.{locale}.ftl': ['pl', 'en-US'],
+  'chrome://browser/locale/aboutDialog.ftl': ['pl', 'en-US']
 };
 
 const HTTP_STATUS_CODE_OK = 200;

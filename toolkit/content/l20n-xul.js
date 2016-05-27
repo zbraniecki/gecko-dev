@@ -677,7 +677,7 @@
       const {
         availableLangs,
         resBundles
-      } = L10nService.getResource(requestLangs, resIDs);
+      } = L10nService.getResources(requestedLangs, resIds);
 
       return resBundles;
     });
