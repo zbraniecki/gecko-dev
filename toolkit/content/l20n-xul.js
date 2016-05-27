@@ -673,7 +673,7 @@
   function requestBundles(requestedLangs = navigator.languages) {
     return documentReady().then(() => {
       const defaultLang = 'en-US';
-      const availableLangs = ['en-US'];
+      const availableLangs = ['pl', 'en-US'];
       const resIds = getXULResourceLinks(document);
 
       const newLangs = prioritizeLocales(

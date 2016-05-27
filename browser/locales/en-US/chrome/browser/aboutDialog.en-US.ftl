@@ -1,7 +1,3 @@
-brandShortName = Firefox
-vendorShortName = Mozilla
-trademarkInfo-part1 = ""
-
 aboutDialog-title =
   [html/title] About Firefox
 
@@ -35,4 +31,3 @@ aboutDialog-helpus = Want to help? <label>Make a donation</label> or <label>get 
 aboutDialog-bottomLinks-license = Licensing Information
 aboutDialog-bottomLinks-rights = End-User Rights
 aboutDialog-bottomLinks-privacy = Privacy Policy
-
