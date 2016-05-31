@@ -74,6 +74,10 @@
 <script type="application/javascript" src="chrome://browser/content/downloads/indicator.js"/>
 <script type="application/javascript" src="chrome://browser/content/places/editBookmarkOverlay.js"/>
 
+<localization id="browser-l10n" observe="main-window">
+    <source src="chrome://browser/locale/browser.ftl"/>
+</localization>
+
 # All sets except for popupsets (commands, keys, stringbundles and broadcasters) *must* go into the
 # browser-sets.inc file for sharing with hiddenWindow.xul.
 #define FULL_BROWSER_WINDOW
@@ -719,7 +723,8 @@
                            tooltip="forward-button-tooltip"
                            context="backForwardMenu"/>
             <textbox id="urlbar" flex="1"
-                     placeholder="&urlbar.placeholder2;"
+                     localization="browser-l10n"
+                     data-l10n-id="urlbar"
                      type="autocomplete"
                      autocompletesearch="unifiedcomplete"
                      autocompletesearchparam="enable-actions"
