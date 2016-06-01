@@ -2952,11 +2952,9 @@ function DeconstructPattern(pattern, placeables) {
   return result;
 }
 
-function PartitionRelativeTimePattern(relativeTimeFormat, x) {
+function PartitionRelativeTimePattern(relativeTimeFormat, ms) {
   let internals = getRelativeTimeFormatInternals(relativeTimeFormat, 'format');
   let fields = internals.fields;
-  let now = std_Date_now();
-  let ms = x - now;
   let units = ComputeTimeUnits(ms);
   let unit = GetBestMatchUnit(units);
   let entry = unit;
@@ -2964,7 +2962,8 @@ function PartitionRelativeTimePattern(relativeTimeFormat, x) {
   let patterns = fields[entry];
   let v = units['[[' + unit[0].toUpperCase() + unit.slice(1) + ']]'];
 
-  let po = patterns['past'];
+  let tl = v < 0 ? 'past' : 'future';
+  let po = patterns[tl];
   let fv = ToString(v);
   let pattern = po['other'];
   let values = new Record();
@@ -3022,12 +3021,20 @@ function resolveRelativeTimeFormatInternals(lazyRelativeTimeFormatData) {
       'past': {
         'one': '{0} second ago',
         'other': '{0} seconds ago'
+      },
+      'future': {
+        'one': 'in {0} second',
+        'other': 'in {0} seconds'
       }
     },
     'minute': {
       'past': {
         'one': '{0} minute ago',
         'other': '{0} minutes ago'
+      },
+      'future': {
+        'one': 'in {0} minute',
+        'other': 'in {0} minutes'
       }
     }
   };
@@ -3107,14 +3114,16 @@ function relativeTimeFormatLocaleData(locale) {
 
 function Intl_RelativeTimeFormat_format(value) {
   let relativeTimeFormat = this;
-  value = ToNumber(value);
+  let now = std_Date_now();
+  value = now - ToNumber(value);
 
   return FormatRelativeTime(relativeTimeFormat, value);
 }
 
 function Intl_RelativeTimeFormat_formatToParts(value) {
   let relativeTimeFormat = this;
-  value = ToNumber(value);
+  let now = std_Date_now();
+  value = now - ToNumber(value);
 
   return FormatRelativeTimeToParts(relativeTimeFormat, value);
 }
