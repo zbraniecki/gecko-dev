@@ -107,7 +107,10 @@
             const keys = elems.map(elem => {
               const id = elem.getAttribute('data-l10n-id');
               const args = elem.getAttribute('data-l10n-args');
-              const l10n = document.getElementById(elem.getAttribute('localization'));
+              const l10nId = elem.getAttribute('localization');
+              const l10n = l10nId ?
+                document.getElementById(l10nId) :
+                document.querySelector('localization:not([id])');
               return [
                 l10n,
                 id,
