@@ -14,6 +14,7 @@ var L20nDemoListener = {
     if (!this.ensureTrustedOrigin()) {
       return;
     }
+    addMessageListener("L20nDemo:SendPageResponse", this);
     sendAsyncMessage("L20nDemo:onPageEvent", {
       detail: event.detail,
       type: event.type,
@@ -66,6 +67,23 @@ var L20nDemoListener = {
 
     return this.isTestingOrigin(uri);
   },
+
+  receiveMessage: function(aMessage) {
+    this.sendPageEvent(aMessage.data);
+  },
+
+  sendPageEvent: function(detail) {
+    if (!this.ensureTrustedOrigin()) {
+      return;
+    }
+
+    let doc = content.document;
+    let event = new doc.defaultView.CustomEvent("mozL20nDemoResponse", {
+      bubbles: true,
+      detail: Cu.cloneInto(detail, doc.defaultView)
+    });
+    doc.dispatchEvent(event);
+  }
 
 };
 

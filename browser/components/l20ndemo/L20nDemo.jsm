@@ -31,6 +31,8 @@ this.L20nDemo = {
   },
 
   onPageEvent: function(aMessage, aEvent) {
+    let browser = aMessage.target;
+    let messageManager = browser.messageManager;
 
     log.debug("onPageEvent:", aEvent.detail);
 
@@ -57,15 +59,40 @@ this.L20nDemo = {
       return false;
     }
 
-    Services.obs.notifyObservers(
-      null,
-      "language-update",
-      // XXX data sent to observers needs to be string; how to send more 
-      // information, like the language the messages are in?
-      aEvent.detail.data.messages
-    );
+    switch (action) {
+      case "helo": {
+        // XXX check if the languages are the same
+        this.sendPageResponse(messageManager, "ehlo");
+        break;
+      }
+      case "create": {
+        Services.obs.notifyObservers(
+          null,
+          // XXX this should be "language-create" which will create a new 
+          // MessageContext but Localization doesn't support it yet
+          "language-update",
+          data.messages
+        );
+        this.sendPageResponse(messageManager, "created");
+        break;
+      }
+      case "update": {
+        Services.obs.notifyObservers(
+          null,
+          "language-update",
+          data.messages
+        );
+        break;
+      }
+    }
 
     return true;
+  },
+
+  sendPageResponse: function(aMessageManager, aAction) {
+    let detail = {action: aAction};
+    log.debug("sendPageResponse:", detail);
+    aMessageManager.sendAsyncMessage("L20nDemo:SendPageResponse", detail);
   },
 
 };
