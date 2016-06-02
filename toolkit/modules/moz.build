@@ -49,6 +49,7 @@ EXTRA_JS_MODULES += [
     'IntlMessageContext.jsm',
     'IntlPluralRules.jsm',
     'IntlRelativeTimeFormat.jsm',
+    'L10nService.jsm',
     'LoadContextInfo.jsm',
     'Locale.jsm',
     'Log.jsm',
@@ -109,6 +110,10 @@ EXTRA_PP_JS_MODULES += [
 if 'Android' != CONFIG['OS_TARGET']:
     EXTRA_JS_MODULES += [
         'LightweightThemeConsumer.jsm',
+    ]
+
+    DIRS += [
+        'subprocess',
     ]
 else:
     DEFINES['ANDROID'] = True

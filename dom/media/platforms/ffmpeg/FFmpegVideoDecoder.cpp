@@ -101,7 +101,7 @@ FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::Reset()
 }
 
 FFmpegVideoDecoder<LIBAV_VER>::FFmpegVideoDecoder(FFmpegLibWrapper* aLib,
-  FlushableTaskQueue* aTaskQueue, MediaDataDecoderCallback* aCallback,
+  TaskQueue* aTaskQueue, MediaDataDecoderCallback* aCallback,
   const VideoInfo& aConfig,
   ImageContainer* aImageContainer)
   : FFmpegDataDecoder(aLib, aTaskQueue, aCallback, GetCodecId(aConfig.mMimeType))
@@ -225,7 +225,7 @@ FFmpegVideoDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
 
   if (!PrepareFrame()) {
     NS_WARNING("FFmpeg h264 decoder failed to allocate frame.");
-    return DecodeResult::DECODE_ERROR;
+    return DecodeResult::FATAL_ERROR;
   }
 
   // Required with old version of FFmpeg/LibAV
@@ -301,7 +301,7 @@ FFmpegVideoDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
 
     if (!v) {
       NS_WARNING("image allocation error.");
-      return DecodeResult::DECODE_ERROR;
+      return DecodeResult::FATAL_ERROR;
     }
     mCallback->Output(v);
     return DecodeResult::DECODE_FRAME;

@@ -2301,7 +2301,6 @@ nsGenericHTMLFormElement::CanBeDisabled() const
   int32_t type = GetType();
   // It's easier to test the types that _cannot_ be disabled
   return
-    type != NS_FORM_LABEL &&
     type != NS_FORM_OBJECT &&
     type != NS_FORM_OUTPUT;
 }
@@ -2801,18 +2800,6 @@ nsGenericHTMLElement::DispatchSimulatedClick(nsGenericHTMLElement* aElement,
                          WidgetMouseEvent::eReal);
   event.inputSource = nsIDOMMouseEvent::MOZ_SOURCE_KEYBOARD;
   return EventDispatcher::Dispatch(ToSupports(aElement), aPresContext, &event);
-}
-
-const nsAttrName*
-nsGenericHTMLElement::InternalGetExistingAttrNameFromQName(const nsAString& aStr) const
-{
-  if (IsInHTMLDocument()) {
-    nsAutoString lower;
-    nsContentUtils::ASCIIToLower(aStr, lower);
-    return mAttrsAndChildren.GetExistingAttrNameFromQName(lower);
-  }
-
-  return mAttrsAndChildren.GetExistingAttrNameFromQName(aStr);
 }
 
 nsresult

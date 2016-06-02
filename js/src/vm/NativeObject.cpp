@@ -1049,7 +1049,7 @@ CallAddPropertyHookDense(ExclusiveContext* cx, HandleNativeObject obj, uint32_t 
 }
 
 static bool
-UpdateShapeTypeAndValue(ExclusiveContext* cx, NativeObject* obj, Shape* shape, const Value& value)
+UpdateShapeTypeAndValue(ExclusiveContext* cx, HandleNativeObject obj, HandleShape shape, const Value& value)
 {
     jsid id = shape->propid();
     if (shape->hasSlot()) {
@@ -1823,6 +1823,14 @@ static bool
 Detecting(JSContext* cx, JSScript* script, jsbytecode* pc)
 {
     MOZ_ASSERT(script->containsPC(pc));
+
+    // Skip jump target opcodes.
+    while (pc < script->codeEnd() && BytecodeIsJumpTarget(JSOp(*pc)))
+        pc = GetNextPc(pc);
+
+    MOZ_ASSERT(script->containsPC(pc));
+    if (pc >= script->codeEnd())
+        return false;
 
     // General case: a branch or equality op follows the access.
     JSOp op = JSOp(*pc);

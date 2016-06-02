@@ -1938,8 +1938,18 @@ nsChildView::RectContainingTitlebarControls()
   NSRect rect = NSMakeRect(0, 0, [mView bounds].size.width,
                            [(ChildView*)mView cornerRadius]);
 
+  // If we draw the titlebar title string, increase the height to the default
+  // titlebar height. This height does not necessarily include all the titlebar
+  // controls because we may have moved them further down, but at least it will
+  // include the whole title text.
+  BaseWindow* window = (BaseWindow*)[mView window];
+  if ([window wantsTitleDrawn] && [window isKindOfClass:[ToolbarWindow class]]) {
+    CGFloat defaultTitlebarHeight = [(ToolbarWindow*)window titlebarHeight];
+    rect.size.height = std::max(rect.size.height, defaultTitlebarHeight);
+  }
+
   // Add the rects of the titlebar controls.
-  for (id view in [(BaseWindow*)[mView window] titlebarControls]) {
+  for (id view in [window titlebarControls]) {
     rect = NSUnionRect(rect, [mView convertRect:[view bounds] fromView:view]);
   }
   return CocoaPointsToDevPixels(rect);
@@ -2870,6 +2880,36 @@ nsChildView::DispatchAPZWheelInputEvent(InputData& aEvent, bool aCanTriggerSwipe
   }
 }
 
+// When using 10.11, calling showDefinitionForAttributedString causes the
+// following exception on LookupViewService. (rdar://26476091)
+//
+// Exception: decodeObjectForKey: class "TitlebarAndBackgroundColor" not
+// loaded or does not exist
+//
+// So we set temporary color that is NSColor before calling it.
+
+class MOZ_RAII AutoBackgroundSetter final {
+public:
+  explicit AutoBackgroundSetter(NSView* aView) {
+    if (nsCocoaFeatures::OnElCapitanOrLater() &&
+        [[aView window] isKindOfClass:[ToolbarWindow class]]) {
+      mWindow = (ToolbarWindow*)[aView window];
+      [mWindow setTemporaryBackgroundColor];
+    } else {
+      mWindow = nullptr;
+    }
+  }
+
+  ~AutoBackgroundSetter() {
+    if (mWindow) {
+      [mWindow restoreBackgroundColor];
+    }
+  }
+
+private:
+  ToolbarWindow* mWindow;
+};
+
 void
 nsChildView::LookUpDictionary(
                const nsAString& aText,
@@ -2894,6 +2934,8 @@ nsChildView::LookUpDictionary(
       pt.y += [font ascender];
     }
   }
+
+  AutoBackgroundSetter setter(mView);
   [mView showDefinitionForAttributedString:attrStr atPoint:pt];
 
   NS_OBJC_END_TRY_ABORT_BLOCK;

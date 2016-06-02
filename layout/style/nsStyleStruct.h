@@ -1381,7 +1381,7 @@ class nsStyleQuoteValues
 {
 public:
   typedef nsTArray<std::pair<nsString, nsString>> QuotePairArray;
-  NS_INLINE_DECL_REFCOUNTING(nsStyleQuoteValues);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsStyleQuoteValues);
   QuotePairArray mQuotePairs;
 
 private:
@@ -1442,7 +1442,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleList
   {
     // NB: This function is called off-main-thread during parallel restyle, but
     // only with builtin styles that use dummy refcounting.
-    MOZ_ASSERT(NS_IsMainThread() || aStyle->IsDependentStyle());
+    MOZ_ASSERT(NS_IsMainThread() || !aStyle->IsDependentStyle());
     mCounterStyle = aStyle;
   }
   void SetListStyleType(const nsSubstring& aType,
@@ -1725,8 +1725,8 @@ public:
   nsStyleGridLine mGridColumnEnd;
   nsStyleGridLine mGridRowStart;
   nsStyleGridLine mGridRowEnd;
-  nscoord         mGridColumnGap;       // [reset] coord, calc
-  nscoord         mGridRowGap;          // [reset] coord, calc
+  nsStyleCoord    mGridColumnGap;       // [reset] coord, percent, calc
+  nsStyleCoord    mGridRowGap;          // [reset] coord, percent, calc
 
   // FIXME: Logical-coordinate equivalents to these WidthDepends... and
   // HeightDepends... methods have been introduced (see below); we probably
@@ -3253,7 +3253,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleSVG
   nsCOMPtr<nsIURI> mMarkerEnd;        // [inherited]
   nsCOMPtr<nsIURI> mMarkerMid;        // [inherited]
   nsCOMPtr<nsIURI> mMarkerStart;      // [inherited]
-  nsStyleCoord    *mStrokeDasharray;  // [inherited] coord, percent, factor
+  nsTArray<nsStyleCoord> mStrokeDasharray;  // [inherited] coord, percent, factor
 
   nsStyleCoord     mStrokeDashoffset; // [inherited] coord, percent, factor
   nsStyleCoord     mStrokeWidth;      // [inherited] coord, percent, factor
@@ -3262,7 +3262,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleSVG
   float            mStrokeMiterlimit; // [inherited]
   float            mStrokeOpacity;    // [inherited]
 
-  uint32_t         mStrokeDasharrayLength;
   uint8_t          mClipRule;         // [inherited]
   uint8_t          mColorInterpolation; // [inherited] see nsStyleConsts.h
   uint8_t          mColorInterpolationFilters; // [inherited] see nsStyleConsts.h

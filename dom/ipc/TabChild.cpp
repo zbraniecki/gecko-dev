@@ -59,6 +59,7 @@
 #endif
 #include "nsFilePickerProxy.h"
 #include "mozilla/dom/Element.h"
+#include "nsGlobalWindow.h"
 #include "nsIBaseWindow.h"
 #include "nsIBrowserDOMWindow.h"
 #include "nsICachedFileDescriptorListener.h"
@@ -1692,7 +1693,7 @@ TabChild::RecvUpdateDimensions(const CSSRect& rect, const CSSSize& size,
     // size from the content viewer when it computes a new CSS viewport.
     nsCOMPtr<nsIBaseWindow> baseWin = do_QueryInterface(WebNavigation());
     baseWin->SetPositionAndSize(0, 0, screenSize.width, screenSize.height,
-                                true);
+                                nsIBaseWindow::eRepaint);
 
     mPuppetWidget->Resize(screenRect.x + clientOffset.x + chromeDisp.x,
                           screenRect.y + clientOffset.y + chromeDisp.y,
@@ -2460,10 +2461,17 @@ TabChild::RecvSetUseGlobalHistory(const bool& aUse)
 }
 
 bool
-TabChild::RecvPrint(const PrintData& aPrintData)
+TabChild::RecvPrint(const uint64_t& aOuterWindowID, const PrintData& aPrintData)
 {
 #ifdef NS_PRINTING
-  nsCOMPtr<nsIWebBrowserPrint> webBrowserPrint = do_GetInterface(mWebNav);
+  nsGlobalWindow* outerWindow =
+    nsGlobalWindow::GetOuterWindowWithId(aOuterWindowID);
+  if (NS_WARN_IF(!outerWindow)) {
+    return true;
+  }
+
+  nsCOMPtr<nsIWebBrowserPrint> webBrowserPrint =
+    do_GetInterface(outerWindow->AsOuter());
   if (NS_WARN_IF(!webBrowserPrint)) {
     return true;
   }
@@ -3102,7 +3110,7 @@ TabChild::RecvUIResolutionChanged(const float& aDpi, const double& aScale)
 
     nsCOMPtr<nsIBaseWindow> baseWin = do_QueryInterface(WebNavigation());
     baseWin->SetPositionAndSize(0, 0, screenSize.width, screenSize.height,
-                                true);
+                                nsIBaseWindow::eRepaint);
   }
 
   return true;

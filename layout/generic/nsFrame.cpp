@@ -2794,6 +2794,7 @@ nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder*   aBuilder,
     // instead since we know we won't render anything, and the inner out-of-flow
     // frame will setup the correct clip for itself.
     clipState.Clear();
+    clipState.SetScrollClipForContainingBlockDescendants(nullptr);
   }
 
   // Setup clipping for the parent's overflow:-moz-hidden-unscrollable,
@@ -10250,7 +10251,7 @@ DR_FrameTreeNode* DR_State::CreateTreeNode(nsIFrame*                aFrame,
   // find the frame of the parent reflow state (usually just the parent of aFrame)
   nsIFrame* parentFrame;
   if (aReflowState) {
-    const nsHTMLReflowState* parentRS = aReflowState->parentReflowState;
+    const nsHTMLReflowState* parentRS = aReflowState->mParentReflowState;
     parentFrame = (parentRS) ? parentRS->frame : nullptr;
   } else {
     parentFrame = aFrame->GetParent();
@@ -10625,7 +10626,7 @@ nsHTMLReflowState::DisplayInitConstraintsEnter(nsIFrame* aFrame,
     DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
 
     printf("InitConstraints parent=%p",
-           (void*)aState->parentReflowState);
+           (void*)aState->mParentReflowState);
 
     char width[16];
     char height[16];
