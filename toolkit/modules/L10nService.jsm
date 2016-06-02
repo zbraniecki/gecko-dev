@@ -18,6 +18,42 @@ function prioritizeLocales(def, availableLangs, requested) {
 
 const { classes: Cc, interfaces: Ci } = Components;
 
+const resIndex = {
+  '/global/aboutSupport.ftl': {
+    'en-US': [
+      'chrome://global/locale/aboutSupport.en-US.ftl',
+    ],
+    'pl': [
+      'chrome://global/locale/aboutSupport.pl.ftl',
+    ]
+  },
+  '/branding/brand.ftl': {
+    'en-US': [
+      'chrome://branding/locale/brand.en-US.ftl',
+    ],
+    'pl': [
+      'chrome://branding/locale/brand.pl.ftl',
+    ]
+  },
+  '/global/resetProfile.ftl': {
+    'en-US': [
+      'chrome://global/locale/resetProfile.en-US.ftl',
+    ],
+    'pl': [
+      'chrome://global/locale/resetProfile.pl.ftl',
+    ]
+  },
+  '/browser/aboutDialog.ftl': {
+    'en-US': [
+      'chrome://browser/locale/aboutDialog.en-US.ftl',
+    ],
+    'pl': [
+      'chrome://browser/locale/aboutDialog.pl.ftl',
+    ]
+  },
+};
+
+
 const HTTP_STATUS_CODE_OK = 200;
 
 function load(url) {
@@ -43,8 +79,8 @@ function load(url) {
   });
 }
 
-function fetchResource(res, lang) {
-  const url = res.replace('{locale}', lang);
+function fetchResource(resId, lang) {
+  const url = resIndex[resId][lang][0];
   return load(url).catch(e => e);
 }
 
@@ -68,19 +104,14 @@ class ResourceBundle {
 
 this.EXPORTED_SYMBOLS = ['L10nService'];
 
-const resIndex = {
-  'chrome://global/locale/aboutSupport.{locale}.ftl': ['pl', 'en-US'],
-  'chrome://branding/locale/brand.{locale}.ftl': ['pl', 'en-US'],
-  'chrome://global/locale/resetProfile.{locale}.ftl': ['pl', 'en-US'],
-  'chrome://browser/locale/aboutDialog.ftl': ['pl', 'en-US']
-};
-
 function getLanguages(resIds) {
-  let locales = new Set();
+  const locales = new Set();
 
   for (let id of resIds) {
     if (resIndex[id]) {
-      resIndex[id].forEach(resid => locales.add(resid));
+      Object.keys(resIndex[id]).forEach(lang => {
+        locales.add(lang);
+      });
     }
   }
   return locales;
@@ -100,8 +131,4 @@ this.L10nService = {
       resBundles
     };
   },
-  
-  test() {
-    return new ResourceBundle('en-US', []);
-  }
 };
