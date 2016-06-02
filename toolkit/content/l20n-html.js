@@ -1,12 +1,6 @@
 (function () {
   'use strict';
 
-  function getDirection(code) {
-    const tag = code.split('-')[0];
-    return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
-      'rtl' : 'ltr';
-  }
-
   // A document.ready shim
   // https://github.com/whatwg/html/issues/127
   function documentReady() {
@@ -26,6 +20,12 @@
     return Array.prototype.map.call(
       head.querySelectorAll('link[rel="localization"]'),
       el => el.getAttribute('href'));
+  }
+
+  function getDirection(code) {
+    const tag = code.split('-')[0];
+    return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
+      'rtl' : 'ltr';
   }
 
   class L10nError extends Error {
@@ -607,7 +607,6 @@
     return documentReady().then(() => {
       const resIds = getResourceLinks(document.head);
       const {
-        availableLangs,
         resBundles
       } = L10nService.getResources(requestedLangs, resIds);
 

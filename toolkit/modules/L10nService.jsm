@@ -4,18 +4,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 'use strict';
 
-this.EXPORTED_SYMBOLS = ['L10nService', 'ResourceBundle'];
+function prioritizeLocales(def, availableLangs, requested) {
+  const supportedLocales = new Set();
+  for (let lang of requested) {
+    if (availableLangs.has(lang)) {
+      supportedLocales.add(lang);
+    }
+  }
 
-const resIndex = {
-  'chrome://global/locale/aboutSupport.{locale}.ftl': ['pl', 'en-US'],
-  'chrome://branding/locale/brand.{locale}.ftl': ['pl', 'en-US'],
-  'chrome://global/locale/resetProfile.{locale}.ftl': ['pl', 'en-US'],
-  'chrome://browser/locale/aboutDialog.ftl': ['pl', 'en-US']
-};
-
-const HTTP_STATUS_CODE_OK = 200;
+  supportedLocales.add(def);
+  return supportedLocales;
+}
 
 const { classes: Cc, interfaces: Ci } = Components;
+
+const HTTP_STATUS_CODE_OK = 200;
 
 function load(url) {
   return new Promise((resolve, reject) => {
@@ -45,39 +48,32 @@ function fetchResource(res, lang) {
   return load(url).catch(e => e);
 }
 
-
-function prioritizeLocales(def, availableLangs, requested) {
-  let supportedLocales = new Set();
-  for (let lang of requested) {
-    if (availableLangs.has(lang)) {
-      supportedLocales.add(lang);
-    }
-  }
-  
-  supportedLocales.add(def);
-
-  return supportedLocales;
-}
-
-
 class ResourceBundle {
   constructor(lang, resIds) {
     this.lang = lang;
     this.loaded = false;
     this.resIds = resIds;
-
   }
 
-	fetch() {
-		if (!this.loaded) {
-			this.loaded = Promise.all(
-				this.resIds.map(id => fetchResource(id, this.lang))
-			);
-		}
+  fetch() {
+    if (!this.loaded) {
+      this.loaded = Promise.all(
+        this.resIds.map(id => fetchResource(id, this.lang))
+      );
+    }
 
-		return this.loaded;
-	}
+    return this.loaded;
+  }
 }
+
+this.EXPORTED_SYMBOLS = ['L10nService'];
+
+const resIndex = {
+  'chrome://global/locale/aboutSupport.{locale}.ftl': ['pl', 'en-US'],
+  'chrome://branding/locale/brand.{locale}.ftl': ['pl', 'en-US'],
+  'chrome://global/locale/resetProfile.{locale}.ftl': ['pl', 'en-US'],
+  'chrome://browser/locale/aboutDialog.ftl': ['pl', 'en-US']
+};
 
 function getLanguages(resIds) {
   let locales = new Set();
