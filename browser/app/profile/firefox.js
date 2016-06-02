@@ -198,7 +198,7 @@ pref("browser.uitour.surveyDuration", 7200);
 pref("browser.l20ndemo.enabled", true);
 pref("browser.l20ndemo.loglevel", "All");
 pref("browser.l20ndemo.requireSecure", false);
-pref("browser.l20ndemo.testingOrigins", "http://l20n.github.io, http://localhost:8080, http://localhost:3000");
+pref("browser.l20ndemo.testingOrigins", "http://l20n.github.io, http://localhost:8000, http://localhost:8080, http://localhost:3000");
 
 pref("browser.customizemode.tip0.shown", false);
 pref("browser.customizemode.tip0.learnMoreUrl", "https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/customize");
