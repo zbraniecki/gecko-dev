@@ -68,7 +68,9 @@
     "description": "Application reputation remote status (0=OK, 1=FAIL, 2=INVALID)"
   },
   "APPLICATION_REPUTATION_SERVER_VERDICT": {
-    "expires_in_version": "never",
+    "expires_in_version": "52",
+    "releaseChannelCollection": "opt-out",
+    "bug_numbers": [1272788],
     "kind": "enumerated",
     "n_values": 8,
     "description": "Application reputation remote response (0=SAFE, 1=DANGEROUS, 2=UNCOMMON, 3=POTENTIALLY_UNWANTED, 4=DANGEROUS_HOST)"
@@ -1052,6 +1054,14 @@
     "expires_in_version": "never",
     "kind": "boolean",
     "description": "2D canvas used"
+  },
+  "CANVAS_WEBGL_ACCL_FAILURE_ID": {
+    "alert_emails": ["bgirard@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "count",
+    "keyed": true,
+    "description": "Track the failure IDs that lead us to reject attempting to create an accelerated context. CANVAS_WEBGL_FAILURE_ID reports the overall WebGL status with the attempt to fallback.",
+    "bug_numbers": [1272808]
   },
   "CANVAS_WEBGL_FAILURE_ID": {
     "alert_emails": ["bgirard@mozilla.com"],
@@ -5516,6 +5526,15 @@
     "releaseChannelCollection": "opt-out",
     "description": "Record the search counts for search engines"
   },
+  "SEARCH_RESET_RESULT": {
+    "alert_emails": ["fqueze@mozilla.com"],
+    "bug_numbers": [1203168],
+    "expires_in_version": "53",
+    "kind": "enumerated",
+    "n_values": 5,
+    "releaseChannelCollection": "opt-out",
+    "description": "Result of showing the search reset prompt to the user. 0=restored original default, 1=kept current engine, 2=changed engine, 3=closed the page"
+  },
   "SEARCH_SERVICE_INIT_MS": {
     "expires_in_version": "never",
     "kind": "exponential",
@@ -9267,12 +9286,6 @@
     "high": 100,
     "n_buckets" : 10,
     "description": "The number of sites for which the user has explicitly rejected saving logins"
-  },
-  "PWMGR_FORM_ACTION_EFFECT": {
-    "expires_in_version": "never",
-    "kind": "enumerated",
-    "n_values" : 5,
-    "description": "The effect of the form action on signon autofill. (0=No effect, 1=Fewer logins after considering the form action, 2=No logins match form origin and action."
   },
   "PWMGR_FORM_AUTOFILL_RESULT": {
     "expires_in_version": "never",

@@ -18,7 +18,6 @@
 
 #include <math.h>
 
-static GtkWidget* gProtoWindow;
 static GtkWidget* gProtoLayout;
 static GtkWidget* gButtonWidget;
 static GtkWidget* gToggleButtonWidget;
@@ -38,7 +37,6 @@ static GtkWidget* gComboBoxEntryArrowWidget;
 static GtkWidget* gHandleBoxWidget;
 static GtkWidget* gToolbarWidget;
 static GtkWidget* gFrameWidget;
-static GtkWidget* gProgressWidget;
 static GtkWidget* gTabWidget;
 static GtkWidget* gTextViewWidget;
 static GtkWidget* gTooltipWidget;
@@ -103,15 +101,6 @@ gint
 moz_gtk_enable_style_props(style_prop_t styleGetProp)
 {
     style_prop_func = styleGetProp;
-    return MOZ_GTK_SUCCESS;
-}
-
-static gint
-ensure_window_widget()
-{
-    if (!gProtoWindow) {
-        gProtoWindow = GetWidget(MOZ_GTK_WINDOW);
-    }
     return MOZ_GTK_SUCCESS;
 }
 
@@ -221,7 +210,7 @@ ensure_entry_widget()
  * g_object_add_weak_pointer().
  * Note that if we don't find the inner widgets (which shouldn't happen), we
  * fallback to use generic "non-inner" widgets, and they don't need that kind
- * of weak pointer since they are explicit children of gProtoWindow and as
+ * of weak pointer since they are explicit children of gProtoLayout and as
  * such GTK holds a strong reference to them. */
 static void
 moz_gtk_get_combo_box_inner_button(GtkWidget *widget, gpointer client_data)
@@ -329,7 +318,7 @@ ensure_info_bar()
  * g_object_add_weak_pointer().
  * Note that if we don't find the inner widgets (which shouldn't happen), we
  * fallback to use generic "non-inner" widgets, and they don't need that kind
- * of weak pointer since they are explicit children of gProtoWindow and as
+ * of weak pointer since they are explicit children of gProtoLayout and as
  * such GTK holds a strong reference to them. */
 static void
 moz_gtk_get_combo_box_entry_inner_widgets(GtkWidget *widget,
@@ -476,16 +465,6 @@ ensure_tab_widget()
     if (!gTabWidget) {
         gTabWidget = gtk_notebook_new();
         setup_widget_prototype(gTabWidget);
-    }
-    return MOZ_GTK_SUCCESS;
-}
-
-static gint
-ensure_progress_widget()
-{
-    if (!gProgressWidget) {
-        gProgressWidget = gtk_progress_bar_new();
-        setup_widget_prototype(gProgressWidget);
     }
     return MOZ_GTK_SUCCESS;
 }
@@ -773,16 +752,14 @@ static gint
 moz_gtk_window_paint(cairo_t *cr, GdkRectangle* rect,
                      GtkTextDirection direction)
 {
-    GtkStyleContext* style;
+    GtkStyleContext* style = ClaimStyleContext(MOZ_GTK_WINDOW, direction);
 
-    ensure_window_widget();
-    gtk_widget_set_direction(gProtoWindow, direction);
-
-    style = gtk_widget_get_style_context(gProtoWindow);	
     gtk_style_context_save(style);
     gtk_style_context_add_class(style, GTK_STYLE_CLASS_BACKGROUND);
     gtk_render_background(style, cr, rect->x, rect->y, rect->width, rect->height);
     gtk_style_context_restore(style);
+
+    ReleaseStyleContext(style);
 
     return MOZ_GTK_SUCCESS;
 }
@@ -1068,9 +1045,10 @@ moz_gtk_scrollbar_trough_paint(WidgetNodeType widget,
                                GtkTextDirection direction)
 {
     if (flags & MOZ_GTK_TRACK_OPAQUE) {
-        GtkStyleContext* style =
-            gtk_widget_get_style_context(GTK_WIDGET(gProtoWindow));
-        gtk_render_background(style, cr, rect->x, rect->y, rect->width, rect->height);
+        GtkStyleContext* style = ClaimStyleContext(MOZ_GTK_WINDOW, direction);
+        gtk_render_background(style, cr,
+                              rect->x, rect->y, rect->width, rect->height);
+        ReleaseStyleContext(style);
     }
 
     GtkStyleContext* style =
@@ -1900,18 +1878,11 @@ static gint
 moz_gtk_progressbar_paint(cairo_t *cr, GdkRectangle* rect,
                           GtkTextDirection direction)
 {
-    GtkStyleContext* style;
-
-    ensure_progress_widget();
-    gtk_widget_set_direction(gProgressWidget, direction);
-
-    style = gtk_widget_get_style_context(gProgressWidget);
-    gtk_style_context_save(style);
-    gtk_style_context_add_class(style, GTK_STYLE_CLASS_TROUGH);
-    
+    GtkStyleContext* style = ClaimStyleContext(MOZ_GTK_PROGRESS_TROUGH,
+                                               direction);
     gtk_render_background(style, cr, rect->x, rect->y, rect->width, rect->height);
     gtk_render_frame(style, cr, rect->x, rect->y, rect->width, rect->height);
-    gtk_style_context_restore(style);
+    ReleaseStyleContext(style);
 
     return MOZ_GTK_SUCCESS;
 }
@@ -1923,13 +1894,15 @@ moz_gtk_progress_chunk_paint(cairo_t *cr, GdkRectangle* rect,
 {
     GtkStyleContext* style;
 
-    ensure_progress_widget();
-    gtk_widget_set_direction(gProgressWidget, direction);
-
-    style = gtk_widget_get_style_context(gProgressWidget);
-    gtk_style_context_save(style);
-    gtk_style_context_remove_class(style, GTK_STYLE_CLASS_TROUGH);
-    gtk_style_context_add_class(style, GTK_STYLE_CLASS_PROGRESSBAR);
+    if (gtk_check_version(3, 20, 0) != nullptr) {
+      /* Ask for MOZ_GTK_PROGRESS_TROUGH instead of MOZ_GTK_PROGRESSBAR
+       * because ClaimStyleContext() saves/restores that style */
+      style = ClaimStyleContext(MOZ_GTK_PROGRESS_TROUGH, direction);
+      gtk_style_context_remove_class(style, GTK_STYLE_CLASS_TROUGH);
+      gtk_style_context_add_class(style, GTK_STYLE_CLASS_PROGRESSBAR);
+    } else {
+      style = ClaimStyleContext(MOZ_GTK_PROGRESS_CHUNK, direction);
+    }
 
     if (widget == MOZ_GTK_PROGRESS_CHUNK_INDETERMINATE ||
         widget == MOZ_GTK_PROGRESS_CHUNK_VERTICAL_INDETERMINATE) {
@@ -1973,7 +1946,7 @@ moz_gtk_progress_chunk_paint(cairo_t *cr, GdkRectangle* rect,
     } else {
       gtk_render_activity(style, cr, rect->x, rect->y, rect->width, rect->height);
     }
-    gtk_style_context_restore(style);
+    ReleaseStyleContext(style);
 
     return MOZ_GTK_SUCCESS;
 }
@@ -2707,8 +2680,7 @@ moz_gtk_get_widget_border(WidgetNodeType widget, gint* left, gint* top,
         w = gTabWidget;
         break;
     case MOZ_GTK_PROGRESSBAR:
-        ensure_progress_widget();
-        w = gProgressWidget;
+        w = GetWidget(MOZ_GTK_PROGRESSBAR);
         break;
     case MOZ_GTK_SPINBUTTON_ENTRY:
     case MOZ_GTK_SPINBUTTON_UP:
@@ -3325,7 +3297,6 @@ moz_gtk_shutdown()
     if (gTreeHeaderSortArrowWidget)
         gtk_widget_destroy(gTreeHeaderSortArrowWidget);
 
-    gProtoWindow = NULL;
     gProtoLayout = NULL;
     gButtonWidget = NULL;
     gToggleButtonWidget = NULL;
@@ -3345,7 +3316,6 @@ moz_gtk_shutdown()
     gHandleBoxWidget = NULL;
     gToolbarWidget = NULL;
     gFrameWidget = NULL;
-    gProgressWidget = NULL;
     gTabWidget = NULL;
     gTextViewWidget = nullptr;
     gTooltipWidget = NULL;

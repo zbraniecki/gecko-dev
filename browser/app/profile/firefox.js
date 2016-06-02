@@ -136,7 +136,7 @@ pref("app.update.badge", false);
 pref("app.update.staging.enabled", true);
 
 // Update service URL:
-pref("app.update.url", "https://aus5.mozilla.org/update/3/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
+pref("app.update.url", "https://aus5.mozilla.org/update/6/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
 // app.update.url.manual is in branding section
 // app.update.url.details is in branding section
 
@@ -148,13 +148,6 @@ pref("app.update.url", "https://aus5.mozilla.org/update/3/%PRODUCT%/%VERSION%/%B
 
 // Show the Update Checking/Ready UI when the user was idle for x seconds
 pref("app.update.idletime", 60);
-
-// Whether or not we show a dialog box informing the user that the update was
-// successfully applied. This is off in Firefox by default since we show a
-// upgrade start page instead! Other apps may wish to show this UI, and supply
-// a whatsNewURL field in their brand.properties that contains a link to a page
-// which tells users what's new in this new update.
-pref("app.update.showInstalledUI", false);
 
 // Whether or not to attempt using the service for updates.
 #ifdef MOZ_MAINTENANCE_SERVICE
@@ -375,6 +368,8 @@ pref("browser.search.redirectWindowsSearch", true);
 #else
 pref("browser.search.redirectWindowsSearch", false);
 #endif
+
+pref("browser.search.reset.enabled", true);
 
 pref("browser.usedOnWindows10", false);
 pref("browser.usedOnWindows10.introURL", "https://www.mozilla.org/%LOCALE%/firefox/windows-10/welcome/?utm_source=firefox-browser&utm_medium=firefox-browser");

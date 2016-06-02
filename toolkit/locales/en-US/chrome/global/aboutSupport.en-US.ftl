@@ -67,7 +67,7 @@ aboutSupport-appBasicsProfiles = Profiles
 # $total (Number)  - Total number of open windows
 # $status (Number) - Code of the status of e10s in the browser. Used to select description part of the string.
 # Example output: “2/2 (Enabled by default)”
-aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status ->
+aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $statusCode ->
   [0] Enabled by user
   [1] Enabled by default
   [2] Disabled
@@ -77,6 +77,7 @@ aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status ->
   [7] Disabled by add-ons
   [8] Disabled forcibly
   [9] Disabled by graphics hardware acceleration on Windows
+  [10] { $system }
  *[other] Unknown status
 })
 

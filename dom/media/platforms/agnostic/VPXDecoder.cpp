@@ -15,8 +15,7 @@
 #include <algorithm>
 
 #undef LOG
-extern mozilla::LogModule* GetPDMLog();
-#define LOG(arg, ...) MOZ_LOG(GetPDMLog(), mozilla::LogLevel::Debug, ("VPXDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
+#define LOG(arg, ...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, ("VPXDecoder(%p)::%s: " arg, this, __func__, ##__VA_ARGS__))
 
 namespace mozilla {
 
@@ -194,7 +193,7 @@ VPXDecoder::ProcessDecode(MediaRawData* aSample)
     return;
   }
   if (DoDecode(aSample) == -1) {
-    mCallback->Error();
+    mCallback->Error(MediaDataDecoderError::DECODE_ERROR);
   } else if (mTaskQueue->IsEmpty()) {
     mCallback->InputExhausted();
   }
