@@ -2958,11 +2958,29 @@ function DeconstructPattern(pattern, placeables) {
 
 function PartitionRelativeTimePattern(relativeTimeFormat, ms) {
   let internals = getRelativeTimeFormatInternals(relativeTimeFormat, 'format');
-  let fields = internals.fields;
+  let fields = internals['[[Fields]]'];
+  let style = internals['[[Style]]'];
   let units = ComputeTimeUnits(ms);
-  let unit = GetBestMatchUnit(units);
-  let entry = unit;
+  let unit;
+  if (internals['[[Unit]]'] === 'bestFit') {
+    unit = GetBestMatchUnit(units);
+  } else {
+    unit = internals['[[Unit]]'];
+  }
 
+  let entry;
+  if (style === 'short') {
+    entry = unit + '-short';
+  } else if (style === 'narrow') {
+    entry = unit + '-narrow';
+  } else {
+    entry = unit;
+  }
+
+  let exists = HasProperty(fields, entry);
+  if (!exists) {
+    entry = unit;
+  }
   let patterns = fields[entry];
   let v = units[
     '[[' +
@@ -3017,15 +3035,12 @@ function resolveRelativeTimeFormatInternals(lazyRelativeTimeFormatData) {
       lazyRelativeTimeFormatData.localeOpt,
       [],
       localeData);
-  internalProps.locale = r.locale;
+  internalProps['[[Locale]]'] = r.locale;
+  internalProps['[[Style]]'] = 'long';
 
   var dataLocale = r.dataLocale;
 
-  internalProps.locale = 'en-US';
-
-  var dataLocale = 'en-US';
-
-  internalProps.fields = {
+  internalProps['[[Fields]]'] = {
     'second': {
       'past': {
         'one': '{0} second ago',
@@ -3092,6 +3107,12 @@ function InitializeRelativeTimeFormat(relativeTimeFormat, locales, options) {
         "best fit");
   localeOpt.localeMatcher = localeMatcher;
 
+  var s = GetOption(options, "style", "string", ["long", "short", "narrow"], "long");
+  lazyRelativeTimeFormatData['[[Style]]'] = s;
+
+  var u = GetOption(options, "unit", "string", ["bestFit", "second", "minute"], "bestFit");
+  lazyRelativeTimeFormatData['[[Unit]]'] = u;
+
 	setLazyData(internals, "RelativeTimeFormat", lazyRelativeTimeFormatData);
 }
 
@@ -3141,7 +3162,9 @@ function Intl_RelativeTimeFormat_resolvedOptions() {
   var internals = getRelativeTimeFormatInternals(this, "resolvedOptions");
 
   var result = {
-    locale: internals.locale
+    locale: internals['[[Locale]]'],
+    unit: internals['[[Unit]]'],
+    style: internals['[[Style]]']
   };
   return result;
 }
