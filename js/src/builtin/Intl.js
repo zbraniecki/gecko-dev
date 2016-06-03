@@ -2933,22 +2933,26 @@ function GetBestMatchUnit(units) {
 }
 
 function DeconstructPattern(pattern, placeables) {
-  const parts = pattern.split(/\{([^\}]+)\}/);
+  const partsRE = RegExpCreate('\{([^\}]+)\}');
+  const parts = callFunction(RegExpSplit, partsRE, pattern);
   const result = [];
 
-  parts.forEach((part, i) => {
+  for (let i = 0; i < parts.length; i++) {
+    let part = parts[i];
     if (i % 2 === 0) {
       if (part.length > 0) {
-        result.push({'[[Type]]': 'literal', '[[Value]]': part});
+        callFunction(std_Array_push, result,
+          {'[[Type]]': 'literal', '[[Value]]': part}
+        );
       }
     } else {
       const subst = placeables['[[' + part + ']]'];
       if (!subst) {
         throw new Error(`Missing placeable: "${part}"`);
       }
-      result.push(subst);
+      callFunction(std_Array_push, result, subst);
     }
-  });
+  }
   return result;
 }
 
@@ -2960,7 +2964,12 @@ function PartitionRelativeTimePattern(relativeTimeFormat, ms) {
   let entry = unit;
 
   let patterns = fields[entry];
-  let v = units['[[' + unit[0].toUpperCase() + unit.slice(1) + ']]'];
+  let v = units[
+    '[[' +
+    callFunction(std_String_toUpperCase, unit[0]) +
+    callFunction(String_substring, unit, 1) +
+    ']]'
+  ];
 
   let tl = v < 0 ? 'past' : 'future';
   let po = patterns[tl];

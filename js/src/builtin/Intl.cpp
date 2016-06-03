@@ -2372,8 +2372,8 @@ static const JSFunctionSpec relativeTimeFormat_static_methods[] = {
 
 static const JSFunctionSpec relativeTimeFormat_methods[] = {
     JS_SELF_HOSTED_FN("resolvedOptions", "Intl_RelativeTimeFormat_resolvedOptions", 0, 0),
-    JS_SELF_HOSTED_FN("format", "Intl_RelativeTimeFormat_format", 0, 0),
-    JS_SELF_HOSTED_FN("formatToParts", "Intl_RelativeTimeFormat_formatToParts", 0, 0),
+    JS_SELF_HOSTED_FN("format", "Intl_RelativeTimeFormat_format", 1, 0),
+    JS_SELF_HOSTED_FN("formatToParts", "Intl_RelativeTimeFormat_formatToParts", 1, 0),
 #if JS_HAS_TOSOURCE
     JS_FN(js_toSource_str, relativeTimeFormat_toSource, 0, 0),
 #endif
