@@ -487,6 +487,10 @@ XRE_InitChildProcess(int aArgc,
 #if MOZ_WIDGET_GTK == 2
   XRE_GlibInit();
 #endif
+#ifdef MOZ_WIDGET_GTK
+  // Setting the name here avoids the need to pass this through to gtk_init().
+  g_set_prgname(aArgv[0]);
+#endif
 
 #if defined(MOZ_WIDGET_QT)
   nsQAppInstance::AddRef();
@@ -656,6 +660,11 @@ XRE_InitChildProcess(int aArgc,
       // scope and being deleted
       process->CleanUp();
       mozilla::Omnijar::CleanUp();
+
+#if defined(XP_MACOSX)
+      // Everybody should be done using shared memory by now.
+      mozilla::ipc::SharedMemoryBasic::Shutdown();
+#endif
     }
   }
 
@@ -822,9 +831,6 @@ void
 XRE_ShutdownChildProcess()
 {
   MOZ_ASSERT(NS_IsMainThread(), "Wrong thread!");
-#if defined(XP_MACOSX)
-  mozilla::ipc::SharedMemoryBasic::Shutdown();
-#endif
 
   mozilla::DebugOnly<MessageLoop*> ioLoop = XRE_GetIOMessageLoop();
   MOZ_ASSERT(!!ioLoop, "Bad shutdown order");

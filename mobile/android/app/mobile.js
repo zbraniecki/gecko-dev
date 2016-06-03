@@ -657,7 +657,6 @@ pref("services.push.enabled", false);
 pref("device.camera.enabled", true);
 pref("media.realtime_decoder.enabled", true);
 
-pref("dom.report_all_js_exceptions", true);
 pref("javascript.options.showInConsole", true);
 
 pref("full-screen-api.enabled", true);
@@ -924,6 +923,7 @@ pref("identity.sync.tokenserver.uri", "https://token.services.mozilla.com/1.0/sy
 pref("dom.presentation.enabled", true);
 pref("dom.presentation.discovery.enabled", true);
 
+pref("dom.audiochannel.audioCompeting", true);
 // TODO : remove it after landing bug1242874 because now it's the only way to
 // suspend the MediaElement.
 pref("media.useAudioChannelAPI", true);

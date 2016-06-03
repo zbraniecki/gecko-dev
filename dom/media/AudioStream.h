@@ -313,7 +313,8 @@ protected:
   int64_t GetPositionInFramesUnlocked();
 
 private:
-  nsresult OpenCubeb(cubeb_stream_params &aParams);
+  nsresult OpenCubeb(cubeb_stream_params& aParams,
+                     TimeStamp aStartTime, bool aIsFirst);
 
   static long DataCallback_S(cubeb_stream*, void* aThis,
                              const void* /* aInputBuffer */, void* aOutputBuffer,
@@ -340,7 +341,8 @@ private:
   void GetUnprocessed(AudioBufferWriter& aWriter);
   void GetTimeStretched(AudioBufferWriter& aWriter);
 
-  void StartUnlocked();
+  template <typename Function, typename... Args>
+  int InvokeCubeb(Function aFunction, Args&&... aArgs);
 
   // The monitor is held to protect all access to member variables.
   Monitor mMonitor;
@@ -354,9 +356,6 @@ private:
   AudioClock mAudioClock;
   soundtouch::SoundTouch* mTimeStretcher;
 
-  // Stream start time for stream open delay telemetry.
-  TimeStamp mStartTime;
-
   // Output file for dumping audio
   FILE* mDumpFile;
 
@@ -365,8 +364,7 @@ private:
 
   enum StreamState {
     INITIALIZED, // Initialized, playback has not begun.
-    STARTED,     // cubeb started, but callbacks haven't started
-    RUNNING,     // DataCallbacks have started after STARTED, or after Resume().
+    STARTED,     // cubeb started.
     STOPPED,     // Stopped by a call to Pause().
     DRAINED,     // StateCallback has indicated that the drain is complete.
     ERRORED,     // Stream disabled due to an internal error.
@@ -374,7 +372,6 @@ private:
   };
 
   StreamState mState;
-  bool mIsFirst;
 
   DataSource& mDataSource;
 };

@@ -53,6 +53,7 @@
 #include "nsIConsoleService.h"
 #include "mozilla/BinarySearch.h"
 #include "nsIHttpHeaderVisitor.h"
+#include "nsIXULRuntime.h"
 
 #include <algorithm>
 
@@ -438,8 +439,8 @@ HttpBaseChannel::GetContentType(nsACString& aContentType)
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  if (!mResponseHead->ContentType().IsEmpty()) {
-    aContentType = mResponseHead->ContentType();
+  mResponseHead->ContentType(aContentType);
+  if (!aContentType.IsEmpty()) {
     return NS_OK;
   }
 
@@ -480,7 +481,7 @@ HttpBaseChannel::GetContentCharset(nsACString& aContentCharset)
   if (!mResponseHead)
     return NS_ERROR_NOT_AVAILABLE;
 
-  aContentCharset = mResponseHead->ContentCharset();
+  mResponseHead->ContentCharset(aContentCharset);
   return NS_OK;
 }
 
@@ -997,12 +998,14 @@ HttpBaseChannel::GetContentEncodings(nsIUTF8StringEnumerator** aEncodings)
     return NS_OK;
   }
 
-  const char *encoding = mResponseHead->PeekHeader(nsHttp::Content_Encoding);
-  if (!encoding) {
+  nsAutoCString encoding;
+  mResponseHead->GetHeader(nsHttp::Content_Encoding, encoding);
+  if (encoding.IsEmpty()) {
     *aEncodings = nullptr;
     return NS_OK;
   }
-  nsContentEncodings* enumerator = new nsContentEncodings(this, encoding);
+  nsContentEncodings* enumerator = new nsContentEncodings(this,
+                                                          encoding.get());
   NS_ADDREF(*aEncodings = enumerator);
   return NS_OK;
 }
@@ -1405,7 +1408,7 @@ HttpBaseChannel::SetReferrerWithPolicy(nsIURI *referrer,
     rv = ssm->CheckSameOriginURI(triggeringURI, mURI, false);
     isCrossOrigin = NS_FAILED(rv);
   } else {
-    NS_WARNING("no triggering principal available via loadInfo, assuming load is cross-origin");
+    LOG(("no triggering principal available via loadInfo, assuming load is cross-origin"));
   }
 
   nsCOMPtr<nsIURI> clone;
@@ -1665,7 +1668,7 @@ HttpBaseChannel::VisitResponseHeaders(nsIHttpHeaderVisitor *visitor)
   if (!mResponseHead) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  return mResponseHead->Headers().VisitHeaders(visitor,
+  return mResponseHead->VisitHeaders(visitor,
     nsHttpHeaderArray::eFilterResponse);
 }
 
@@ -1682,7 +1685,7 @@ HttpBaseChannel::GetOriginalResponseHeader(const nsACString& aHeader,
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  return mResponseHead->Headers().GetOriginalHeader(atom, aVisitor);
+  return mResponseHead->GetOriginalHeader(atom, aVisitor);
 }
 
 NS_IMETHODIMP
@@ -1692,7 +1695,7 @@ HttpBaseChannel::VisitOriginalResponseHeaders(nsIHttpHeaderVisitor *aVisitor)
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  return mResponseHead->Headers().VisitHeaders(aVisitor,
+  return mResponseHead->VisitHeaders(aVisitor,
       nsHttpHeaderArray::eFilterResponseOriginal);
 }
 
@@ -1816,7 +1819,7 @@ HttpBaseChannel::GetResponseStatusText(nsACString& aValue)
 {
   if (!mResponseHead)
     return NS_ERROR_NOT_AVAILABLE;
-  aValue = mResponseHead->StatusText();
+  mResponseHead->StatusText(aValue);
   return NS_OK;
 }
 
@@ -2020,9 +2023,11 @@ HttpBaseChannel::SetCookie(const char *aCookieHeader)
   nsICookieService *cs = gHttpHandler->GetCookieService();
   NS_ENSURE_TRUE(cs, NS_ERROR_FAILURE);
 
+  nsAutoCString date;
+  mResponseHead->GetHeader(nsHttp::Date, date);
   nsresult rv =
     cs->SetCookieStringFromHttp(mURI, nullptr, nullptr, aCookieHeader,
-                                mResponseHead->PeekHeader(nsHttp::Date), this);
+                                date.get(), this);
   if (NS_SUCCEEDED(rv)) {
     RefPtr<CookieNotifierRunnable> r =
       new CookieNotifierRunnable(this, aCookieHeader);
@@ -2465,20 +2470,16 @@ HttpBaseChannel::GetEntityID(nsACString& aEntityID)
     // Accept-Ranges: none
     // Not sending the Accept-Ranges header means we can still try
     // sending range requests.
-    const char* acceptRanges =
-        mResponseHead->PeekHeader(nsHttp::Accept_Ranges);
-    if (acceptRanges &&
-        !nsHttp::FindToken(acceptRanges, "bytes", HTTP_HEADER_VALUE_SEPS)) {
+    nsAutoCString acceptRanges;
+    mResponseHead->GetHeader(nsHttp::Accept_Ranges, acceptRanges);
+    if (!acceptRanges.IsEmpty() &&
+        !nsHttp::FindToken(acceptRanges.get(), "bytes", HTTP_HEADER_VALUE_SEPS)) {
       return NS_ERROR_NOT_RESUMABLE;
     }
 
     size = mResponseHead->TotalEntitySize();
-    const char* cLastMod = mResponseHead->PeekHeader(nsHttp::Last_Modified);
-    if (cLastMod)
-      lastmod = cLastMod;
-    const char* cEtag = mResponseHead->PeekHeader(nsHttp::ETag);
-    if (cEtag)
-      etag = cEtag;
+    mResponseHead->GetHeader(nsHttp::Last_Modified, lastmod);
+    mResponseHead->GetHeader(nsHttp::ETag, etag);
   }
   nsCString entityID;
   NS_EscapeURL(etag.BeginReading(), etag.Length(), esc_AlwaysCopy |
@@ -3307,26 +3308,49 @@ IMPL_TIMING_ATTR(RedirectEnd)
 nsPerformance*
 HttpBaseChannel::GetPerformance()
 {
-    // If performance timing is disabled, there is no need for the nsPerformance
-    // object anymore.
-    if (!mTimingEnabled) {
-        return nullptr;
-    }
+  // If performance timing is disabled, there is no need for the nsPerformance
+  // object anymore.
+  if (!mTimingEnabled) {
+    return nullptr;
+  }
 
-    nsCOMPtr<nsPIDOMWindowInner> pDomWindow = GetInnerDOMWindow();
-    if (!pDomWindow) {
-        return nullptr;
-    }
+  // There is no point in continuing, since the performance object in the parent
+  // isn't the same as the one in the child which will be reporting resource performance.
+  if (XRE_IsParentProcess() && BrowserTabsRemoteAutostart()) {
+    return nullptr;
+  }
 
-    nsPerformance* docPerformance = pDomWindow->GetPerformance();
-    if (!docPerformance) {
-        return nullptr;
-    }
-    // iframes should be added to the parent's entries list.
-    if (mLoadFlags & LOAD_DOCUMENT_URI) {
-        return docPerformance->GetParentPerformance();
-    }
-    return docPerformance;
+  if (!mLoadInfo) {
+    return nullptr;
+  }
+
+  // We don't need to report the resource timing entry for a TYPE_DOCUMENT load.
+  if (mLoadInfo->GetExternalContentPolicyType() == nsIContentPolicyBase::TYPE_DOCUMENT) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIDOMDocument> domDocument;
+  mLoadInfo->GetLoadingDocument(getter_AddRefs(domDocument));
+  if (!domDocument) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIDocument> loadingDocument = do_QueryInterface(domDocument);
+  if (!loadingDocument) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsPIDOMWindowInner> innerWindow = loadingDocument->GetInnerWindow();
+  if (!innerWindow) {
+    return nullptr;
+  }
+
+  nsPerformance* docPerformance = innerWindow->GetPerformance();
+  if (!docPerformance) {
+    return nullptr;
+  }
+
+  return docPerformance;
 }
 
 nsIURI*

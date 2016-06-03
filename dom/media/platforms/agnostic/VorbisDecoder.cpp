@@ -13,8 +13,7 @@
 #include "nsAutoPtr.h"
 
 #undef LOG
-extern mozilla::LogModule* GetPDMLog();
-#define LOG(type, msg) MOZ_LOG(GetPDMLog(), type, msg)
+#define LOG(type, msg) MOZ_LOG(sPDMLog, type, msg)
 
 namespace mozilla {
 
@@ -146,7 +145,7 @@ VorbisDataDecoder::ProcessDecode(MediaRawData* aSample)
     return;
   }
   if (DoDecode(aSample) == -1) {
-    mCallback->Error();
+    mCallback->Error(MediaDataDecoderError::DECODE_ERROR);
   } else if (mTaskQueue->IsEmpty()) {
     mCallback->InputExhausted();
   }

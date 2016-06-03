@@ -1037,7 +1037,8 @@ GCRuntime::GCRuntime(JSRuntime* rt) :
     lastMarkSlice(false),
     sweepOnBackgroundThread(false),
     foundBlackGrayEdges(false),
-    freeLifoAlloc(JSRuntime::TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
+    blocksToFreeAfterSweeping(JSRuntime::TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
+    blocksToFreeAfterMinorGC(JSRuntime::TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
     zoneGroupIndex(0),
     zoneGroups(nullptr),
     currentZoneGroup(nullptr),
@@ -2380,15 +2381,10 @@ GCRuntime::sweepTypesAfterCompacting(Zone* zone)
 
     AutoClearTypeInferenceStateOnOOM oom(zone);
 
-    for (ZoneCellIterUnderGC i(zone, AllocKind::SCRIPT); !i.done(); i.next()) {
-        JSScript* script = i.get<JSScript>();
+    for (auto script = zone->cellIter<JSScript>(); !script.done(); script.next())
         script->maybeSweepTypes(&oom);
-    }
-
-    for (ZoneCellIterUnderGC i(zone, AllocKind::OBJECT_GROUP); !i.done(); i.next()) {
-        ObjectGroup* group = i.get<ObjectGroup>();
+    for (auto group = zone->cellIter<ObjectGroup>(); !group.done(); group.next())
         group->maybeSweep(&oom);
-    }
 
     zone->types.endSweep(rt);
 }
@@ -2761,7 +2757,7 @@ GCRuntime::updatePointersToRelocatedCells(Zone* zone, AutoLockForExclusiveAccess
     rt->gc.sweepZoneAfterCompacting(zone);
 
     // Type inference may put more blocks here to free.
-    freeLifoAlloc.freeAll();
+    blocksToFreeAfterSweeping.freeAll();
 
     // Call callbacks to get the rest of the system to fixup other untraced pointers.
     callWeakPointerZoneGroupCallbacks();
@@ -3442,7 +3438,7 @@ GCRuntime::assertBackgroundSweepingFinished()
             MOZ_ASSERT(zone->arenas.doneBackgroundFinalize(i));
         }
     }
-    MOZ_ASSERT(freeLifoAlloc.computedSizeOfExcludingThis() == 0);
+    MOZ_ASSERT(blocksToFreeAfterSweeping.computedSizeOfExcludingThis() == 0);
 #endif
 }
 
@@ -3603,7 +3599,7 @@ GCRuntime::freeUnusedLifoBlocksAfterSweeping(LifoAlloc* lifo)
 {
     MOZ_ASSERT(rt->isHeapBusy());
     AutoLockGC lock(rt);
-    freeLifoAlloc.transferUnusedFrom(lifo);
+    blocksToFreeAfterSweeping.transferUnusedFrom(lifo);
 }
 
 void
@@ -3611,7 +3607,14 @@ GCRuntime::freeAllLifoBlocksAfterSweeping(LifoAlloc* lifo)
 {
     MOZ_ASSERT(rt->isHeapBusy());
     AutoLockGC lock(rt);
-    freeLifoAlloc.transferFrom(lifo);
+    blocksToFreeAfterSweeping.transferFrom(lifo);
+}
+
+void
+GCRuntime::freeAllLifoBlocksAfterMinorGC(LifoAlloc* lifo)
+{
+    MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
+    blocksToFreeAfterMinorGC.transferFrom(lifo);
 }
 
 void
@@ -3664,7 +3667,7 @@ GCHelperState::doSweep(AutoLockGC& lock)
             ZoneList zones;
             zones.transferFrom(rt->gc.backgroundSweepZones);
             LifoAlloc freeLifoAlloc(JSRuntime::TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
-            freeLifoAlloc.transferFrom(&rt->gc.freeLifoAlloc);
+            freeLifoAlloc.transferFrom(&rt->gc.blocksToFreeAfterSweeping);
 
             AutoUnlockGC unlock(lock);
             rt->gc.sweepBackgroundThings(zones, freeLifoAlloc, BackgroundThread);
@@ -3973,10 +3976,11 @@ GCRuntime::checkForCompartmentMismatches()
         return;
 
     CompartmentCheckTracer trc(rt);
+    AutoAssertEmptyNursery empty(rt);
     for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next()) {
         trc.zone = zone;
         for (auto thingKind : AllAllocKinds()) {
-            for (ZoneCellIterUnderGC i(zone, thingKind); !i.done(); i.next()) {
+            for (auto i = zone->cellIter<TenuredCell>(thingKind, empty); !i.done(); i.next()) {
                 trc.src = i.getCell();
                 trc.srcKind = MapAllocToTraceKind(thingKind);
                 trc.compartment = DispatchTraceKindTyped(MaybeCompartmentFunctor(),
@@ -3995,9 +3999,10 @@ RelazifyFunctions(Zone* zone, AllocKind kind)
                kind == AllocKind::FUNCTION_EXTENDED);
 
     JSRuntime* rt = zone->runtimeFromMainThread();
+    AutoAssertEmptyNursery empty(rt);
 
-    for (ZoneCellIterUnderGC i(zone, kind); !i.done(); i.next()) {
-        JSFunction* fun = &i.get<JSObject>()->as<JSFunction>();
+    for (auto i = zone->cellIter<JSObject>(kind, empty); !i.done(); i.next()) {
+        JSFunction* fun = &i->as<JSFunction>();
         if (fun->hasScript())
             fun->maybeRelazify(rt);
     }
@@ -5393,7 +5398,7 @@ GCRuntime::endSweepingZoneGroup()
     if (sweepOnBackgroundThread)
         queueZonesForBackgroundSweep(zones);
     else
-        sweepBackgroundThings(zones, freeLifoAlloc, MainThread);
+        sweepBackgroundThings(zones, blocksToFreeAfterSweeping, MainThread);
 
     /* Reset the list of arenas marked as being allocated during sweep phase. */
     while (Arena* arena = arenasAllocatedDuringSweep) {
@@ -5902,7 +5907,7 @@ GCRuntime::resetIncrementalGC(const char* reason, AutoLockForExclusiveAccess& lo
             zone->setGCState(Zone::NoGC);
         }
 
-        freeLifoAlloc.freeAll();
+        blocksToFreeAfterSweeping.freeAll();
 
         incrementalState = NO_INCREMENTAL;
 
@@ -6743,6 +6748,8 @@ GCRuntime::minorGCImpl(JS::gcreason::Reason reason, Nursery::ObjectGroupList* pr
     nursery.collect(rt, reason, pretenureGroups);
     MOZ_ASSERT(nursery.isEmpty());
 
+    blocksToFreeAfterMinorGC.freeAll();
+
     AutoLockGC lock(rt);
     for (ZonesIter zone(rt, WithAtoms); !zone.done(); zone.next())
         maybeAllocTriggerZoneGC(zone, lock);
@@ -6909,8 +6916,7 @@ gc::MergeCompartments(JSCompartment* source, JSCompartment* target)
     RootedObject targetStaticGlobalLexicalScope(rt);
     targetStaticGlobalLexicalScope = &target->maybeGlobal()->lexicalScope().staticBlock();
 
-    for (ZoneCellIter iter(source->zone(), AllocKind::SCRIPT); !iter.done(); iter.next()) {
-        JSScript* script = iter.get<JSScript>();
+    for (auto script = source->zone()->cellIter<JSScript>(); !script.done(); script.next()) {
         MOZ_ASSERT(script->compartment() == source);
         script->compartment_ = target;
         script->setTypesGeneration(target->zone()->types.generation);
@@ -6942,14 +6948,12 @@ gc::MergeCompartments(JSCompartment* source, JSCompartment* target)
         }
     }
 
-    for (ZoneCellIter iter(source->zone(), AllocKind::BASE_SHAPE); !iter.done(); iter.next()) {
-        BaseShape* base = iter.get<BaseShape>();
+    for (auto base = source->zone()->cellIter<BaseShape>(); !base.done(); base.next()) {
         MOZ_ASSERT(base->compartment() == source);
         base->compartment_ = target;
     }
 
-    for (ZoneCellIter iter(source->zone(), AllocKind::OBJECT_GROUP); !iter.done(); iter.next()) {
-        ObjectGroup* group = iter.get<ObjectGroup>();
+    for (auto group = source->zone()->cellIter<ObjectGroup>(); !group.done(); group.next()) {
         group->setGeneration(target->zone()->types.generation);
         group->compartment_ = target;
 
@@ -6971,8 +6975,7 @@ gc::MergeCompartments(JSCompartment* source, JSCompartment* target)
 
     // After fixing JSFunctions' compartments, we can fix LazyScripts'
     // enclosing scopes.
-    for (ZoneCellIter iter(source->zone(), AllocKind::LAZY_SCRIPT); !iter.done(); iter.next()) {
-        LazyScript* lazy = iter.get<LazyScript>();
+    for (auto lazy = source->zone()->cellIter<LazyScript>(); !lazy.done(); lazy.next()) {
         MOZ_ASSERT(lazy->functionNonDelazifying()->compartment() == target);
 
         // See warning in handleParseWorkload. If we start optimizing global
@@ -7097,12 +7100,6 @@ void PreventGCDuringInteractiveDebug()
 void
 js::ReleaseAllJITCode(FreeOp* fop)
 {
-    /*
-     * Scripts can entrain nursery things, inserting references to the script
-     * into the store buffer. Clear the store buffer before discarding scripts.
-     */
-    fop->runtime()->gc.evictNursery();
-
     for (ZonesIter zone(fop->runtime(), SkipAtoms); !zone.done(); zone.next()) {
         zone->setPreservingCode(false);
         zone->discardJitCode(fop);
@@ -7112,12 +7109,9 @@ js::ReleaseAllJITCode(FreeOp* fop)
 void
 js::PurgeJITCaches(Zone* zone)
 {
-    for (ZoneCellIter i(zone, AllocKind::SCRIPT); !i.done(); i.next()) {
-        JSScript* script = i.get<JSScript>();
-
-        /* Discard Ion caches. */
+    /* Discard Ion caches. */
+    for (auto script = zone->cellIter<JSScript>(); !script.done(); script.next())
         jit::PurgeCaches(script);
-    }
 }
 
 void
@@ -7387,8 +7381,7 @@ js::gc::CheckHashTablesAfterMovingGC(JSRuntime* rt)
     for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next()) {
         zone->checkUniqueIdTableAfterMovingGC();
 
-        for (ZoneCellIterUnderGC i(zone, AllocKind::BASE_SHAPE); !i.done(); i.next()) {
-            BaseShape* baseShape = i.get<BaseShape>();
+        for (auto baseShape = zone->cellIter<BaseShape>(); !baseShape.done(); baseShape.next()) {
             if (baseShape->hasTable())
                 baseShape->table().checkAfterMovingGC();
         }
@@ -7864,6 +7857,29 @@ StateName(State state)
     MOZ_ASSERT(ArrayLength(names) == NUM_STATES);
     MOZ_ASSERT(state < NUM_STATES);
     return names[state];
+}
+
+void
+AutoAssertHeapBusy::checkCondition(JSRuntime *rt)
+{
+    this->rt = rt;
+    MOZ_ASSERT(rt->isHeapBusy());
+}
+
+void
+AutoAssertEmptyNursery::checkCondition(JSRuntime *rt) {
+    this->rt = rt;
+    MOZ_ASSERT(rt->gc.nursery.isEmpty());
+}
+
+AutoEmptyNursery::AutoEmptyNursery(JSRuntime *rt)
+  : AutoAssertEmptyNursery()
+{
+    MOZ_ASSERT(!rt->mainThread.suppressGC);
+    rt->gc.stats.suspendPhases();
+    rt->gc.evictNursery();
+    rt->gc.stats.resumePhases();
+    checkCondition(rt);
 }
 
 } /* namespace gc */

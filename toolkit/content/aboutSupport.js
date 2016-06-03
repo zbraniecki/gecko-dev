@@ -52,13 +52,18 @@ var snapshotFormatters = {
     if (data.updateChannel)
       $("updatechannel-box").textContent = data.updateChannel;
 
+    let system = '';
+    if (data.autoStartStatus === 10) {
+      system = (Services.appinfo.OS == "Darwin" ? "OS X 10.6 - 10.8" : "Windows XP");
+    }
     document.l10n.setAttributes(
       $("multiprocess-box"),
       'aboutSupport-multiProcessWindows',
       {
         remote: data.numRemoteWindows,
         total: data.numTotalWindows,
-        status: data.autoStartStatus
+        statusCode: data.autoStartStatus,
+        system: system
       }
     );
 

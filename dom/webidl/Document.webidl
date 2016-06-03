@@ -12,7 +12,7 @@ interface URI;
 interface nsIDocShell;
 interface nsILoadGroup;
 
-enum VisibilityState { "hidden", "visible" };
+enum VisibilityState { "hidden", "visible", "prerender" };
 
 /* http://dom.spec.whatwg.org/#interface-document */
 [Constructor]
@@ -222,7 +222,7 @@ partial interface Document {
 // https://fullscreen.spec.whatwg.org/#api
 partial interface Document {
   // Note: Per spec the 'S' in these two is lowercase, but the "Moz"
-  // versions hve it uppercase.
+  // versions have it uppercase.
   [LenientSetter, Func="nsDocument::IsUnprefixedFullscreenEnabled"]
   readonly attribute boolean fullscreen;
   [BinaryName="fullscreen", Deprecated="PrefixedFullscreenAPI"]

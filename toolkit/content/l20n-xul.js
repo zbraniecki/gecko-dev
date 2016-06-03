@@ -1,30 +1,6 @@
 (function () {
   'use strict';
 
-  function prioritizeLocales(def, availableLangs, requested) {
-    let supportedLocale;
-    // Find the first locale in the requested list that is supported.
-    for (let i = 0; i < requested.length; i++) {
-      const locale = requested[i];
-      if (availableLangs.indexOf(locale) !== -1) {
-        supportedLocale = locale;
-        break;
-      }
-    }
-    if (!supportedLocale ||
-        supportedLocale === def) {
-      return [def];
-    }
-
-    return [supportedLocale, def];
-  }
-
-  function getDirection(code) {
-    const tag = code.split('-')[0];
-    return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
-      'rtl' : 'ltr';
-  }
-
   // A document.ready shim
   // https://github.com/whatwg/html/issues/127
   function documentReady() {
@@ -46,54 +22,10 @@
       el => el.getAttribute('src'));
   }
 
-  const { classes: Cc, interfaces: Ci } = Components;
-
-  const HTTP_STATUS_CODE_OK = 200;
-
-  function load(url) {
-    return new Promise((resolve, reject) => {
-      const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
-        .createInstance(Ci.nsIXMLHttpRequest);
-
-      req.mozBackgroundRequest = true;
-      req.overrideMimeType('text/plain');
-      req.open('GET', url, true);
-
-      req.addEventListener('load', () => {
-        if (req.status === HTTP_STATUS_CODE_OK) {
-          resolve(req.responseText);
-        } else {
-          reject(new Error('Not found: ' + url));
-        }
-      });
-      req.addEventListener('error', reject);
-      req.addEventListener('timeout', reject);
-
-      req.send(null);
-    });
-  }
-
-  function fetchResource(res, lang) {
-    const url = res.replace('{locale}', lang);
-    return load(url).catch(e => e);
-  }
-
-  class ResourceBundle {
-    constructor(lang, resIds) {
-      this.lang = lang;
-      this.loaded = false;
-      this.resIds = resIds;
-    }
-
-    fetch() {
-      if (!this.loaded) {
-        this.loaded = Promise.all(
-          this.resIds.map(id => fetchResource(id, this.lang))
-        );
-      }
-
-      return this.loaded;
-    }
+  function getDirection(code) {
+    const tag = code.split('-')[0];
+    return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
+      'rtl' : 'ltr';
   }
 
   class L10nError extends Error {
@@ -669,20 +601,16 @@
   }
 
   Components.utils.import('resource://gre/modules/Services.jsm');
+  Components.utils.import('resource://gre/modules/L10nService.jsm');
 
-  function requestBundles(requestedLangs = navigator.languages) {
+  function requestBundles(requestedLangs = new Set(navigator.languages)) {
     return documentReady().then(() => {
-      const defaultLang = 'en-US';
-      const availableLangs = ['pl', 'en-US'];
       const resIds = getXULResourceLinks(document);
+      const {
+        resBundles
+      } = L10nService.getResources(requestedLangs, resIds);
 
-      const newLangs = prioritizeLocales(
-        defaultLang, availableLangs, requestedLangs
-      );
-
-      return newLangs.map(
-        lang => new ResourceBundle(lang, resIds)
-      );
+      return resBundles;
     });
   }
 

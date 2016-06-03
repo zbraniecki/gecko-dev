@@ -1259,13 +1259,25 @@ static void SetStyleImage(nsStyleContext* aStyleContext,
     case eCSSUnit_Unset:
     case eCSSUnit_None:
       break;
-    default:
-      // We might have eCSSUnit_URL values for if-visited style
-      // contexts, which we can safely treat like 'none'.  Otherwise
-      // this is an unexpected unit.
-      NS_ASSERTION(aStyleContext->IsStyleIfVisited() &&
-                   aValue.GetUnit() == eCSSUnit_URL,
+    case eCSSUnit_URL:
+    {
+#ifdef DEBUG
+      nsIDocument* currentDoc = aStyleContext->PresContext()->Document();
+      nsIURI* docURI = currentDoc->GetDocumentURI();
+      nsIURI* imageURI = aValue.GetURLValue();
+      bool isEqualExceptRef = false;
+      imageURI->EqualsExceptRef(docURI, &isEqualExceptRef);
+      // Either we have eCSSUnit_URL values for if-visited style contexts,
+      // which we can safely treat like 'none', or aValue refers to an
+      // in-document resource. Otherwise this is an unexpected unit.
+      NS_ASSERTION(aStyleContext->IsStyleIfVisited() || isEqualExceptRef,
                    "unexpected unit; maybe nsCSSValue::Image::Image() failed?");
+#endif
+
+      break;
+    }
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unexpected Unit type.");
       break;
   }
 }
@@ -6520,6 +6532,10 @@ struct BackgroundItemComputer<nsCSSValuePairList, nsStyleImageLayers::Repeat>
       aComputedValue.mYRepeat = NS_STYLE_IMAGELAYER_REPEAT_REPEAT;
       break;
     default:
+      NS_ASSERTION(value == NS_STYLE_IMAGELAYER_REPEAT_NO_REPEAT ||
+                   value == NS_STYLE_IMAGELAYER_REPEAT_REPEAT ||
+                   value == NS_STYLE_IMAGELAYER_REPEAT_SPACE ||
+                   value == NS_STYLE_IMAGELAYER_REPEAT_ROUND, "Unexpected value");
       aComputedValue.mXRepeat = value;
       hasContraction = false;
       break;
@@ -6538,7 +6554,9 @@ struct BackgroundItemComputer<nsCSSValuePairList, nsStyleImageLayers::Repeat>
     case eCSSUnit_Enumerated:
       value = aSpecifiedValue->mYValue.GetIntValue();
       NS_ASSERTION(value == NS_STYLE_IMAGELAYER_REPEAT_NO_REPEAT ||
-                   value == NS_STYLE_IMAGELAYER_REPEAT_REPEAT, "Unexpected value");
+                   value == NS_STYLE_IMAGELAYER_REPEAT_REPEAT ||
+                   value == NS_STYLE_IMAGELAYER_REPEAT_SPACE ||
+                   value == NS_STYLE_IMAGELAYER_REPEAT_ROUND, "Unexpected value");
       aComputedValue.mYRepeat = value;
       break;
     default:
@@ -6569,7 +6587,8 @@ struct BackgroundItemComputer<nsCSSValueList, nsCOMPtr<nsIURI> >
                            nsCOMPtr<nsIURI>& aComputedValue,
                            RuleNodeCacheConditions& aConditions)
   {
-    if (eCSSUnit_Image == aSpecifiedValue->mValue.GetUnit()) {
+    if (eCSSUnit_Image == aSpecifiedValue->mValue.GetUnit() ||
+        eCSSUnit_URL == aSpecifiedValue->mValue.GetUnit()) {
       aComputedValue = aSpecifiedValue->mValue.GetURLValue();
     } else if (eCSSUnit_Null != aSpecifiedValue->mValue.GetUnit()) {
       aComputedValue = nullptr;
@@ -8583,14 +8602,11 @@ nsRuleNode::ComputePositionData(void* aStartStruct,
               conditions);
 
   // grid-column-gap
-  nsStyleCoord tempCoord;
   if (SetCoord(*aRuleData->ValueForGridColumnGap(),
-               tempCoord, nsStyleCoord(parentPos->mGridColumnGap,
-                                       nsStyleCoord::CoordConstructor),
-               SETCOORD_LH | SETCOORD_INITIAL_ZERO | SETCOORD_CALC_LENGTH_ONLY |
+               pos->mGridColumnGap, parentPos->mGridColumnGap,
+               SETCOORD_LPH | SETCOORD_INITIAL_ZERO | SETCOORD_STORE_CALC |
                SETCOORD_CALC_CLAMP_NONNEGATIVE | SETCOORD_UNSET_INITIAL,
                aContext, mPresContext, conditions)) {
-    pos->mGridColumnGap = tempCoord.GetCoordValue();
   } else {
     MOZ_ASSERT(aRuleData->ValueForGridColumnGap()->GetUnit() == eCSSUnit_Null,
                "unexpected unit");
@@ -8598,12 +8614,10 @@ nsRuleNode::ComputePositionData(void* aStartStruct,
 
   // grid-row-gap
   if (SetCoord(*aRuleData->ValueForGridRowGap(),
-               tempCoord, nsStyleCoord(parentPos->mGridRowGap,
-                                       nsStyleCoord::CoordConstructor),
-               SETCOORD_LH | SETCOORD_INITIAL_ZERO | SETCOORD_CALC_LENGTH_ONLY |
+               pos->mGridRowGap, parentPos->mGridRowGap,
+               SETCOORD_LPH | SETCOORD_INITIAL_ZERO | SETCOORD_STORE_CALC |
                SETCOORD_CALC_CLAMP_NONNEGATIVE | SETCOORD_UNSET_INITIAL,
                aContext, mPresContext, conditions)) {
-    pos->mGridRowGap = tempCoord.GetCoordValue();
   } else {
     MOZ_ASSERT(aRuleData->ValueForGridRowGap()->GetUnit() == eCSSUnit_Null,
                "unexpected unit");
@@ -9376,20 +9390,7 @@ nsRuleNode::ComputeSVGData(void* aStartStruct,
   case eCSSUnit_Unset:
     conditions.SetUncacheable();
     svg->mStrokeDasharrayFromObject = parentSVG->mStrokeDasharrayFromObject;
-    // only do the copy if weren't already set up by the copy constructor
-    // FIXME Bug 389408: This is broken when aStartStruct is non-null!
-    if (!svg->mStrokeDasharray) {
-      svg->mStrokeDasharrayLength = parentSVG->mStrokeDasharrayLength;
-      if (svg->mStrokeDasharrayLength) {
-        svg->mStrokeDasharray = new nsStyleCoord[svg->mStrokeDasharrayLength];
-        if (svg->mStrokeDasharray)
-          memcpy(svg->mStrokeDasharray,
-                 parentSVG->mStrokeDasharray,
-                 svg->mStrokeDasharrayLength * sizeof(nsStyleCoord));
-        else
-          svg->mStrokeDasharrayLength = 0;
-      }
-    }
+    svg->mStrokeDasharray = parentSVG->mStrokeDasharray;
     break;
 
   case eCSSUnit_Enumerated:
@@ -9397,45 +9398,35 @@ nsRuleNode::ComputeSVGData(void* aStartStruct,
                      NS_STYLE_STROKE_PROP_CONTEXT_VALUE,
                "Unknown keyword for stroke-dasharray");
     svg->mStrokeDasharrayFromObject = true;
-    delete [] svg->mStrokeDasharray;
-    svg->mStrokeDasharray = nullptr;
-    svg->mStrokeDasharrayLength = 0;
+    svg->mStrokeDasharray.Clear();
     break;
 
   case eCSSUnit_Initial:
   case eCSSUnit_None:
     svg->mStrokeDasharrayFromObject = false;
-    delete [] svg->mStrokeDasharray;
-    svg->mStrokeDasharray = nullptr;
-    svg->mStrokeDasharrayLength = 0;
+    svg->mStrokeDasharray.Clear();
     break;
 
   case eCSSUnit_List:
   case eCSSUnit_ListDep: {
     svg->mStrokeDasharrayFromObject = false;
-    delete [] svg->mStrokeDasharray;
-    svg->mStrokeDasharray = nullptr;
-    svg->mStrokeDasharrayLength = 0;
+    svg->mStrokeDasharray.Clear();
 
     // count number of values
     const nsCSSValueList *value = strokeDasharrayValue->GetListValue();
-    svg->mStrokeDasharrayLength = ListLength(value);
+    uint32_t strokeDasharrayLength = ListLength(value);
 
-    NS_ASSERTION(svg->mStrokeDasharrayLength != 0, "no dasharray items");
+    MOZ_ASSERT(strokeDasharrayLength != 0, "no dasharray items");
 
-    svg->mStrokeDasharray = new nsStyleCoord[svg->mStrokeDasharrayLength];
+    svg->mStrokeDasharray.SetLength(strokeDasharrayLength);
 
-    if (svg->mStrokeDasharray) {
-      uint32_t i = 0;
-      while (nullptr != value) {
-        SetCoord(value->mValue,
-                 svg->mStrokeDasharray[i++], nsStyleCoord(),
-                 SETCOORD_LP | SETCOORD_FACTOR,
-                 aContext, mPresContext, conditions);
-        value = value->mNext;
-      }
-    } else {
-      svg->mStrokeDasharrayLength = 0;
+    uint32_t i = 0;
+    while (nullptr != value) {
+      SetCoord(value->mValue,
+               svg->mStrokeDasharray[i++], nsStyleCoord(),
+               SETCOORD_LP | SETCOORD_FACTOR,
+               aContext, mPresContext, conditions);
+      value = value->mNext;
     }
     break;
   }
