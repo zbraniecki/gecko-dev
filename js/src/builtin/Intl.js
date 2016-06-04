@@ -3036,7 +3036,8 @@ function resolveRelativeTimeFormatInternals(lazyRelativeTimeFormatData) {
       [],
       localeData);
   internalProps['[[Locale]]'] = r.locale;
-  internalProps['[[Style]]'] = 'long';
+  internalProps['[[Style]]'] = lazyRelativeTimeFormatData['[[Style]]'];
+  internalProps['[[Unit]]'] = lazyRelativeTimeFormatData['[[Unit]]'];
 
   var dataLocale = r.dataLocale;
 
