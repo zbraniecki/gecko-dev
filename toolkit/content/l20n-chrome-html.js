@@ -1,64 +1,5 @@
 {
 
-class L10nError extends Error {
-  constructor(message, id, lang) {
-    super();
-    this.name = 'L10nError';
-    this.message = message;
-    this.id = id;
-    this.lang = lang;
-  }
-}
-
-function keysFromContext(ctx, keys, method) {
-  return keys.map(key => {
-    const [id, args] = Array.isArray(key) ?
-      key : [key, undefined];
-
-    // XXX Handle errors somehow; emit?
-    const [result] = method.call(this, ctx, id, args);
-    return result;
-  });
-}
-
-function valueFromContext(ctx, id, args) {
-  const entity = ctx.messages.get(id);
-
-  if (entity === undefined) {
-    return [id, [new L10nError(`Unknown entity: ${id}`)]];
-  }
-
-  return ctx.format(entity, args);
-}
-
-function entityFromContext(ctx, id, args) {
-  const entity = ctx.messages.get(id);
-
-  if (entity === undefined) {
-    return [
-      { value: id, attrs: null },
-      [new L10nError(`Unknown entity: ${id}`)]
-    ];
-  }
-
-  const [value] = ctx.formatToPrimitive(entity, args);
-
-  const formatted = {
-    value,
-    attrs: null,
-  };
-
-  if (entity.traits) {
-    formatted.attrs = Object.create(null);
-    for (let trait of entity.traits) {
-      const [attrValue] = ctx.format(trait, args);
-      formatted.attrs[trait.key.name] = attrValue;
-    }
-  }
-
-  return [formatted, []];
-}
-
 function getDirection(code) {
   const tag = code.split('-')[0];
   return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
@@ -167,14 +108,6 @@ class LocalizationObserver extends Map {
     this.translateElements(Array.from(targets));
   }
 
-  getLocalizationForElement(elem) {
-    if (!elem.hasAttribute('data-l10n-bundle')) {
-      return this.roots.get(document.documentElement);
-    }
-
-    return this.get(elem.getAttribute('data-l10n-bundle'));
-  }
-
   // XXX the following needs to be optimized, perhaps getTranslatables should 
   // sort elems by localization they refer to so that it is easy to group them, 
   // handle each group individually and finally concatenate the resulting 
@@ -254,9 +187,76 @@ class LocalizationObserver extends Map {
 
 }
 
-class ChromeLocalizationObserver extends LocalizationObserver {}
+class ChromeLocalizationObserver extends LocalizationObserver {
+  getLocalizationForElement(elem) {
+    if (!elem.hasAttribute('data-l10n-bundle')) {
+      return this.roots.get(document.documentElement);
+    }
 
-// XXX translateRoot needs to look into the anonymous content
+    return this.get(elem.getAttribute('data-l10n-bundle'));
+  }
+
+  // XXX translateRoot needs to look into the anonymous content
+}
+
+class L10nError extends Error {
+  constructor(message, id, lang) {
+    super();
+    this.name = 'L10nError';
+    this.message = message;
+    this.id = id;
+    this.lang = lang;
+  }
+}
+
+function keysFromContext(ctx, keys, method) {
+  return keys.map(key => {
+    const [id, args] = Array.isArray(key) ?
+      key : [key, undefined];
+
+    // XXX Handle errors somehow; emit?
+    const [result] = method.call(this, ctx, id, args);
+    return result;
+  });
+}
+
+function valueFromContext(ctx, id, args) {
+  const entity = ctx.messages.get(id);
+
+  if (entity === undefined) {
+    return [id, [new L10nError(`Unknown entity: ${id}`)]];
+  }
+
+  return ctx.format(entity, args);
+}
+
+function entityFromContext(ctx, id, args) {
+  const entity = ctx.messages.get(id);
+
+  if (entity === undefined) {
+    return [
+      { value: id, attrs: null },
+      [new L10nError(`Unknown entity: ${id}`)]
+    ];
+  }
+
+  const [value] = ctx.formatToPrimitive(entity, args);
+
+  const formatted = {
+    value,
+    attrs: null,
+  };
+
+  if (entity.traits) {
+    formatted.attrs = Object.create(null);
+    for (let trait of entity.traits) {
+      const [attrValue] = ctx.format(trait, args);
+      formatted.attrs[trait.key.name] = attrValue;
+    }
+  }
+
+  return [formatted, []];
+}
 
 const properties = new WeakMap();
 const contexts = new WeakMap();
@@ -559,25 +559,6 @@ function getResourceLinks(head) {
   );
 }
 
-function observe(subject, topic, data) {
-  switch (topic) {
-    case 'language-update': {
-      this.interactive = this.interactive.then(bundles => {
-        // just overwrite any existing messages in the first bundle
-        const ctx = contexts.get(bundles[0]);
-        ctx.addMessages(data);
-        return bundles;
-      });
-      return this.interactive.then(
-        bundles => translateDocument(this, bundles)
-      );
-    }
-    default: {
-      throw new Error(`Unknown topic: ${topic}`);
-    }
-  }
-}
-
 Components.utils.import('resource://gre/modules/Services.jsm');
 Components.utils.import('resource://gre/modules/L10nService.jsm');
 Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
@@ -614,19 +595,21 @@ function createContext(lang) {
   return new MessageContext(lang, { functions });
 }
 
-const localization = new HTMLLocalization(requestBundles, createContext);
-localization.observe = observe;
-localization.interactive.then(bundles => {
-  localization.getValue = function(id, args) {
-    return valueFromContext(contexts.get(bundles[0]), id, args)[0];
-  };
-});
-
-Services.obs.addObserver(localization, 'language-update', false);
-
 document.l10n = new ChromeLocalizationObserver();
-document.l10n.observeRoot(document.documentElement, localization);
-document.l10n.translateRoot(document.documentElement);
+
+const name = Symbol.for('anonymous l10n');
+if (!document.l10n.has(name)) {
+  document.l10n.set(
+    name,
+    new HTMLLocalization(requestBundles, createContext)
+  );
+}
+const localization = document.l10n.get(name);
+const rootElem = document.documentElement;
+
+document.l10n.observeRoot(rootElem, localization);
+document.l10n.translateRoot(rootElem);
+
 window.addEventListener('languagechange', document.l10n);
 
 }
