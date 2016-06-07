@@ -2229,87 +2229,35 @@ class HTMLLocalization extends Localization {
 
 }
 
-const { classes: Cc, interfaces: Ci } = Components;
-
-const resIndex = {
-  '/global/aboutSupport.ftl': {
-    'en-US': [
-      'chrome://global/locale/aboutSupport.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://global/locale/aboutSupport.pl.ftl',
-    ]
-  },
-  '/branding/brand.ftl': {
-    'en-US': [
-      'chrome://branding/locale/brand.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://branding/locale/brand.pl.ftl',
-    ]
-  },
-  '/global/resetProfile.ftl': {
-    'en-US': [
-      'chrome://global/locale/resetProfile.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://global/locale/resetProfile.pl.ftl',
-    ]
-  },
-  '/browser/aboutDialog.ftl': {
-    'en-US': [
-      'chrome://browser/locale/aboutDialog.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://browser/locale/aboutDialog.pl.ftl',
-    ]
-  },
-  '/browser/browser.ftl': {
-    'en-US': [
-      'chrome://browser/locale/browser.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://browser/locale/browser.pl.ftl',
-    ]
-  },
-  '/browser/tabbrowser.ftl': {
-    'en-US': [
-      'chrome://browser/locale/tabbrowser.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://browser/locale/tabbrowser.pl.ftl',
-    ]
-  },
-};
-
-
 const HTTP_STATUS_CODE_OK = 200;
 
 function load(url) {
   return new Promise((resolve, reject) => {
-    const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
-      .createInstance(Ci.nsIXMLHttpRequest);
+    const xhr = new XMLHttpRequest();
 
-    req.mozBackgroundRequest = true;
-    req.overrideMimeType('text/plain');
-    req.open('GET', url, true);
+    if (xhr.overrideMimeType) {
+      xhr.overrideMimeType('text/plain');
+    }
 
-    req.addEventListener('load', () => {
-      if (req.status === HTTP_STATUS_CODE_OK) {
-        resolve(req.responseText);
+    xhr.open('GET', url, true);
+
+    xhr.addEventListener('load', e => {
+      if (e.target.status === HTTP_STATUS_CODE_OK ||
+          e.target.status === 0) {
+        resolve(e.target.response);
       } else {
-        reject(new Error('Not found: ' + url));
+        reject(new L10nError('Not found: ' + url));
       }
     });
-    req.addEventListener('error', reject);
-    req.addEventListener('timeout', reject);
+    xhr.addEventListener('error', reject);
+    xhr.addEventListener('timeout', reject);
 
-    req.send(null);
+    xhr.send(null);
   });
 }
 
-function fetchResource(resId, lang) {
-  const url = resIndex[resId][lang][0];
+function fetchResource(res, lang) {
+  const url = res.replace('{locale}', lang);
   return load(url).catch(e => e);
 }
 
