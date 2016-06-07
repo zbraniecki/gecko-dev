@@ -16,8 +16,9 @@
 
     <content>
       <xul:stringbundle anonid="tbstringbundle" src="chrome://browser/locale/tabbrowser.properties"/>
-      <xul:localization id="tabbrowser-l10n">
-        <xul:source src="chrome://browser/locale/tabbrowser.ftl"/>
+      <!-- XXX don't use id -->
+      <xul:localization anonid="tabbrowser-l10n" id="tabbrowser-l10n">
+        <xul:source src="/browser/tabbrowser.ftl"/>
       </xul:localization>
       <xul:tabbox anonid="tabbox" class="tabbrowser-tabbox"
                   flex="1" eventnode="document" xbl:inherits="handleCtrlPageUpDown"
@@ -1417,7 +1418,7 @@
                 title = gNavigatorBundle.getFormattedString("customizeMode.tabTitle",
                                                             [ brandShortName ]);
               } else // Still no title?  Fall back to our untitled string.
-                aTab.setAttribute('localization', 'tabbrowser-l10n');
+                aTab.setAttribute('data-l10n-bundle', 'tabbrowser-l10n');
                 aTab.setAttribute('data-l10n-id', 'tabs-empty-tab-title');
             }
 
@@ -1965,7 +1966,7 @@
             var uriIsAboutBlank = !aURI || aURI == "about:blank";
 
             if (!aURI || isBlankPageURL(aURI)) {
-              t.setAttribute('localization', 'tabbrowser-l10n');
+              t.setAttribute('data-l10n-bundle', 'tabbrowser-l10n');
               t.setAttribute('data-l10n-id', 'tabs-empty-tab-title');
             } else if (aURI.toLowerCase().startsWith("javascript:")) {
               // This can go away when bug 672618 or bug 55696 are fixed.
@@ -4904,7 +4905,7 @@
           this.mTabClipWidth = Services.prefs.getIntPref("browser.tabs.tabClipWidth");
 
           var tab = this.firstChild;
-          tab.setAttribute('localization', 'tabbrowser-l10n');
+          tab.setAttribute('data-l10n-bundle', 'tabbrowser-l10n');
           tab.setAttribute('data-l10n-id', 'tabs-empty-tab-title');
           tab.setAttribute("crop", "end");
           tab.setAttribute("onerror", "this.removeAttribute('image');");

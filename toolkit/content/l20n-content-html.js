@@ -1897,8 +1897,7 @@ class LocalizationObserver {
 
 class ContentLocalizationObserver extends LocalizationObserver {
   getLocalizationForElement(elem) {
-    // check data-l10n-bundle
-    return Array.from(this.roots.values())[0];
+    return this.roots.get(document.documentElement);
   }
 }
 
@@ -2263,6 +2262,22 @@ const resIndex = {
     ],
     'pl': [
       'chrome://browser/locale/aboutDialog.pl.ftl',
+    ]
+  },
+  '/browser/browser.ftl': {
+    'en-US': [
+      'chrome://browser/locale/browser.en-US.ftl',
+    ],
+    'pl': [
+      'chrome://browser/locale/browser.pl.ftl',
+    ]
+  },
+  '/browser/tabbrowser.ftl': {
+    'en-US': [
+      'chrome://browser/locale/tabbrowser.en-US.ftl',
+    ],
+    'pl': [
+      'chrome://browser/locale/tabbrowser.pl.ftl',
     ]
   },
 };
