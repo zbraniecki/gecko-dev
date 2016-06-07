@@ -19,7 +19,7 @@
 }
 
 localization {
-  -moz-binding: url("chrome://global/content/bindings/localization.xml#localization");
+  -moz-binding: url("chrome://global/content/bindings/localization.xml#xul");
 }
 
 .tab-close-button[pinned],

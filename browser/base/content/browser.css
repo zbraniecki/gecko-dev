@@ -6,10 +6,6 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 @namespace svg url("http://www.w3.org/2000/svg");
 
-localization {
-  -moz-binding: url("chrome://global/content/bindings/localization.xml#localization");
-}
-
 :root {
   --identity-popup-expander-width: 38px;
   --panelui-subview-transition-duration: 150ms;
@@ -49,6 +45,10 @@ localization {
 
 #main-window[customize-entered] {
   min-width: -moz-fit-content;
+}
+
+localization {
+  -moz-binding: url("chrome://global/content/bindings/localization.xml#xul");
 }
 
 searchbar {
