@@ -80,8 +80,9 @@ const observerConfig = {
   attributeFilter: ['data-l10n-id', 'data-l10n-args']
 };
 
-class LocalizationObserver {
+class LocalizationObserver extends Map {
   constructor() {
+    super();
     this.roots = new Map();
     this.observer = new MutationObserver(
       mutations => this.translateMutations(mutations)
@@ -256,22 +257,7 @@ class ChromeLocalizationObserver extends LocalizationObserver {
       return this.roots.get(document.documentElement);
     }
 
-    const host = document.getBindingParent(elem);
-    const bundleId = elem.getAttribute('data-l10n-bundle');
-
-    if (host) {
-      // we're inside of the anonymous content bound by XBL
-      const anonbundle = document.getAnonymousElementByAttribute(
-        host, 'anonid', bundleId
-      );
-
-      if (anonbundle) {
-        return anonbundle.l10n;
-      }
-    }
-
-    // XXX we shouldn't be using id
-    return document.getElementById(bundleId).l10n;
+    return document.l10n.get(elem.getAttribute('data-l10n-bundle'));
   }
 }
 

@@ -16,8 +16,7 @@
 
     <content>
       <xul:stringbundle anonid="tbstringbundle" src="chrome://browser/locale/tabbrowser.properties"/>
-      <!-- XXX don't use id -->
-      <xul:localization anonid="tabbrowser-l10n" id="tabbrowser-l10n">
+      <xul:localization name="tabbrowser-l10n">
         <xul:source src="/browser/tabbrowser.ftl"/>
       </xul:localization>
       <xul:tabbox anonid="tabbox" class="tabbrowser-tabbox"
