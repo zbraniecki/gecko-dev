@@ -179,6 +179,40 @@ intl_patternForSkeleton(JSContext* cx, unsigned argc, Value* vp);
 extern MOZ_MUST_USE bool
 intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp);
 
+
+/******************** PluralRules ********************/
+
+/**
+ * Returns a new instance of the standard built-in PluralRules constructor.
+ * Self-hosted code cannot cache this constructor (as it does for others in
+ * Utilities.js) because it is initialized after self-hosted code is compiled.
+ *
+ * Usage: pluralRules = intl_pluralRules(locales, options)
+ */
+extern bool
+intl_PluralRules(JSContext* cx, unsigned argc, Value* vp);
+
+/**
+ * Returns an object indicating the supported locales for number formatting
+ * by having a true-valued property for each such locale with the
+ * canonicalized language tag as the property name. The object has no
+ * prototype.
+ *
+ * Usage: availableLocales = intl_PluralRules_availableLocales()
+ */
+extern bool
+intl_PluralRules_availableLocales(JSContext* cx, unsigned argc, Value* vp);
+
+/**
+ * Returns a plural rule for the number x according to the effective
+ * locale and the formatting options of the given PluralRules.
+ *
+ * Usage: rule = intl_SelectPluralRule(pluralRules, x)
+ */
+extern bool
+intl_SelectPluralRule(JSContext* cx, unsigned argc, Value* vp);
+
+
 /**
  * Cast char16_t* strings to UChar* strings used by ICU.
  */

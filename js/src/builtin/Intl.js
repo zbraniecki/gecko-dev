@@ -1161,7 +1161,8 @@ function initializeIntlObject(obj) {
 function setLazyData(internals, type, lazyData)
 {
     assert(internals.type === "partial", "can't set lazy data for anything but a newborn");
-    assert(type === "Collator" || type === "DateTimeFormat" || type == "NumberFormat", "bad type");
+    assert(type === "Collator" || type === "DateTimeFormat" ||
+           type == "NumberFormat" || type === "PluralRules", "bad type");
     assert(IsObject(lazyData), "non-object lazy data");
 
     // Set in reverse order so that the .type change is a barrier.
@@ -1211,7 +1212,8 @@ function isInitializedIntlObject(obj) {
     if (IsObject(internals)) {
         assert(callFunction(std_Object_hasOwnProperty, internals, "type"), "missing type");
         var type = internals.type;
-        assert(type === "partial" || type === "Collator" || type === "DateTimeFormat" || type === "NumberFormat", "unexpected type");
+        assert(type === "partial" || type === "Collator" ||
+               type === "DateTimeFormat" || type === "NumberFormat" || type === "PluralRules", "unexpected type");
         assert(callFunction(std_Object_hasOwnProperty, internals, "lazyData"), "missing lazyData");
         assert(callFunction(std_Object_hasOwnProperty, internals, "internalProps"), "missing internalProps");
     } else {
@@ -1268,6 +1270,8 @@ function getInternals(obj)
         internalProps = resolveCollatorInternals(lazyData)
     else if (type === "DateTimeFormat")
         internalProps = resolveDateTimeFormatInternals(lazyData)
+    else if (type === "PluralRules")
+        internalProps = resolvePluralRulesInternals(lazyData)
     else
         internalProps = resolveNumberFormatInternals(lazyData);
     setInternalProperties(internals, internalProps);
@@ -2884,6 +2888,166 @@ function resolveICUPattern(pattern, result) {
         }
     }
 }
+
+/********** Intl.PluralRules **********/
+
+function GetOperands(s) {
+  let n = ToNumber(s);
+  let dp = callFunction(std_String_indexOf, s, ".");
+
+  let iv, fv;
+  let i = 0, v = 0, f = 0, t = 0, w = 0;
+
+  if (dp === -1) {
+    iv = n;
+  } else {
+    iv = callFunction(String_substring, s, 0, dp - 1);
+    fv = callFunction(String_substring, s, dp);
+    f = ToNumber(fv);
+    v = ToLength(fv.length);
+  }
+  i = callFunction(std_Math_abs, ToNumber(iv));
+  if (f !== 0) {
+    ft = fv;
+
+    while (callFunction(std_String_endsWith, ft, 0)) {
+      ft = callFunction(std_String_slice, 0, -1);
+    }
+    w = ToLength(ft.length);
+    t = ToNumber(ft);
+  }
+  let result = new Record();
+  result['[[Number]]'] = n;
+  result['[[IntegerDigits]]'] = i;
+  result['[[NumberOfFractionDigits]]'] = v;
+  result['[[NumberOfFractionDigitsWithoutTrailing]]'] = w;
+  result['[[FractionDigits]]'] = f;
+  result['[[FractionDIgitsWithoutTrailing]]'] = t;
+  return result;
+}
+
+function ResolvePlural(PluralRules, n) {
+  //if (!isFinite(n)) {
+  //  return "other";
+  //}
+
+  let s = callFunction(PluralRules['[[NumberFormat]]'].format, null, n);
+  let locale = PluralRules['[[Locale]]'];
+  let type = PluralRules['[[Type]]'];
+  let operands = GetOperands(s);
+
+  return callFunction(
+    PluralRules['[[PluralRule]]'],
+    undefined,
+    operands['[[Number]]']
+  );
+}
+
+
+
+function InitializePluralRules(pluralRules, locales, options) {
+
+  let pluralRulesFn = {
+    'cardinal': {
+      'en-US': function(n) {
+        return n === 1 ? 'one' : 'other';
+      },
+      'pl': function(n) {
+        if (n === 1) {
+          return 'one';
+        }
+        if (n % 10 >= 2 && n % 10 <= 4) {
+          return 'few';
+        }
+        return 'other';
+      }
+    }
+  }
+
+	assert(IsObject(pluralRules), "InitializePluralRules");
+
+	if (isInitializedIntlObject(pluralRules))
+		ThrowTypeError(JSMSG_INTL_OBJECT_REINITED);
+
+	initializeIntlObject(pluralRules);
+
+  let requestedLocales = CanonicalizeLocaleList(locales);
+
+  if (options === undefined)
+    options = {};
+  else
+    options = ToObject(options);
+
+  let t = GetOption(options, "type", "string", ["cardinal", "ordinal"], "cardinal");
+  pluralRules['[[Type]]'] = t;
+
+  let no = {};
+  no.minimumIntegerDigits = options.minimumIntegerDigits;
+  no.minimumFractionDigits = options.minimumFractionDigits;
+  no.maximumFractionDigits = options.maximumFractionDigits;
+  no.minimumSignificantDigits = options.minimumSignificantDigits;
+  no.maximumSignificantDigits = options.maximumSignificantDigits;
+
+  //let nf = new Intl.NumberFormat(['en'], no);
+  let nf = {
+    format(n) {
+      return ToString(n);
+    },
+    resolvedOptions() {
+      return no;
+    }
+  }
+  pluralRules['[[NumberFormat]]'] = nf;
+
+  let r = ResolveLocale(
+    // intl_pluralRules_availableLocales();
+    ['en-US', 'pl'], // availableLocales
+    requestedLocales, // requestedLocales
+    {}, // opt
+    [], // relevantExtensionKeys
+    undefined // localeData
+  )
+
+  //XXX: Temporary hack
+  let locale = requestedLocales[0];
+  pluralRules['[[Locale]]'] = locale;
+
+  pluralRules['[[PluralRule]]'] = pluralRulesFn[t][locale];
+}
+
+function Intl_PluralRules_supportedLocalesOf(locales, options) {
+  let availableLocales = ['en-US', 'pl'];
+  let requestedLocales = CanonicalizeLocaleList(locales);
+  return SupportedLocales(availableLocales, requestedLocales, options);
+}
+
+function Intl_PluralRules_select(value) {
+  let pluralRules = this;
+  let n = ToNumber(value);
+  return ResolvePlural(pluralRules, n);
+}
+
+function Intl_PluralRules_resolvedOptions() {
+  let pluralRules = this;
+
+  let no = callFunction(
+    pluralRules['[[NumberFormat]]'].resolvedOptions,
+    pluralRules
+  );
+
+  let result = {
+    locale: this['[[Locale]]'],
+    type: this['[[Type]]'],
+    pluralCategories: ['one', 'other'],
+    minimumIntegerDigits: no.minimumIntegerDigits,
+    minimumFractionDigits: no.minimumFractionDigits,
+    maximumFractionDigits: no.maximumFractionDigits,
+    minimumSignificantDigits: no.minimumSignificantDigits,
+    maximumSignificantDigits: no.maximumSignificantDigits
+  };
+  return result;
+}
+
 
 function Intl_getCanonicalLocales(locales) {
   let codes = CanonicalizeLocaleList(locales);

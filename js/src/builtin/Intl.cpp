@@ -2331,6 +2331,183 @@ js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+/**************** PluralRules *****************/
+
+static void pluralRules_finalize(FreeOp* fop, JSObject* obj);
+
+static const uint32_t UPLURAL_RULES_SLOT = 0;
+static const uint32_t PLURAL_RULES_SLOTS_COUNT = 1;
+
+static const ClassOps PluralRulesClassOps = {
+    nullptr, /* addProperty */
+    nullptr, /* delProperty */
+    nullptr, /* getProperty */
+    nullptr, /* setProperty */
+    nullptr, /* enumerate */
+    nullptr, /* resolve */
+    nullptr, /* mayResolve */
+    pluralRules_finalize
+};
+
+static const Class PluralRulesClass = {
+    js_Object_str,
+    JSCLASS_HAS_RESERVED_SLOTS(PLURAL_RULES_SLOTS_COUNT),
+    &PluralRulesClassOps
+};
+
+#if JS_HAS_TOSOURCE
+static bool
+pluralRules_toSource(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    args.rval().setString(cx->names().PluralRules);
+    return true;
+}
+#endif
+
+static const JSFunctionSpec pluralRules_static_methods[] = {
+    JS_SELF_HOSTED_FN("supportedLocalesOf", "Intl_PluralRules_supportedLocalesOf", 1, 0),
+    JS_FS_END
+};
+
+static const JSFunctionSpec pluralRules_methods[] = {
+    JS_SELF_HOSTED_FN("resolvedOptions", "Intl_PluralRules_resolvedOptions", 0, 0),
+    JS_SELF_HOSTED_FN("select", "Intl_PluralRules_select", 1, 0),
+#if JS_HAS_TOSOURCE
+    JS_FN(js_toSource_str, pluralRules_toSource, 0, 0),
+#endif
+    JS_FS_END
+};
+
+static bool
+PluralRules(JSContext* cx, const CallArgs& args, bool construct)
+{
+    RootedObject obj(cx);
+
+    if (!construct) {
+        JSObject* intl = cx->global()->getOrCreateIntlObject(cx);
+        if (!intl)
+            return false;
+        RootedValue self(cx, args.thisv());
+        if (!self.isUndefined() && (!self.isObject() || self.toObject() != *intl)) {
+            obj = ToObject(cx, self);
+            if (!obj)
+                return false;
+
+            bool extensible;
+            if (!IsExtensible(cx, obj, &extensible))
+                return false;
+            if (!extensible)
+                return Throw(cx, obj, JSMSG_OBJECT_NOT_EXTENSIBLE);
+        } else {
+            construct = true;
+        }
+    }
+    if (construct) {
+        RootedObject proto(cx, cx->global()->getOrCreatePluralRulesPrototype(cx));
+        if (!proto)
+            return false;
+        obj = NewObjectWithGivenProto(cx, &PluralRulesClass, proto);
+        if (!obj)
+            return false;
+
+        obj->as<NativeObject>().setReservedSlot(UPLURAL_RULES_SLOT, PrivateValue(nullptr));
+    }
+
+    RootedValue locales(cx, args.length() > 0 ? args[0] : UndefinedValue());
+    RootedValue options(cx, args.length() > 1 ? args[1] : UndefinedValue());
+
+    if (!IntlInitialize(cx, obj, cx->names().InitializePluralRules, locales, options))
+        return false;
+
+    args.rval().setObject(*obj);
+    return true;
+}
+
+static bool
+PluralRules(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    return PluralRules(cx, args, args.isConstructing());
+}
+
+bool
+js::intl_PluralRules(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 2);
+    // intl_PluralRules is an intrinsic for self-hosted JavaScript, so it
+    // cannot be used with "new", but it still has to be treated as a
+    // constructor.
+    return PluralRules(cx, args, true);
+}
+
+static void
+pluralRules_finalize(FreeOp* fop, JSObject* obj)
+{
+}
+
+static JSObject*
+InitPluralRulesClass(JSContext* cx, HandleObject Intl, Handle<GlobalObject*> global)
+{
+    RootedFunction ctor(cx);
+    ctor = global->createConstructor(cx, &PluralRules, cx->names().PluralRules, 0);
+    if (!ctor)
+        return nullptr;
+
+    RootedObject proto(cx, global->as<GlobalObject>().getOrCreatePluralRulesPrototype(cx));
+    if (!proto)
+        return nullptr;
+    if (!LinkConstructorAndPrototype(cx, ctor, proto))
+        return nullptr;
+
+    if (!JS_DefineFunctions(cx, ctor, pluralRules_static_methods))
+        return nullptr;
+
+    if (!JS_DefineFunctions(cx, proto, pluralRules_methods))
+        return nullptr;
+
+    RootedValue options(cx);
+    if (!CreateDefaultOptions(cx, &options))
+        return nullptr;
+
+    if (!IntlInitialize(cx, proto, cx->names().InitializePluralRules, UndefinedHandleValue,
+                        options))
+    {
+        return nullptr;
+    }
+
+    RootedValue ctorValue(cx, ObjectValue(*ctor));
+    if (!DefineProperty(cx, Intl, cx->names().PluralRules, ctorValue, nullptr, nullptr, 0))
+        return nullptr;
+
+    return ctor;
+}
+
+bool
+GlobalObject::initPluralRulesProto(JSContext* cx, Handle<GlobalObject*> global)
+{
+    RootedNativeObject proto(cx, global->createBlankPrototype(cx, &PluralRulesClass));
+    if (!proto)
+        return false;
+    proto->setReservedSlot(UPLURAL_RULES_SLOT, PrivateValue(nullptr));
+    global->setReservedSlot(PLURAL_RULES_PROTO, ObjectValue(*proto));
+    return true;
+}
+
+bool
+js::intl_PluralRules_availableLocales(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 0);
+
+    RootedValue result(cx);
+    //XXX: We should be getting PluralRules locales, not NumberFormat ones
+    if (!intl_availableLocales(cx, unum_countAvailable, unum_getAvailable, &result))
+        return false;
+    args.rval().set(result);
+    return true;
+}
 
 /******************** Intl ********************/
 
@@ -2390,6 +2567,8 @@ js::InitIntlClass(JSContext* cx, HandleObject obj)
     if (!InitNumberFormatClass(cx, Intl, global))
         return nullptr;
     if (!InitDateTimeFormatClass(cx, Intl, global))
+        return nullptr;
+    if (!InitPluralRulesClass(cx, Intl, global))
         return nullptr;
 
     global->setConstructor(JSProto_Intl, ObjectValue(*Intl));
