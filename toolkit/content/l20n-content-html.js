@@ -1814,7 +1814,11 @@ class LocalizationObserver extends Map {
   }
 
   getLocalizationForElement(elem) {
-    // check data-l10n-bundle
+    if (!elem.hasAttribute('data-l10n-bundle')) {
+      return this.roots.get(document.documentElement);
+    }
+
+    return this.get(elem.getAttribute('data-l10n-bundle'));
   }
 
   // XXX the following needs to be optimized, perhaps getTranslatables should 
@@ -1896,11 +1900,7 @@ class LocalizationObserver extends Map {
 
 }
 
-class ContentLocalizationObserver extends LocalizationObserver {
-  getLocalizationForElement(elem) {
-    return this.roots.get(document.documentElement);
-  }
-}
+class ContentLocalizationObserver extends LocalizationObserver {}
 
 function keysFromContext(ctx, keys, method) {
   return keys.map(key => {

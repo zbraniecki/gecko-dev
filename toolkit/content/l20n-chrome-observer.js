@@ -109,7 +109,11 @@ class LocalizationObserver extends Map {
   }
 
   getLocalizationForElement(elem) {
-    // check data-l10n-bundle
+    if (!elem.hasAttribute('data-l10n-bundle')) {
+      return this.roots.get(document.documentElement);
+    }
+
+    return this.get(elem.getAttribute('data-l10n-bundle'));
   }
 
   // XXX the following needs to be optimized, perhaps getTranslatables should 
@@ -191,16 +195,9 @@ class LocalizationObserver extends Map {
 
 }
 
-class ChromeLocalizationObserver extends LocalizationObserver {
-  getLocalizationForElement(elem) {
+class ChromeLocalizationObserver extends LocalizationObserver {}
 
-    if (!elem.hasAttribute('data-l10n-bundle')) {
-      return this.roots.get(document.documentElement);
-    }
-
-    return document.l10n.get(elem.getAttribute('data-l10n-bundle'));
-  }
-}
+// XXX translateRoot needs to look into the anonymous content
 
 document.l10n = new ChromeLocalizationObserver();
 window.addEventListener('languagechange', document.l10n);
