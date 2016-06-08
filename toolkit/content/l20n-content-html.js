@@ -1729,20 +1729,34 @@ const observerConfig = {
 class LocalizationObserver extends Map {
   constructor() {
     super();
-    this.roots = new Map();
+    this.rootsByLocalization = new WeakMap();
+    this.localizationsByRoot = new WeakMap();
     this.observer = new MutationObserver(
       mutations => this.translateMutations(mutations)
     );
   }
 
-  observeRoot(root, l10n) {
-    this.roots.set(root, l10n);
+  observeRoot(root, l10n = Symbol.for('anonymous l10n')) {
+    this.localizationsByRoot.set(root, l10n);
+    if (!this.rootsByLocalization.has(l10n)) {
+      this.rootsByLocalization.set(l10n, new Set());
+    }
+    this.rootsByLocalization.get(l10n).add(root);
     this.observer.observe(root, observerConfig);
   }
 
   disconnectRoot(root) {
     this.pause();
-    this.roots.delete(root);
+    this.localizationsByRoot.delete(root);
+    for (let [name, l10n] of this) {
+      const roots = this.rootsByLocalization.get(l10n);
+      if (roots.has(root)) {
+        roots.delete(root);
+        if (roots.size === 0) {
+          this.delete(name);
+        }
+      }
+    }
     this.resume();
   }
 
@@ -1751,17 +1765,20 @@ class LocalizationObserver extends Map {
   }
 
   resume() {
-    this.roots.forEach(
-      (_, root) => this.observer.observe(root, observerConfig)
-    );
+    for (let l10n of this.values()) {
+      const roots = this.rootsByLocalization.get(l10n);
+      for (let root of this.rootsByLocalization.get(l10n)) {
+        this.observer.observe(root, observerConfig)
+      }
+    }
   }
 
   requestLanguages(requestedLangs) {
-    const localizations = Array.from(new Set(this.roots.values()));
+    const localizations = Array.from(this.values());
     return Promise.all(
       localizations.map(l10n => l10n.requestLanguages(requestedLangs))
     ).then(
-      () => this.translateRoots()
+      () => this.translateAllRoots()
     )
   }
 
@@ -1839,17 +1856,26 @@ class LocalizationObserver extends Map {
     );
   }
 
-  translateRoots() {
-    const roots = Array.from(this.roots);
+  translateAllRoots() {
+    const localizations = Array.from(this.values());
     return Promise.all(
-      roots.map(([root, l10n]) => l10n.interactive.then(
-        bundles => this.translateRoot(root, bundles.map(bundle => bundle.lang))
+      localizations.map(
+        l10n => this.translateRoots(l10n)
+      )
+    );
+  }
+
+  translateRoots(l10n) {
+    const roots = Array.from(this.rootsByLocalization.get(l10n));
+    return Promise.all(
+      roots.map(root => l10n.interactive.then(
+        bundles => this.translateRoot(root)
       ))
     );
   }
 
   translateRoot(root) {
-    const l10n = this.roots.get(root);
+    const l10n = this.localizationsByRoot.get(root);
     return l10n.interactive.then(bundles => {
       const langs = bundles.map(bundle => bundle.lang);
 
@@ -1894,7 +1920,7 @@ class LocalizationObserver extends Map {
 
 class ContentLocalizationObserver extends LocalizationObserver {
   getLocalizationForElement() {
-    return this.roots.get(document.documentElement);
+    return this.localizationsByRoot.get(document.documentElement);
   }
 }
 
@@ -2354,11 +2380,16 @@ function createContext(lang) {
   return new Intl.MessageContext(lang);
 }
 
-const localization = new HTMLLocalization(requestBundles, createContext)
+const name = Symbol.for('anonymous l10n');
 const rootElem = document.documentElement;
 
 document.l10n = new ContentLocalizationObserver();
-document.l10n.observeRoot(rootElem, localization);
+
+if (!document.l10n.has(name)) {
+  document.l10n.set(name, new HTMLLocalization(requestBundles, createContext));
+}
+
+document.l10n.observeRoot(rootElem, document.l10n.get(name));
 document.l10n.translateRoot(rootElem);
 
 window.addEventListener('languagechange', document.l10n);
