@@ -5,7 +5,7 @@ aboutDialog-releaseNotes-link = What's new
 
 aboutDialog-channel-description = You are currently on the <label>{ $channelName }</label> update channel.
 
-aboutDialog-update-checkForUpdatesButton = Check for updates
+aboutDialog-update-checkForUpdatesButton = Check for updates (FTL)
   [html/accesskey] C
 aboutDialog-update-updateButton = Restart { brandShortName } to Update
   [html/accesskey] R
