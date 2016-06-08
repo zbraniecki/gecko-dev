@@ -106,21 +106,6 @@ class Localization {
     );
   }
 
-  setAttributes(element, id, args) {
-    element.setAttribute('data-l10n-id', id);
-    if (args) {
-      element.setAttribute('data-l10n-args', JSON.stringify(args));
-    }
-    return element;
-  }
-
-  getAttributes(element) {
-    return {
-      id: element.getAttribute('data-l10n-id'),
-      args: JSON.parse(element.getAttribute('data-l10n-args'))
-    };
-  }
-
 }
 
 function createContextFromBundle(bundle, createContext) {
@@ -319,6 +304,26 @@ class XULLocalization extends Localization {
   }
 }
 
+function observe(subject, topic, data) {
+  switch (topic) {
+    case 'language-create':
+    case 'language-update': {
+      this.interactive = this.interactive.then(bundles => {
+        // just overwrite any existing messages in the first bundle
+        const ctx = contexts.get(bundles[0]);
+        ctx.addMessages(data);
+        return bundles;
+      });
+      return this.interactive.then(
+        bundles => translateDocument(this, bundles)
+      );
+    }
+    default: {
+      throw new Error(`Unknown topic: ${topic}`);
+    }
+  }
+}
+
 this.EXPORTED_SYMBOLS = ['createXULLocalization'];
 
 Components.utils.import('resource://gre/modules/Services.jsm');
@@ -346,5 +351,9 @@ function createContext(lang) {
 }
 
 this.createXULLocalization = function(requestBundles) {
-  return new XULLocalization(requestBundles, createContext);
+  const l10n = new XULLocalization(requestBundles, createContext);
+  l10n.observe = observe;
+  Services.obs.addObserver(l10n, 'language-create', false);
+  Services.obs.addObserver(l10n, 'language-update', false);
+  return l10n;
 }

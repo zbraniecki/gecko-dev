@@ -1736,7 +1736,7 @@ class LocalizationObserver extends Map {
     );
   }
 
-  observeRoot(root, l10n = Symbol.for('anonymous l10n')) {
+  observeRoot(root, l10n = this.get('main')) {
     this.localizationsByRoot.set(root, l10n);
     if (!this.rootsByLocalization.has(l10n)) {
       this.rootsByLocalization.set(l10n, new Set());
@@ -1750,10 +1750,11 @@ class LocalizationObserver extends Map {
     this.localizationsByRoot.delete(root);
     for (let [name, l10n] of this) {
       const roots = this.rootsByLocalization.get(l10n);
-      if (roots.has(root)) {
+      if (roots && roots.has(root)) {
         roots.delete(root);
         if (roots.size === 0) {
           this.delete(name);
+          this.rootsByLocalization.delete(l10n);
         }
       }
     }
@@ -1766,9 +1767,10 @@ class LocalizationObserver extends Map {
 
   resume() {
     for (let l10n of this.values()) {
-      const roots = this.rootsByLocalization.get(l10n);
-      for (let root of this.rootsByLocalization.get(l10n)) {
-        this.observer.observe(root, observerConfig)
+      if (this.rootsByLocalization.has(l10n)) {
+        for (let root of this.rootsByLocalization.get(l10n)) {
+          this.observer.observe(root, observerConfig)
+        }
       }
     }
   }
@@ -1830,6 +1832,10 @@ class LocalizationObserver extends Map {
     this.translateElements(Array.from(targets));
   }
 
+  getLocalizationForElement(elem) {
+    return this.get(elem.getAttribute('data-l10n-bundle') || 'main');
+  }
+
   // XXX the following needs to be optimized, perhaps getTranslatables should 
   // sort elems by localization they refer to so that it is easy to group them, 
   // handle each group individually and finally concatenate the resulting 
@@ -1866,6 +1872,10 @@ class LocalizationObserver extends Map {
   }
 
   translateRoots(l10n) {
+    if (!this.rootsByLocalization.has(l10n)) {
+      return Promise.resolve();
+    }
+
     const roots = Array.from(this.rootsByLocalization.get(l10n));
     return Promise.all(
       roots.map(root => l10n.interactive.then(
@@ -1916,12 +1926,25 @@ class LocalizationObserver extends Map {
     this.resume();
   }
 
+  setAttributes(element, id, args) {
+    element.setAttribute('data-l10n-id', id);
+    if (args) {
+      element.setAttribute('data-l10n-args', JSON.stringify(args));
+    }
+    return element;
+  }
+
+  getAttributes(element) {
+    return {
+      id: element.getAttribute('data-l10n-id'),
+      args: JSON.parse(element.getAttribute('data-l10n-args'))
+    };
+  }
+
 }
 
 class ContentLocalizationObserver extends LocalizationObserver {
-  getLocalizationForElement() {
-    return this.localizationsByRoot.get(document.documentElement);
-  }
+  // XXX translateRoot shouldn't look into the anonymous content
 }
 
 function keysFromContext(ctx, keys, method) {
@@ -2014,21 +2037,6 @@ class Localization {
     return this.formatValues([id, args]).then(
       ([val]) => val
     );
-  }
-
-  setAttributes(element, id, args) {
-    element.setAttribute('data-l10n-id', id);
-    if (args) {
-      element.setAttribute('data-l10n-args', JSON.stringify(args));
-    }
-    return element;
-  }
-
-  getAttributes(element) {
-    return {
-      id: element.getAttribute('data-l10n-id'),
-      args: JSON.parse(element.getAttribute('data-l10n-args'))
-    };
   }
 
 }
@@ -2320,7 +2328,10 @@ function documentReady() {
 function getResourceLinks(head) {
   return Array.prototype.map.call(
     head.querySelectorAll('link[rel="localization"]'),
-    el => el.getAttribute('href')
+    el => [el.getAttribute('href'), el.getAttribute('name') || 'main']
+  ).reduce(
+    (seq, [href, name]) => seq.set(name, (seq.get(name) || []).concat(href)),
+    new Map()
   );
 }
 
@@ -2359,11 +2370,24 @@ function getMeta(head) {
   };
 }
 
-function requestBundles(requestedLangs = new Set(navigator.languages)) {
-  return documentReady().then(() => {
-    const { defaultLang, availableLangs } = getMeta(document.head);
-    const resIds = getResourceLinks(document.head);
+function createContext(lang) {
+  return new Intl.MessageContext(lang);
+}
 
+document.l10n = new ContentLocalizationObserver();
+window.addEventListener('languagechange', document.l10n);
+
+documentReady().then(() => {
+  const { defaultLang, availableLangs } = getMeta(document.head);
+  for (let [name, resIds] of getResourceLinks(document.head)) {
+    if (!document.l10n.has(name)) {
+      createLocalization(name, resIds, defaultLang, availableLangs);
+    }
+  }
+});
+
+function createLocalization(name, resIds, defaultLang, availableLangs) {
+  function requestBundles(requestedLangs = new Set(navigator.languages)) {
     const newLangs = prioritizeLocales(
       defaultLang, availableLangs, requestedLangs
     );
@@ -2372,26 +2396,18 @@ function requestBundles(requestedLangs = new Set(navigator.languages)) {
     newLangs.forEach(lang => {
       bundles.push(new ResourceBundle(lang, resIds));
     });
-    return bundles;
-  });
+    return Promise.resolve(bundles);
+  }
+
+  document.l10n.set(
+    name, new HTMLLocalization(requestBundles, createContext)
+  );
+
+  if (name === 'main') {
+    const rootElem = document.documentElement;
+    document.l10n.observeRoot(rootElem, document.l10n.get(name));
+    document.l10n.translateRoot(rootElem);
+  }
 }
-
-function createContext(lang) {
-  return new Intl.MessageContext(lang);
-}
-
-const name = Symbol.for('anonymous l10n');
-const rootElem = document.documentElement;
-
-document.l10n = new ContentLocalizationObserver();
-
-if (!document.l10n.has(name)) {
-  document.l10n.set(name, new HTMLLocalization(requestBundles, createContext));
-}
-
-document.l10n.observeRoot(rootElem, document.l10n.get(name));
-document.l10n.translateRoot(rootElem);
-
-window.addEventListener('languagechange', document.l10n);
 
 }
