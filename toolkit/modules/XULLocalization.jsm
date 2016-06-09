@@ -14,15 +14,25 @@ class L10nError extends Error {
   }
 }
 
-function keysFromContext(ctx, keys, method) {
-  return keys.map(key => {
+function keysFromContext(ctx, keys, method, prev) {
+  const errors = [];
+  const translations = keys.map((key, i) => {
+    if (prev && prev[i] && prev[i][1].length === 0) {
+      // Use a previously formatted good value if there were no errors
+      return prev[i];
+    }
+
     const [id, args] = Array.isArray(key) ?
       key : [key, undefined];
 
-    // XXX Handle errors somehow; emit?
-    const [result] = method.call(this, ctx, id, args);
+    const result = method.call(this, ctx, id, args);
+    errors.push(...result[1]);
+    // XXX Depending on the kind of errors it might be better to return prev[i] 
+    // here;  for instance, when the current translation is completely missing
     return result;
   });
+
+  return [translations, errors];
 }
 
 function valueFromContext(ctx, id, args) {
@@ -45,7 +55,7 @@ function entityFromContext(ctx, id, args) {
     ];
   }
 
-  const [value] = ctx.formatToPrimitive(entity, args);
+  const [value, errors] = ctx.formatToPrimitive(entity, args);
 
   const formatted = {
     value,
@@ -55,12 +65,13 @@ function entityFromContext(ctx, id, args) {
   if (entity.traits) {
     formatted.attrs = Object.create(null);
     for (let trait of entity.traits) {
-      const [attrValue] = ctx.format(trait, args);
+      const [attrValue, attrErrors] = ctx.format(trait, args);
+      errors.push(...attrErrors);
       formatted.attrs[trait.key.name] = attrValue;
     }
   }
 
-  return [formatted, []];
+  return [formatted, errors];
 }
 
 const properties = new WeakMap();
@@ -83,20 +94,37 @@ class Localization {
     );
   }
 
+  formatWithFallback(bundles, keys, method, prev) {
+    const ctx = contexts.get(bundles[0]);
+
+    if (!ctx) {
+      return prev.map(tuple => tuple[0]);
+    }
+
+    const [translations, errors] = keysFromContext(ctx, keys, method, prev);
+
+    if (errors.length === 0) {
+      return translations.map(tuple => tuple[0]);
+    }
+
+    // XXX report/emit errors?
+    // errors.forEach(e => console.warn(e));
+
+    const { createContext } = properties.get(this);
+    return fetchFirstBundle(bundles.slice(1), createContext).then(
+      bundles => this.formatWithFallback(bundles, keys, method, translations)
+    );
+  }
+
   formatEntities(keys) {
-    // XXX add async fallback
     return this.interactive.then(
-      ([bundle]) => keysFromContext(
-        contexts.get(bundle), keys, entityFromContext
-      )
+      bundles => this.formatWithFallback(bundles, keys, entityFromContext)
     );
   }
 
   formatValues(...keys) {
     return this.interactive.then(
-      ([bundle]) => keysFromContext(
-        contexts.get(bundle), keys, valueFromContext
-      )
+      bundles => this.formatWithFallback(bundles, keys, valueFromContext)
     );
   }
 
@@ -121,6 +149,11 @@ function createContextFromBundle(bundle, createContext) {
 
 function fetchFirstBundle(bundles, createContext) {
   const [bundle] = bundles;
+
+  if (!bundle) {
+    return Promise.resolve(bundles);
+  }
+
   return createContextFromBundle(bundle, createContext).then(
     () => bundles
   );
