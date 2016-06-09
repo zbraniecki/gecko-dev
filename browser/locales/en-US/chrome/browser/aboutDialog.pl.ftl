@@ -20,6 +20,7 @@ aboutDialog-update-noUpdatesFound = { brandShortName } is up to date
 aboutDialog-update-otherInstanceHandlingUpdates = { brandShortName } is being updated by another instance
 aboutDialog-update-manual = Update available at <label/>
 aboutDialog-update-unsupported = You can not perform futher updates on this system. <label>Learn more</label>
+aboutDialog-update-restarting = Restarting…
 
 aboutDialog-warningDesc-version = Program { brandShortName } jest wersją rozwojową i może być niestabilny.
 aboutDialog-warningDesc-telemetryDesc = Dane o wydajności, wykorzystaniu, modyfikacjach oraz o sprzęcie, na którym działa, są wysyłane do organizacji { vendorShortName }, aby ulepszać program { brandShortName }.
