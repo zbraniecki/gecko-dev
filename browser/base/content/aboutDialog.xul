@@ -1,3 +1,4 @@
+<?xml version="1.0"?> <!-- -*- Mode: HTML -*- -->
 
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -16,8 +17,6 @@
         id="aboutDialog"
         windowtype="Browser:About"
         onload="init(event);"
-        availableLanguages="en-US"
-        defaultLanguage="en-US"
 #ifdef MOZ_UPDATER
         onunload="onUnload(event);"
 #endif
