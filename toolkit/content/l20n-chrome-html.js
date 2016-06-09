@@ -18,7 +18,7 @@ const observerConfig = {
   characterData: false,
   childList: true,
   subtree: true,
-  attributeFilter: ['data-l10n-id', 'data-l10n-args']
+  attributeFilter: ['data-l10n-id', 'data-l10n-args', 'data-l10n-bundle']
 };
 
 class LocalizationObserver extends Map {
@@ -199,7 +199,7 @@ class LocalizationObserver extends Map {
         }
       }
 
-      return this.translateFragment(root).then(setLangs);
+      return this.translateRootContent(root).then(setLangs);
     });
   }
 
@@ -239,7 +239,16 @@ class LocalizationObserver extends Map {
 }
 
 class ChromeLocalizationObserver extends LocalizationObserver {
-  // XXX translateRoot should look into the anonymous content
+  translateRootContent(root) {
+    const anonChildren = document.getAnonymousNodes(root);
+    if (!anonChildren) {
+      return this.translateFragment(root);
+    }
+
+    return Promise.all(
+      [root, ...anonChildren].map(node => this.translateFragment(node))
+    );
+  }
 }
 
 class L10nError extends Error {

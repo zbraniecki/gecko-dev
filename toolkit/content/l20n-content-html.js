@@ -1723,7 +1723,7 @@ const observerConfig = {
   characterData: false,
   childList: true,
   subtree: true,
-  attributeFilter: ['data-l10n-id', 'data-l10n-args']
+  attributeFilter: ['data-l10n-id', 'data-l10n-args', 'data-l10n-bundle']
 };
 
 class LocalizationObserver extends Map {
@@ -1904,7 +1904,7 @@ class LocalizationObserver extends Map {
         }
       }
 
-      return this.translateFragment(root).then(setLangs);
+      return this.translateRootContent(root).then(setLangs);
     });
   }
 
@@ -1944,7 +1944,9 @@ class LocalizationObserver extends Map {
 }
 
 class ContentLocalizationObserver extends LocalizationObserver {
-  // XXX translateRoot shouldn't look into the anonymous content
+  translateRootContent(root) {
+    return this.translateFragment(root);
+  }
 }
 
 function keysFromContext(ctx, keys, method) {
