@@ -725,14 +725,14 @@ nsBaseDragService::DrawDragForImage(nsIImageLoadingContent* aImageLoader,
     if (!dt || !dt->IsValid())
       return NS_ERROR_FAILURE;
 
-    RefPtr<gfxContext> ctx = gfxContext::ForDrawTarget(dt);
+    RefPtr<gfxContext> ctx = gfxContext::CreateOrNull(dt);
     if (!ctx)
       return NS_ERROR_FAILURE;
 
     DrawResult res =
       imgContainer->Draw(ctx, destSize, ImageRegion::Create(destSize),
                          imgIContainer::FRAME_CURRENT,
-                         Filter::GOOD, /* no SVGImageContext */ Nothing(),
+                         SamplingFilter::GOOD, /* no SVGImageContext */ Nothing(),
                          imgIContainer::FLAG_SYNC_DECODE);
     if (res == DrawResult::BAD_IMAGE || res == DrawResult::BAD_ARGS) {
       return NS_ERROR_FAILURE;

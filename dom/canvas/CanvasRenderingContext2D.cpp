@@ -275,15 +275,16 @@ public:
         mode = ExtendMode::REPEAT;
       }
 
-      Filter filter;
+      SamplingFilter samplingFilter;
       if (state.imageSmoothingEnabled) {
-        filter = Filter::GOOD;
+        samplingFilter = SamplingFilter::GOOD;
       } else {
-        filter = Filter::POINT;
+        samplingFilter = SamplingFilter::POINT;
       }
 
       mPattern.InitSurfacePattern(state.patternStyles[aStyle]->mSurface, mode,
-                                  state.patternStyles[aStyle]->mTransform, filter);
+                                  state.patternStyles[aStyle]->mTransform,
+                                  samplingFilter);
     }
 
     return *mPattern.GetPattern();
@@ -3603,8 +3604,10 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor : public nsBidiPresUtils::BidiProcess
     // not render well via the code below.
     if (mOp == CanvasRenderingContext2D::TextDrawOperation::FILL &&
         mState->StyleIsColor(CanvasRenderingContext2D::Style::FILL)) {
+      // TODO: determine if mCtx->mTarget is guaranteed to be non-null and valid
+      // here. If it's not, thebes will be null and we'll crash.
       RefPtr<gfxContext> thebes =
-        gfxContext::ForDrawTargetWithTransform(mCtx->mTarget);
+        gfxContext::CreatePreservingTransformOrNull(mCtx->mTarget);
       nscolor fill = mState->colorStyles[CanvasRenderingContext2D::Style::FILL];
       thebes->SetColor(Color::FromABGR(fill));
       gfxTextRun::DrawParams params(thebes);
@@ -4711,12 +4714,12 @@ CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     return;
   }
 
-  Filter filter;
+  SamplingFilter samplingFilter;
 
   if (CurrentState().imageSmoothingEnabled)
-    filter = gfx::Filter::LINEAR;
+    samplingFilter = gfx::SamplingFilter::LINEAR;
   else
-    filter = gfx::Filter::POINT;
+    samplingFilter = gfx::SamplingFilter::POINT;
 
   gfx::Rect bounds;
 
@@ -4739,7 +4742,7 @@ CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       DrawSurface(srcSurf,
                   gfx::Rect(aDx, aDy, aDw, aDh),
                   sourceRect,
-                  DrawSurfaceOptions(filter),
+                  DrawSurfaceOptions(samplingFilter),
                   DrawOptions(CurrentState().globalAlpha, UsedOperation()));
   } else {
     DrawDirectlyToCanvas(drawInfo, &bounds,
@@ -4787,7 +4790,7 @@ CanvasRenderingContext2D::DrawDirectlyToCanvas(
   // the matrix even though this is a temp gfxContext.
   AutoRestoreTransform autoRestoreTransform(mTarget);
 
-  RefPtr<gfxContext> context = gfxContext::ForDrawTarget(tempTarget);
+  RefPtr<gfxContext> context = gfxContext::CreateOrNull(tempTarget);
   if (!context) {
     gfxDevCrash(LogReason::InvalidContext) << "Canvas context problem";
     return;
@@ -4806,7 +4809,7 @@ CanvasRenderingContext2D::DrawDirectlyToCanvas(
   auto result = aImage.mImgContainer->
     Draw(context, scaledImageSize,
          ImageRegion::Create(gfxRect(aSrc.x, aSrc.y, aSrc.width, aSrc.height)),
-         aImage.mWhichFrame, Filter::GOOD, Some(svgContext), modifiedFlags);
+         aImage.mWhichFrame, SamplingFilter::GOOD, Some(svgContext), modifiedFlags);
 
   if (result != DrawResult::SUCCESS) {
     NS_WARNING("imgIContainer::Draw failed");
@@ -4990,8 +4993,9 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& aWindow, double aX,
       GlobalAlpha() == 1.0f &&
       UsedOperation() == CompositionOp::OP_OVER)
   {
-    thebes = gfxContext::ForDrawTarget(mTarget);
-    MOZ_ASSERT(thebes); // alrady checked the draw target above
+    thebes = gfxContext::CreateOrNull(mTarget);
+    MOZ_ASSERT(thebes); // already checked the draw target above
+                        // (in SupportsAzureContentForDrawTarget)
     thebes->SetMatrix(gfxMatrix(matrix._11, matrix._12, matrix._21,
                                 matrix._22, matrix._31, matrix._32));
   } else {
@@ -5003,7 +5007,7 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& aWindow, double aX,
       return;
     }
 
-    thebes = gfxContext::ForDrawTarget(drawDT);
+    thebes = gfxContext::CreateOrNull(drawDT);
     MOZ_ASSERT(thebes); // alrady checked the draw target above
     thebes->SetMatrix(gfxMatrix::Scaling(matrix._11, matrix._22));
   }
@@ -5041,7 +5045,7 @@ CanvasRenderingContext2D::DrawWindow(nsGlobalWindow& aWindow, double aX,
     gfx::Rect destRect(0, 0, aW, aH);
     gfx::Rect sourceRect(0, 0, sw, sh);
     mTarget->DrawSurface(source, destRect, sourceRect,
-                         DrawSurfaceOptions(gfx::Filter::POINT),
+                         DrawSurfaceOptions(gfx::SamplingFilter::POINT),
                          DrawOptions(GlobalAlpha(), UsedOperation(),
                                      AntialiasMode::NONE));
     mTarget->Flush();

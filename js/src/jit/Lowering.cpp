@@ -444,7 +444,7 @@ LIRGenerator::visitArrowNewTarget(MArrowNewTarget* ins)
     defineBox(lir, ins);
 }
 
-void
+bool
 LIRGenerator::lowerCallArguments(MCall* call)
 {
     uint32_t argc = call->numStackArgs();
@@ -475,7 +475,11 @@ LIRGenerator::lowerCallArguments(MCall* call)
             LStackArgT* stack = new(alloc()) LStackArgT(argslot, arg->type(), useRegisterOrConstant(arg));
             add(stack);
         }
+
+        if (!alloc().ensureBallast())
+            return false;
     }
+    return true;
 }
 
 void
@@ -486,7 +490,11 @@ LIRGenerator::visitCall(MCall* call)
     MOZ_ASSERT(CallTempReg1 != ArgumentsRectifierReg);
     MOZ_ASSERT(call->getFunction()->type() == MIRType::Object);
 
-    lowerCallArguments(call);
+    // In case of oom, skip the rest of the allocations.
+    if (!lowerCallArguments(call)) {
+        gen->abort("OOM: LIRGenerator::visitCall");
+        return;
+    }
 
     // Height of the current argument vector.
     JSFunction* target = call->getSingleTarget();
@@ -2233,77 +2241,16 @@ LIRGenerator::visitToObjectOrNull(MToObjectOrNull* ins)
     assignSafepoint(lir, ins);
 }
 
-static bool
-MustCloneRegExpForCall(MCall* call, uint32_t useIndex)
-{
-    // We have a regex literal flowing into a call. Return |false| iff
-    // this is a native call that does not let the regex escape.
-
-    JSFunction* target = call->getSingleTarget();
-    if (!target || !target->isNative())
-        return true;
-
-    return true;
-}
-
-
-static bool
-MustCloneRegExp(MRegExp* regexp)
-{
-    if (regexp->mustClone())
-        return true;
-
-    // If this regex literal only flows into known natives that don't let
-    // it escape, we don't have to clone it.
-
-    for (MUseIterator iter(regexp->usesBegin()); iter != regexp->usesEnd(); iter++) {
-        MNode* node = iter->consumer();
-        if (!node->isDefinition())
-            return true;
-
-        MDefinition* def = node->toDefinition();
-        if (def->isRegExpMatcher()) {
-            MRegExpMatcher* test = def->toRegExpMatcher();
-            if (test->indexOf(*iter) == 1) {
-                // Optimized RegExp.prototype.exec.
-                MOZ_ASSERT(test->regexp() == regexp);
-                continue;
-            }
-        } else if (def->isRegExpSearcher()) {
-            MRegExpSearcher* test = def->toRegExpSearcher();
-            if (test->indexOf(*iter) == 1) {
-                // Optimized RegExp.prototype.exec.
-                MOZ_ASSERT(test->regexp() == regexp);
-                continue;
-            }
-        } else if (def->isRegExpTester()) {
-            MRegExpTester* test = def->toRegExpTester();
-            if (test->indexOf(*iter) == 1) {
-                // Optimized RegExp.prototype.test.
-                MOZ_ASSERT(test->regexp() == regexp);
-                continue;
-            }
-        } else if (def->isCall()) {
-            MCall* call = def->toCall();
-            if (!MustCloneRegExpForCall(call, call->indexOf(*iter)))
-                continue;
-        }
-
-        return true;
-    }
-    return false;
-}
-
 void
 LIRGenerator::visitRegExp(MRegExp* ins)
 {
-    if (!MustCloneRegExp(ins)) {
-        RegExpObject* source = ins->source();
-        define(new(alloc()) LPointer(source), ins);
-    } else {
+    if (ins->mustClone()) {
         LRegExp* lir = new(alloc()) LRegExp();
         defineReturn(lir, ins);
         assignSafepoint(lir, ins);
+    } else {
+        RegExpObject* source = ins->source();
+        define(new(alloc()) LPointer(source), ins);
     }
 }
 
@@ -2986,8 +2933,12 @@ LIRGenerator::visitNot(MNot* ins)
 void
 LIRGenerator::visitBoundsCheck(MBoundsCheck* ins)
 {
-     if (!ins->fallible())
-         return;
+    MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+    MOZ_ASSERT(ins->length()->type() == MIRType::Int32);
+    MOZ_ASSERT(ins->type() == MIRType::Int32);
+
+    if (!ins->fallible())
+        return;
 
     LInstruction* check;
     if (ins->minimum() || ins->maximum()) {
@@ -3005,6 +2956,8 @@ LIRGenerator::visitBoundsCheck(MBoundsCheck* ins)
 void
 LIRGenerator::visitBoundsCheckLower(MBoundsCheckLower* ins)
 {
+    MOZ_ASSERT(ins->index()->type() == MIRType::Int32);
+
     if (!ins->fallible())
         return;
 

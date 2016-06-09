@@ -8,6 +8,7 @@
 #define mozilla_ServoBindings_h
 
 #include "stdint.h"
+#include "nsColor.h"
 #include "mozilla/css/SheetParsingMode.h"
 #include "nsProxyRelease.h"
 
@@ -24,7 +25,14 @@ class nsINode;
 typedef nsINode RawGeckoNode;
 class nsIPrincipal;
 class nsIURI;
-namespace mozilla { namespace dom { class Element; } }
+struct nsFont;
+namespace mozilla {
+  class FontFamilyList;
+  enum FontFamilyType : uint32_t;
+  namespace dom { class Element; }
+}
+using mozilla::FontFamilyList;
+using mozilla::FontFamilyType;
 using mozilla::dom::Element;
 typedef mozilla::dom::Element RawGeckoElement;
 class nsIDocument;
@@ -33,6 +41,12 @@ struct ServoNodeData;
 struct ServoComputedValues;
 struct RawServoStyleSheet;
 struct RawServoStyleSet;
+struct nsStyleList;
+struct nsStyleImage;
+struct nsStyleGradientStop;
+class nsStyleGradient;
+class nsStyleCoord;
+struct nsStyleDisplay;
 
 #define NS_DECL_THREADSAFE_FFI_REFCOUNTING(class_, name_)                     \
   static_assert(class_::HasThreadSafeRefCnt::value,                           \
@@ -114,17 +128,39 @@ const uint16_t* Gecko_GetAtomAsUTF16(nsIAtom* aAtom, uint32_t* aLength);
 bool Gecko_AtomEqualsUTF8(nsIAtom* aAtom, const char* aString, uint32_t aLength);
 bool Gecko_AtomEqualsUTF8IgnoreCase(nsIAtom* aAtom, const char* aString, uint32_t aLength);
 
+// Font style
+void Gecko_FontFamilyList_Clear(FontFamilyList* aList);
+void Gecko_FontFamilyList_AppendNamed(FontFamilyList* aList, nsIAtom* aName);
+void Gecko_FontFamilyList_AppendGeneric(FontFamilyList* list, FontFamilyType familyType);
+void Gecko_CopyFontFamilyFrom(nsFont* dst, const nsFont* src);
+
 // Counter style.
-struct nsStyleList;
 void Gecko_SetListStyleType(nsStyleList* style_struct, uint32_t type);
 void Gecko_CopyListStyleTypeFrom(nsStyleList* dst, const nsStyleList* src);
+
+// background-image style.
+// TODO: support url() values (and maybe element() too?).
+void Gecko_SetNullImageValue(nsStyleImage* image);
+void Gecko_SetGradientImageValue(nsStyleImage* image, nsStyleGradient* gradient);
+void Gecko_CopyImageValueFrom(nsStyleImage* image, const nsStyleImage* other);
+
+nsStyleGradient* Gecko_CreateGradient(uint8_t shape,
+                                      uint8_t size,
+                                      bool repeating,
+                                      bool legacy_syntax,
+                                      uint32_t stops);
+
+void Gecko_SetGradientStop(nsStyleGradient* gradient,
+                           uint32_t index,
+                           const nsStyleCoord* location,
+                           nscolor color,
+                           bool is_interpolation_hint);
 
 // Object refcounting.
 NS_DECL_HOLDER_FFI_REFCOUNTING(nsIPrincipal, Principal)
 NS_DECL_HOLDER_FFI_REFCOUNTING(nsIURI, URI)
 
 // Display style.
-struct nsStyleDisplay;
 void Gecko_SetMozBinding(nsStyleDisplay* style_struct,
                          const uint8_t* string_bytes, uint32_t string_length,
                          ThreadSafeURIHolder* base_uri,

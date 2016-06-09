@@ -1297,14 +1297,18 @@ InplaceEditor.prototype = {
       if (query == null) {
         return;
       }
-      // If nothing is selected and there is a non-space character after the
-      // cursor, do not autocomplete.
+      // If nothing is selected and there is a word (\w) character after the cursor, do
+      // not autocomplete.
       if (input.selectionStart == input.selectionEnd &&
-          input.selectionStart < input.value.length &&
-          input.value.slice(input.selectionStart)[0] != " ") {
-        // This emit is mainly to make the test flow simpler.
-        this.emit("after-suggest", "nothing to autocomplete");
-        return;
+          input.selectionStart < input.value.length) {
+        let nextChar = input.value.slice(input.selectionStart)[0];
+        // Check if the next character is a valid word character, no suggestion should be
+        // provided when preceeding a word.
+        if (/[\w-]/.test(nextChar)) {
+          // This emit is mainly to make the test flow simpler.
+          this.emit("after-suggest", "nothing to autocomplete");
+          return;
+        }
       }
       let list = [];
       if (this.contentType == CONTENT_TYPES.CSS_PROPERTY) {
@@ -1427,7 +1431,7 @@ InplaceEditor.prototype = {
       // Display the list of suggestions if there are more than one.
       if (finalList.length > 1) {
         // Calculate the popup horizontal offset.
-        let indent = this.input.selectionStart - query.length;
+        let indent = this.input.selectionStart - startCheckQuery.length;
         let offset = indent * this.inputCharDimensions.width;
         offset = this._isSingleLine() ? offset : 0;
 

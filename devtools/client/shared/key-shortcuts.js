@@ -50,6 +50,7 @@ const ElectronKeysMapping = {
   "PageDown": "DOM_VK_PAGE_DOWN",
   "Escape": "DOM_VK_ESCAPE",
   "Esc": "DOM_VK_ESCAPE",
+  "Tab": "DOM_VK_TAB",
   "VolumeUp": "DOM_VK_VOLUME_UP",
   "VolumeDown": "DOM_VK_VOLUME_DOWN",
   "VolumeMute": "DOM_VK_VOLUME_MUTE",
@@ -68,12 +69,16 @@ const ElectronKeysMapping = {
  *
  * @param DOMWindow window
  *        The window object of the document to listen events from.
+ * @param DOMElement target
+ *        Optional DOM Element on which we should listen events from.
+ *        If omitted, we listen for all events fired on `window`.
  */
-function KeyShortcuts({ window }) {
+function KeyShortcuts({ window, target }) {
   this.window = window;
+  this.target = target || window;
   this.keys = new Map();
   this.eventEmitter = new EventEmitter();
-  this.window.addEventListener("keydown", this);
+  this.target.addEventListener("keydown", this);
 }
 
 /*
@@ -169,7 +174,7 @@ KeyShortcuts.stringify = function (shortcut) {
 
 KeyShortcuts.prototype = {
   destroy() {
-    this.window.removeEventListener("keydown", this);
+    this.target.removeEventListener("keydown", this);
     this.keys.clear();
   },
 

@@ -126,6 +126,7 @@ WEBIDL_FILES = [
     'DOMCursor.webidl',
     'DOMError.webidl',
     'DOMException.webidl',
+    'DOMFileSystem.webidl',
     'DOMImplementation.webidl',
     'DominatorTree.webidl',
     'DOMMatrix.webidl',
@@ -160,6 +161,10 @@ WEBIDL_FILES = [
     'FileMode.webidl',
     'FileReader.webidl',
     'FileReaderSync.webidl',
+    'FlyWebDiscoveryManager.webidl',
+    'FlyWebFetchEvent.webidl',
+    'FlyWebPublish.webidl',
+    'FlyWebWebSocketEvent.webidl',
     'FocusEvent.webidl',
     'FontFace.webidl',
     'FontFaceSet.webidl',
@@ -265,6 +270,7 @@ WEBIDL_FILES = [
     'IDBRequest.webidl',
     'IDBTransaction.webidl',
     'IDBVersionChangeEvent.webidl',
+    'IIRFilterNode.webidl',
     'ImageBitmap.webidl',
     'ImageBitmapRenderingContext.webidl',
     'ImageCapture.webidl',
@@ -759,6 +765,7 @@ if CONFIG['MOZ_B2G_FM']:
     ]
 
 GENERATED_EVENTS_WEBIDL_FILES = [
+    'AddonEvent.webidl',
     'AnimationPlaybackEvent.webidl',
     'AutocompleteErrorEvent.webidl',
     'BlobEvent.webidl',

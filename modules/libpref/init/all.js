@@ -276,6 +276,9 @@ pref("browser.triple_click_selects_paragraph", true);
 // Print/Preview Shrink-To-Fit won't shrink below 20% for text-ish documents.
 pref("print.shrink-to-fit.scale-limit-percent", 20);
 
+// Whether we should display simplify page checkbox on print preview UI
+pref("print.use_simplify_page", false);
+
 // Enable scale transform for stretchy MathML operators. See bug 414277.
 pref("mathml.scale_stretchy_operators.enabled", true);
 
@@ -380,6 +383,9 @@ pref("media.suspend-bkgnd-video.enabled", true);
 #else
 pref("media.suspend-bkgnd-video.enabled", false);
 #endif
+// Delay, in ms, from time window goes to background to suspending
+// video decoders. Defaults to 10 seconds.
+pref("media.suspend-bkgnd-video.delay-ms", 10000);
 
 #ifdef MOZ_WEBRTC
 pref("media.navigator.enabled", true);
@@ -758,6 +764,8 @@ pref("gfx.logging.painted-pixel-count.enabled", false);
 pref("gfx.logging.texture-usage.enabled", false);
 pref("gfx.logging.peak-texture-usage.enabled", false);
 
+pref("gfx.ycbcr.accurate-conversion", false);
+
 pref("accessibility.browsewithcaret", false);
 pref("accessibility.warn_on_browsewithcaret", true);
 
@@ -787,10 +795,17 @@ pref("ui.scrollToClick", 0);
 pref("canvas.focusring.enabled", true);
 pref("canvas.customfocusring.enabled", false);
 pref("canvas.hitregions.enabled", false);
-pref("canvas.filters.enabled", false);
+pref("canvas.filters.enabled", true);
 // Add support for canvas path objects
 pref("canvas.path.enabled", true);
 pref("canvas.capturestream.enabled", true);
+
+// Disable the ImageBitmap-extensions in the release build.
+#ifdef RELEASE_BUILD
+pref("canvas.imagebitmap_extensions.enabled", false);
+#else
+pref("canvas.imagebitmap_extensions.enabled", true);
+#endif
 
 // We want the ability to forcibly disable platform a11y, because
 // some non-a11y-related components attempt to bring it up.  See bug
@@ -1374,7 +1389,7 @@ pref("network.http.max-persistent-connections-per-proxy", 32);
 pref("network.http.request.max-start-delay", 10);
 
 // If a connection is reset, we will retry it max-attempts times.
-pref("network.http.request.max-attempts", 6);
+pref("network.http.request.max-attempts", 10);
 
 // Headers
 pref("network.http.accept.default", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
@@ -1967,6 +1982,12 @@ pref("intl.ime.hack.on_ime_unaware_apps.fire_key_events_for_composition", true);
 pref("intl.ime.hack.on_ime_unaware_apps.fire_key_events_for_composition", false);
 #endif
 
+// If you use legacy Chinese IME which puts an ideographic space to composition
+// string as placeholder, this pref might be useful.  If this is true and when
+// web contents forcibly commits composition (e.g., moving focus), the
+// ideographic space will be ignored (i.e., commits with empty string).
+pref("intl.ime.remove_placeholder_character_at_commit", false);
+
 // these locales have right-to-left UI
 pref("intl.uidirection.ar", "rtl");
 pref("intl.uidirection.he", "rtl");
@@ -2118,6 +2139,10 @@ pref("services.blocklist.plugins.collection", "plugins");
 pref("services.blocklist.plugins.checked", 0);
 pref("services.blocklist.gfx.collection", "gfx");
 pref("services.blocklist.gfx.checked", 0);
+
+// Controls whether signing should be enforced on signature-capable blocklist
+// collections.
+pref("services.blocklist.signing.enforced", false);
 
 // For now, let's keep settings server update out of the release builds
 #ifdef RELEASE_BUILD
@@ -4611,9 +4636,7 @@ pref("notification.feature.enabled", false);
 
 // Web Notification
 pref("dom.webnotifications.enabled", true);
-#if !defined(RELEASE_BUILD)
 pref("dom.webnotifications.serviceworker.enabled", true);
-#endif
 
 // Alert animation effect, name is disableSlidingEffect for backwards-compat.
 pref("alerts.disableSlidingEffect", false);
@@ -4633,7 +4656,7 @@ pref("full-screen-api.pointer-lock.enabled", true);
 pref("full-screen-api.transition-duration.enter", "200 200");
 pref("full-screen-api.transition-duration.leave", "200 200");
 // timeout for black screen in fullscreen transition, unit: ms
-pref("full-screen-api.transition.timeout", 500);
+pref("full-screen-api.transition.timeout", 1000);
 // time for the warning box stays on the screen before sliding out, unit: ms
 pref("full-screen-api.warning.timeout", 3000);
 // delay for the warning box to show when pointer stays on the top, unit: ms
@@ -4693,6 +4716,10 @@ pref("dom.push.userAgentID", "");
 // The maximum number of push messages that a service worker can receive
 // without user interaction.
 pref("dom.push.maxQuotaPerSubscription", 16);
+
+// The maximum number of recent message IDs to store for each push
+// subscription, to avoid duplicates for unacknowledged messages.
+pref("dom.push.maxRecentMessageIDsPerSubscription", 10);
 
 // The delay between receiving a push message and updating the quota for a
 // subscription.
@@ -4960,6 +4987,8 @@ pref("dom.forms.inputmode", true);
 
 // InputMethods for soft keyboards in B2G
 pref("dom.mozInputMethod.enabled", false);
+
+pref("dom.flyweb.enabled", false);
 
 // Telephony API
 #ifdef MOZ_B2G_RIL
@@ -5412,6 +5441,9 @@ pref("dom.node.rootNode.enabled", false);
 #else
 pref("dom.node.rootNode.enabled", true);
 #endif
+
+// Default media volume
+pref("media.default_volume", "1.0");
 
 // Once bug 1276272 is resolved, we will trun this preference to default ON in
 // non-release channels.

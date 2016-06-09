@@ -11,6 +11,7 @@
 
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
@@ -92,8 +93,6 @@
 #include "nsAppShellCID.h"
 #include "mozilla/scache/StartupCache.h"
 #include "gfxPrefs.h"
-
-#include "base/histogram.h"
 
 #include "mozilla/unused.h"
 
@@ -621,6 +620,22 @@ GetAndCleanTempDir()
                                        getter_AddRefs(tempDir));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
+  }
+
+  // If the NS_APP_CONTENT_PROCESS_TEMP_DIR is the real temp directory, don't
+  // attempt to delete it.
+  nsCOMPtr<nsIFile> realTempDir;
+  rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(realTempDir));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+  bool isRealTemp;
+  rv = tempDir->Equals(realTempDir, &isRealTemp);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+  if (isRealTemp) {
+    return tempDir.forget();
   }
 
   // Don't return an error if the directory doesn't exist.
@@ -4569,12 +4584,9 @@ XRE_StopLateWriteChecks(void) {
 void
 XRE_CreateStatsObject()
 {
-  // A initializer to initialize histogram collection, a chromium
-  // thing used by Telemetry (and effectively a global; it's all static).
-  // Note: purposely leaked
-  base::StatisticsRecorder* statistics_recorder = new base::StatisticsRecorder();
-  MOZ_LSAN_INTENTIONALLY_LEAK_OBJECT(statistics_recorder);
-  Unused << statistics_recorder;
+  // Initialize global variables used by histogram collection
+  // machinery that is used by by Telemetry.  Note: is never de-initialised.
+  Telemetry::CreateStatisticsRecorder();
 }
 
 int
@@ -4706,7 +4718,6 @@ enum {
   kE10sDisabledForOperatingSystem = 10,
 };
 
-#if defined(XP_WIN) || defined(XP_MACOSX)
 const char* kAccessibilityLastRunDatePref = "accessibility.lastLoadDate";
 const char* kAccessibilityLoadedLastSessionPref = "accessibility.loadedInLastSession";
 
@@ -4716,7 +4727,6 @@ PRTimeToSeconds(PRTime t_usec)
   PRTime usec_per_sec = PR_USEC_PER_SEC;
   return uint32_t(t_usec /= usec_per_sec);
 }
-#endif // XP_WIN || XP_MACOSX
 
 const char* kForceEnableE10sPref = "browser.tabs.remote.force-enable";
 const char* kForceDisableE10sPref = "browser.tabs.remote.force-disable";
@@ -4747,7 +4757,7 @@ MultiprocessBlockPolicy() {
   }
 
   bool disabledForA11y = false;
-#if defined(XP_WIN) || defined(XP_MACOSX)
+
   /**
    * Avoids enabling e10s if accessibility has recently loaded. Performs the
    * following checks:
@@ -4774,9 +4784,15 @@ MultiprocessBlockPolicy() {
       disabledForA11y = true;
     }
   }
-#endif // XP_WIN || XP_MACOSX
 
-  if (disabledForA11y) {
+  // For linux nightly and aurora builds skip accessibility
+  // checks.
+  bool doAccessibilityCheck = true;
+#if defined(MOZ_WIDGET_GTK) && !defined(RELEASE_BUILD)
+  doAccessibilityCheck = false;
+#endif
+
+  if (doAccessibilityCheck && disabledForA11y) {
     gMultiprocessBlockPolicy = kE10sDisabledForAccessibility;
     return gMultiprocessBlockPolicy;
   }
@@ -4893,9 +4909,6 @@ mozilla::BrowserTabsRemoteAutostart()
     mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_BLOCKED_FROM_RUNNING,
                                     !gBrowserTabsRemoteAutostart);
   }
-  if (Preferences::HasUserValue("extensions.e10sBlockedByAddons")) {
-    mozilla::Telemetry::Accumulate(mozilla::Telemetry::E10S_ADDONS_BLOCKER_RAN, true);
-  }
   return gBrowserTabsRemoteAutostart;
 }
 
@@ -4964,4 +4977,9 @@ OverrideDefaultLocaleIfNeeded() {
     // Otherwise fall back to the "C" locale, which is available on all platforms.
     setlocale(LC_ALL, "C.UTF-8") || setlocale(LC_ALL, "C");
   }
+}
+
+void
+XRE_EnableSameExecutableForContentProc() {
+  mozilla::ipc::GeckoChildProcessHost::EnableSameExecutableForContentProc();
 }

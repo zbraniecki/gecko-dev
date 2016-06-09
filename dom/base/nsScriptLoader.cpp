@@ -689,8 +689,7 @@ nsScriptLoader::CreateModuleScript(nsModuleLoadRequest* aRequest)
   }
 
   nsAutoMicroTask mt;
-  AutoEntryScript aes(globalObject, "CompileModule", true,
-                      context->GetNativeContext());
+  AutoEntryScript aes(globalObject, "CompileModule", true);
 
   bool oldProcessingScriptTag = context->GetProcessingScriptTag();
   context->SetProcessingScriptTag(true);
@@ -867,8 +866,6 @@ ResolveRequestedModules(nsModuleLoadRequest* aRequest, nsCOMArray<nsIURI> &aUrls
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMArray<nsIURI> uris(length);
-  MOZ_ASSERT(uris.Length() == 0);
   JS::Rooted<JS::Value> arrayValue(cx, JS::ObjectValue(*specifiers));
   JS::ForOfIterator iter(cx);
   if (!iter.init(arrayValue)) {
@@ -1978,8 +1975,7 @@ nsScriptLoader::EvaluateScript(nsScriptLoadRequest* aRequest)
   // New script entry point required, due to the "Create a script" sub-step of
   // http://www.whatwg.org/specs/web-apps/current-work/#execute-the-script-block
   nsAutoMicroTask mt;
-  AutoEntryScript aes(globalObject, "<script> element", true,
-                      context->GetNativeContext());
+  AutoEntryScript aes(globalObject, "<script> element", true);
   JS::Rooted<JSObject*> global(aes.cx(),
                                globalObject->GetGlobalJSObject());
 
@@ -2323,6 +2319,15 @@ nsScriptLoader::OnStreamComplete(nsIIncrementalStreamLoader* aLoader,
     if (enforceSRI) {
       MOZ_LOG(SRILogHelper::GetSriLog(), mozilla::LogLevel::Debug,
              ("nsScriptLoader::OnStreamComplete, required SRI not found"));
+      nsCOMPtr<nsIContentSecurityPolicy> csp;
+      loadInfo->LoadingPrincipal()->GetCsp(getter_AddRefs(csp));
+      nsAutoCString violationURISpec;
+      mDocument->GetDocumentURI()->GetAsciiSpec(violationURISpec);
+      uint32_t lineNo = request->mElement ? request->mElement->GetScriptLineNumber() : 0;
+      csp->LogViolationDetails(
+        nsIContentSecurityPolicy::VIOLATION_TYPE_REQUIRE_SRI_FOR_SCRIPT,
+        NS_ConvertUTF8toUTF16(violationURISpec),
+        EmptyString(), lineNo, EmptyString(), EmptyString());
       rv = NS_ERROR_SRI_CORRUPT;
     }
   }

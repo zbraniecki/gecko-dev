@@ -1225,7 +1225,8 @@ html|span.ac-emphasize-text-url {
 #urlbar-stop-button {
   -moz-appearance: none;
   list-style-image: url("chrome://browser/skin/reload-stop-go.png");
-  padding: 0 9px;
+  margin: -2px 0;
+  padding: 3px 9px;
   margin-inline-start: 5px;
   border-inline-start: 1px solid var(--urlbar-separator-color);
   border-image: linear-gradient(transparent 15%,
@@ -1747,33 +1748,6 @@ toolbarbutton.chevron > .toolbarbutton-icon {
   margin-top: 10px;
 }
 
-/* Sync Panel */
-
-.sync-panel-icon {
-  height:32px;
-  width: 32px;
-  background: url("chrome://browser/content/abouthome/sync.png") top left no-repeat;
-}
-
-.sync-panel-inner {
-  width: 0;
-  padding-left: 10px;
-}
-
-.sync-panel-button-box {
-  margin-top: 1em;
-}
-
-#sync-start-panel-title {
-  font-size: 120%;
-  font-weight: bold;
-  margin-bottom: 5px;
-}
-
-#sync-start-panel-subtitle {
-  margin-bottom: 0;
-}
-
 /* Status panel */
 
 .statuspanel-label {
@@ -1986,4 +1960,8 @@ notification.pluginVulnerable > .notification-inner > .messageCloseButton:not(:h
 .browser-extension-panel > .panel-arrowcontainer > .panel-arrowcontent {
   padding: 0;
   overflow: hidden;
+}
+
+.menuitem-iconic[command="Browser:NewUserContextTab"] > .menu-iconic-left > .menu-iconic-icon {
+  visibility: visible;
 }

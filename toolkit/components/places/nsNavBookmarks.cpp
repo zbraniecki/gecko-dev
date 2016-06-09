@@ -2522,6 +2522,10 @@ nsNavBookmarks::AddObserver(nsINavBookmarkObserver* aObserver,
                             bool aOwnsWeak)
 {
   NS_ENSURE_ARG(aObserver);
+
+  if (NS_WARN_IF(!mCanNotify))
+    return NS_ERROR_UNEXPECTED;
+
   return mObservers.AppendWeakElement(aObserver, aOwnsWeak);
 }
 
@@ -2634,6 +2638,7 @@ nsNavBookmarks::Observe(nsISupports *aSubject, const char *aTopic,
     // Don't even try to notify observers from this point on, the category
     // cache would init services that could try to use our APIs.
     mCanNotify = false;
+    mObservers.Clear();
   }
 
   return NS_OK;
@@ -2668,7 +2673,7 @@ NS_IMETHODIMP
 nsNavBookmarks::OnVisit(nsIURI* aURI, int64_t aVisitId, PRTime aTime,
                         int64_t aSessionID, int64_t aReferringID,
                         uint32_t aTransitionType, const nsACString& aGUID,
-                        bool aHidden)
+                        bool aHidden, uint32_t aVisitCount, uint32_t aTyped)
 {
   NS_ENSURE_ARG(aURI);
 

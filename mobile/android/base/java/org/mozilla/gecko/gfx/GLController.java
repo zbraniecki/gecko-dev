@@ -113,7 +113,7 @@ public class GLController extends JNIObject {
         // two conditions are satisfied, we can be relatively sure that the compositor creation will
         // happen without needing to block anywhere. Do it with a synchronous Gecko event so that the
         // Android doesn't have a chance to destroy our surface in between.
-        if (mView.getLayerClient().isGeckoReady()) {
+        if (isServerSurfaceValid() && mView.getLayerClient().isGeckoReady()) {
             createCompositor(mWidth, mHeight);
             compositorCreated();
         }

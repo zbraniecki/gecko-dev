@@ -180,6 +180,9 @@ struct ShellRuntime
 
     int exitCode;
     bool quitting;
+
+    UniqueChars readLineBuf;
+    size_t readLineBufPos;
 };
 
 struct MOZ_STACK_CLASS EnvironmentPreparer : public js::ScriptEnvironmentPreparer {
@@ -326,7 +329,8 @@ ShellRuntime::ShellRuntime(JSRuntime* rt)
     promiseRejectionTrackerCallback(rt, NullValue()),
 #endif // SPIDERMONKEY_PROMISE
     exitCode(0),
-    quitting(false)
+    quitting(false),
+    readLineBufPos(0)
 {}
 
 static ShellRuntime*
@@ -454,14 +458,27 @@ ShellInterruptCallback(JSContext* cx)
 
     bool result;
     if (sr->haveInterruptFunc) {
+        bool wasAlreadyThrowing = cx->isExceptionPending();
         JS::AutoSaveExceptionState savedExc(cx);
         JSAutoCompartment ac(cx, &sr->interruptFunc.toObject());
         RootedValue rval(cx);
-        if (!JS_CallFunctionValue(cx, nullptr, sr->interruptFunc,
-                                  JS::HandleValueArray::empty(), &rval))
+
+        // Report any exceptions thrown by the JS interrupt callback, but do
+        // *not* keep it on the cx. The interrupt handler is invoked at points
+        // that are not expected to throw catchable exceptions, like at
+        // JSOP_RETRVAL.
+        //
+        // If the interrupted JS code was already throwing, any exceptions
+        // thrown by the interrupt handler are silently swallowed.
         {
-            return false;
+            Maybe<AutoReportException> are;
+            if (!wasAlreadyThrowing)
+                are.emplace(cx);
+            result = JS_CallFunctionValue(cx, nullptr, sr->interruptFunc,
+                                          JS::HandleValueArray::empty(), &rval);
         }
+        savedExc.restore();
+
         if (rval.isBoolean())
             result = rval.toBoolean();
         else
@@ -1219,48 +1236,6 @@ ParseCompileOptions(JSContext* cx, CompileOptions& options, HandleObject opts,
     return true;
 }
 
-class AutoNewContext
-{
-  private:
-    JSContext* oldcx;
-    JSContext* newcx;
-    Maybe<JSAutoRequest> newRequest;
-    Maybe<AutoCompartment> newCompartment;
-
-    AutoNewContext(const AutoNewContext&) = delete;
-
-  public:
-    AutoNewContext() : oldcx(nullptr), newcx(nullptr) {}
-
-    bool enter(JSContext* cx) {
-        MOZ_ASSERT(!JS_IsExceptionPending(cx));
-        oldcx = cx;
-        newcx = NewContext(JS_GetRuntime(cx));
-        if (!newcx)
-            return false;
-
-        newRequest.emplace(newcx);
-        newCompartment.emplace(newcx, JS::CurrentGlobalOrNull(cx));
-        return true;
-    }
-
-    JSContext* get() { return newcx; }
-
-    ~AutoNewContext() {
-        if (newcx) {
-            RootedValue exc(oldcx);
-            bool throwing = JS_IsExceptionPending(newcx);
-            if (throwing)
-                JS_GetPendingException(newcx, &exc);
-            newCompartment.reset();
-            newRequest.reset();
-            if (throwing && JS_WrapValue(oldcx, &exc))
-                JS_SetPendingException(oldcx, exc);
-            DestroyContext(newcx, false);
-        }
-    }
-};
-
 static void
 my_LargeAllocFailCallback(void* data)
 {
@@ -1378,7 +1353,6 @@ Evaluate(JSContext* cx, unsigned argc, Value* vp)
 
     CompileOptions options(cx);
     JSAutoByteString fileNameBytes;
-    bool newContext = false;
     RootedString displayURL(cx);
     RootedString sourceMapURL(cx);
     RootedObject global(cx, nullptr);
@@ -1401,11 +1375,6 @@ Evaluate(JSContext* cx, unsigned argc, Value* vp)
 
         if (!ParseCompileOptions(cx, options, opts, fileNameBytes))
             return false;
-
-        if (!JS_GetProperty(cx, opts, "newContext", &v))
-            return false;
-        if (!v.isUndefined())
-            newContext = ToBoolean(v);
 
         if (!JS_GetProperty(cx, opts, "displayURL", &v))
             return false;
@@ -1472,13 +1441,6 @@ Evaluate(JSContext* cx, unsigned argc, Value* vp)
     AutoStableStringChars codeChars(cx);
     if (!codeChars.initTwoByte(cx, code))
         return false;
-
-    AutoNewContext ancx;
-    if (newContext) {
-        if (!ancx.enter(cx))
-            return false;
-        cx = ancx.get();
-    }
 
     uint32_t loadLength = 0;
     uint8_t* loadBuffer = nullptr;
@@ -1772,6 +1734,69 @@ ReadLine(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+/*
+ * function readlineBuf()
+ * Provides a hook for scripts to emulate readline() using a string object.
+ */
+static bool
+ReadLineBuf(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    ShellRuntime* sr = GetShellRuntime(cx);
+
+    if (!args.length()) {
+        if (!sr->readLineBuf) {
+            JS_ReportError(cx, "No source buffer set. You must initially call readlineBuf with an argument.");
+            return false;
+        }
+
+        char* currentBuf = sr->readLineBuf.get() + sr->readLineBufPos;
+        size_t buflen = strlen(currentBuf);
+
+        if (!buflen) {
+            args.rval().setNull();
+            return true;
+        }
+
+        size_t len = 0;
+        while(len < buflen) {
+            if (currentBuf[len] == '\n')
+                break;
+            len++;
+        }
+
+        JSString* str = JS_NewStringCopyN(cx, currentBuf, len);
+        if (!str)
+            return false;
+
+        if (currentBuf[len] == '\0')
+            sr->readLineBufPos += len;
+        else
+            sr->readLineBufPos += len + 1;
+
+        args.rval().setString(str);
+        return true;
+    }
+
+    if (args.length() == 1) {
+        if (sr->readLineBuf)
+            sr->readLineBuf.reset();
+
+        RootedString str(cx, JS::ToString(cx, args[0]));
+        if (!str)
+            return false;
+        sr->readLineBuf = UniqueChars(JS_EncodeStringToUTF8(cx, str));
+        if (!sr->readLineBuf)
+            return false;
+
+        sr->readLineBufPos = 0;
+        return true;
+    }
+
+    JS_ReportError(cx, "Must specify at most one argument");
+    return false;
+}
+
 static bool
 PutStr(JSContext* cx, unsigned argc, Value* vp)
 {
@@ -2021,7 +2046,7 @@ ValueToScript(JSContext* cx, Value vArg, JSFunction** funp = nullptr)
     if (!script)
         return nullptr;
 
-    if (fun && funp)
+    if (funp)
         *funp = fun;
 
     return script;
@@ -2950,7 +2975,7 @@ WorkerMain(void* arg)
     sr->isWorker = true;
     JS_SetRuntimePrivate(rt, sr.get());
     JS_SetFutexCanWait(rt);
-    JS_SetErrorReporter(rt, WarningReporter);
+    JS::SetWarningReporter(rt, WarningReporter);
     JS_InitDestroyPrincipalsCallback(rt, ShellPrincipals::destroy);
     SetWorkerRuntimeOptions(rt);
 
@@ -3109,9 +3134,12 @@ Sleep_fn(JSContext* cx, unsigned argc, Value* vp)
         double t_secs;
         if (!ToNumber(cx, args[0], &t_secs))
             return false;
-        duration = TimeDuration::FromSeconds(Max(0.0, t_secs));
+        if (mozilla::IsNaN(t_secs)) {
+            JS_ReportError(cx, "sleep interval is not a number");
+            return false;
+        }
 
-        /* NB: The next condition also filter out NaNs. */
+        duration = TimeDuration::FromSeconds(Max(0.0, t_secs));
         if (duration > MAX_TIMEOUT_INTERVAL) {
             JS_ReportError(cx, "Excessive sleep interval");
             return false;
@@ -3212,7 +3240,7 @@ ScheduleWatchdog(JSRuntime* rt, double t)
         MOZ_ASSERT(!sr->watchdogTimeout);
         sr->watchdogThread.emplace(WatchdogMain, rt);
     } else if (!sr->watchdogTimeout || timeout < sr->watchdogTimeout.value()) {
-         sr->watchdogWakeup.notify_one();
+        sr->watchdogWakeup.notify_one();
     }
     sr->watchdogTimeout = Some(timeout);
     return true;
@@ -3262,7 +3290,10 @@ CancelExecution(JSRuntime* rt)
 static bool
 SetTimeoutValue(JSContext* cx, double t)
 {
-    /* NB: The next condition also filter out NaNs. */
+    if (mozilla::IsNaN(t)) {
+        JS_ReportError(cx, "timeout is not a number");
+        return false;
+    }
     if (TimeDuration::FromSeconds(t) > MAX_TIMEOUT_INTERVAL) {
         JS_ReportError(cx, "Excessive timeout value");
         return false;
@@ -5268,6 +5299,12 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "readline()",
 "  Read a single line from stdin."),
 
+    JS_FN_HELP("readlineBuf", ReadLineBuf, 1, 0,
+"readlineBuf([ buf ])",
+"  Emulate readline() on the specified string. The first call with a string\n"
+"  argument sets the source buffer. Subsequent calls without an argument\n"
+"  then read from this buffer line by line.\n"),
+
     JS_FN_HELP("print", Print, 0, 0,
 "print([exp ...])",
 "  Evaluate and print expressions to stdout."),
@@ -6502,9 +6539,6 @@ NewContext(JSRuntime* rt)
     if (!cx)
         return nullptr;
 
-    JS::ContextOptionsRef(cx).setDontReportUncaught(true);
-    JS::ContextOptionsRef(cx).setAutoJSAPIOwnsErrorReporting(true);
-
     JSShellContextData* data = NewContextData();
     if (!data) {
         DestroyContext(cx, false);
@@ -7410,7 +7444,7 @@ main(int argc, char** argv, char** envp)
     JS_SetRuntimePrivate(rt, sr.get());
     // Waiting is allowed on the shell's main thread, for now.
     JS_SetFutexCanWait(rt);
-    JS_SetErrorReporter(rt, WarningReporter);
+    JS::SetWarningReporter(rt, WarningReporter);
     if (!SetRuntimeOptions(rt, op))
         return 1;
 

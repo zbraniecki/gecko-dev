@@ -640,23 +640,9 @@ private:
     JS::PersistentRootedObject mCompilationScope;
     RefPtr<AsyncFreeSnowWhite> mAsyncSnowWhiteFreer;
 
-    // If we spend too much time running JS code in an event handler, then we
-    // want to show the slow script UI. The timeout T is controlled by prefs. We
-    // invoke the interrupt callback once after T/2 seconds and set
-    // mSlowScriptSecondHalf to true. After another T/2 seconds, we invoke the
-    // interrupt callback again. Since mSlowScriptSecondHalf is now true, it
-    // shows the slow script UI. The reason we invoke the callback twice is to
-    // ensure that putting the computer to sleep while running a script doesn't
-    // cause the UI to be shown. If the laptop goes to sleep during one of the
-    // timeout periods, the script still has the other T/2 seconds to complete
-    // before the slow script UI is shown.
-    bool mSlowScriptSecondHalf;
-
-    // mSlowScriptCheckpoint is set to the time when:
-    // 1. We started processing the current event, or
-    // 2. mSlowScriptSecondHalf was set to true
-    // (whichever comes later). We use it to determine whether the interrupt
-    // callback needs to do anything.
+    // mSlowScriptCheckpoint is set to the time when we started processing the
+    // current event.  We use it to determine whether the interrupt callback
+    // needs to do anything.
     mozilla::TimeStamp mSlowScriptCheckpoint;
     // Accumulates total time we actually waited for telemetry
     mozilla::TimeDuration mSlowScriptActualWait;
@@ -3347,6 +3333,7 @@ struct GlobalProperties {
     bool atob : 1;
     bool btoa : 1;
     bool Blob : 1;
+    bool Directory : 1;
     bool File : 1;
     bool crypto : 1;
     bool rtcIdentityProvider : 1;
@@ -3776,9 +3763,7 @@ bool EnableUniversalXPConnect(JSContext* cx);
 inline void
 CrashIfNotInAutomation()
 {
-    const char* prefName =
-      "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer";
-    MOZ_RELEASE_ASSERT(mozilla::Preferences::GetBool(prefName));
+    MOZ_RELEASE_ASSERT(IsInAutomation());
 }
 
 inline XPCWrappedNativeScope*

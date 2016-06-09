@@ -67,7 +67,7 @@ loader.lazyRequireGetter(this, "createPerformanceFront",
 loader.lazyRequireGetter(this, "system",
   "devtools/shared/system");
 loader.lazyRequireGetter(this, "getPreferenceFront",
-  "devtools/server/actors/preference", true);
+  "devtools/shared/fronts/preference", true);
 loader.lazyRequireGetter(this, "KeyShortcuts",
   "devtools/client/shared/key-shortcuts", true);
 loader.lazyRequireGetter(this, "ZoomKeys",
@@ -1240,7 +1240,7 @@ Toolbox.prototype = {
       // backward compatibility with existing extensions do a check
       // for a promise return value.
       let built = definition.build(iframe.contentWindow, this);
-      if (!(built instanceof Promise)) {
+      if (!(typeof built.then == "function")) {
         let panel = built;
         iframe.panel = panel;
 

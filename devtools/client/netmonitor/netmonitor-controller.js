@@ -118,7 +118,7 @@ const Services = require("Services");
 const {XPCOMUtils} = require("resource://gre/modules/XPCOMUtils.jsm");
 const EventEmitter = require("devtools/shared/event-emitter");
 const Editor = require("devtools/client/sourceeditor/editor");
-const {TimelineFront} = require("devtools/server/actors/timeline");
+const {TimelineFront} = require("devtools/shared/fronts/timeline");
 const { Task } = require("devtools/shared/task");
 
 XPCOMUtils.defineConstant(this, "EVENTS", EVENTS);
@@ -433,6 +433,13 @@ var NetMonitorController = {
   get supportsPerfStats() {
     return this.tabClient &&
            (this.tabClient.traits.reconfigure || !this._target.isApp);
+  },
+
+  /**
+   * Open a given source in Debugger
+   */
+  viewSourceInDebugger(sourceURL, sourceLine) {
+    return this._toolbox.viewSourceInDebugger(sourceURL, sourceLine);
   }
 };
 
@@ -629,12 +636,14 @@ NetworkEventsHandler.prototype = {
       startedDateTime,
       request: { method, url },
       isXHR,
+      cause,
       fromCache,
       fromServiceWorker
     } = networkInfo;
 
     NetMonitorView.RequestsMenu.addRequest(
-      actor, startedDateTime, method, url, isXHR, fromCache, fromServiceWorker
+      actor, startedDateTime, method, url, isXHR, cause, fromCache,
+        fromServiceWorker
     );
     window.emit(EVENTS.NETWORK_EVENT, actor);
   },

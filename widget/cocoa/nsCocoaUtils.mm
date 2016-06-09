@@ -35,7 +35,7 @@ using mozilla::gfx::BackendType;
 using mozilla::gfx::DataSourceSurface;
 using mozilla::gfx::DrawTarget;
 using mozilla::gfx::Factory;
-using mozilla::gfx::Filter;
+using mozilla::gfx::SamplingFilter;
 using mozilla::gfx::IntPoint;
 using mozilla::gfx::IntRect;
 using mozilla::gfx::IntSize;
@@ -481,20 +481,17 @@ nsresult nsCocoaUtils::CreateNSImageFromImageContainer(imgIContainer *aImage, ui
 
     RefPtr<DrawTarget> drawTarget = gfxPlatform::GetPlatform()->
       CreateOffscreenContentDrawTarget(scaledSize, SurfaceFormat::B8G8R8A8);
-    if (!drawTarget) {
-      NS_ERROR("Failed to create DrawTarget");
+    if (!drawTarget || !drawTarget->IsValid()) {
+      NS_ERROR("Failed to create valid DrawTarget");
       return NS_ERROR_FAILURE;
     }
 
-    RefPtr<gfxContext> context = gfxContext::ForDrawTarget(drawTarget);
-    if (!context) {
-      NS_ERROR("Failed to create gfxContext");
-      return NS_ERROR_FAILURE;
-    }
+    RefPtr<gfxContext> context = gfxContext::CreateOrNull(drawTarget);
+    MOZ_ASSERT(context);
 
     mozilla::image::DrawResult res =
       aImage->Draw(context, scaledSize, ImageRegion::Create(scaledSize),
-                   aWhichFrame, Filter::POINT,
+                   aWhichFrame, SamplingFilter::POINT,
                    /* no SVGImageContext */ Nothing(),
                    imgIContainer::FLAG_SYNC_DECODE);
 

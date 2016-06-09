@@ -1814,6 +1814,15 @@ DocAccessible::ProcessContentInserted(Accessible* aContainer, nsIContent* aNode)
     return;
   }
 
+#ifdef A11Y_LOG
+  logging::TreeInfo("children before insertion", logging::eVerbose, aContainer);
+#endif
+
+#ifdef A11Y_LOG
+  logging::TreeInfo("traversing an inserted node", logging::eVerbose,
+                    "container", aContainer, "node", aNode);
+#endif
+
   TreeWalker walker(aContainer);
   if (aContainer->IsAcceptableChild(aNode) && walker.Seek(aNode)) {
     Accessible* child = GetAccessible(aNode);
@@ -1831,6 +1840,10 @@ DocAccessible::ProcessContentInserted(Accessible* aContainer, nsIContent* aNode)
       FireEventsOnInsertion(aContainer);
     }
   }
+
+#ifdef A11Y_LOG
+  logging::TreeInfo("children after insertion", logging::eVerbose, aContainer);
+#endif
 }
 
 void
@@ -1856,17 +1869,8 @@ DocAccessible::UpdateTreeOnRemoval(Accessible* aContainer, nsIContent* aChildNod
   // If child node is not accessible then look for its accessible children.
   Accessible* child = GetAccessible(aChildNode);
 #ifdef A11Y_LOG
-  if (logging::IsEnabled(logging::eTree)) {
-    logging::MsgBegin("TREE", "process content removal");
-    logging::Node("container", aContainer->GetNode());
-    logging::Node("child", aChildNode);
-    if (child)
-      logging::Address("child", child);
-    else
-      logging::MsgEntry("child accessible: null");
-
-    logging::MsgEnd();
-  }
+  logging::TreeInfo("process content removal", 0,
+                    "container", aContainer, "child", aChildNode);
 #endif
 
   TreeMutation mt(aContainer);

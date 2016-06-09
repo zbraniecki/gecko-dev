@@ -13,6 +13,7 @@
 #define jit_MIR_h
 
 #include "mozilla/Array.h"
+#include "mozilla/Attributes.h"
 
 #include "builtin/SIMD.h"
 #include "jit/AtomicOp.h"
@@ -60,7 +61,7 @@ MIRType MIRTypeFromValue(const js::Value& vp)
           case JS_UNINITIALIZED_LEXICAL:
             return MIRType::MagicUninitializedLexical;
           default:
-            MOZ_ASSERT(!"Unexpected magic constant");
+            MOZ_ASSERT_UNREACHABLE("Unexpected magic constant");
         }
     }
     return MIRTypeFromValueType(vp.extractNonDoubleType());
@@ -844,7 +845,7 @@ class MDefinition : public MNode
     // Replace the current instruction by an optimized-out constant in all uses
     // of the current instruction. Note, that optimized-out constant should not
     // be observed, and thus they should not flow in any computation.
-    void optimizeOutAllUses(TempAllocator& alloc);
+    MOZ_MUST_USE bool optimizeOutAllUses(TempAllocator& alloc);
 
     // Replace the current instruction by a dominating instruction |dom| in all
     // instruction, but keep the current instruction for resume point and
@@ -1031,10 +1032,7 @@ class MInstruction
 
     // Convenient function used for replacing a load by the value of the store
     // if the types are match, and boxing the value if they do not match.
-    //
-    // Note: There is no need for such function in AsmJS functions as they do
-    // not use any MIRType::Value.
-    MDefinition* foldsToStoredValue(TempAllocator& alloc, MDefinition* loaded);
+    MDefinition* foldsToStore(TempAllocator& alloc);
 
     void setResumePoint(MResumePoint* resumePoint);
 
@@ -6485,6 +6483,36 @@ class MSqrt
     ALLOW_CLONE(MSqrt)
 };
 
+class MCopySign
+  : public MBinaryInstruction,
+    public NoTypePolicy::Data
+{
+    MCopySign(MDefinition* lhs, MDefinition* rhs, MIRType type)
+      : MBinaryInstruction(lhs, rhs)
+    {
+        setResultType(type);
+        setMovable();
+    }
+
+  public:
+    INSTRUCTION_HEADER(CopySign)
+
+    static MCopySign* NewAsmJS(TempAllocator& alloc, MDefinition* lhs, MDefinition* rhs,
+                               MIRType type)
+    {
+        return new(alloc) MCopySign(lhs, rhs, type);
+    }
+
+    bool congruentTo(const MDefinition* ins) const override {
+        return congruentIfOperandsEqual(ins);
+    }
+    AliasSet getAliasSet() const override {
+        return AliasSet::None();
+    }
+
+    ALLOW_CLONE(MCopySign)
+};
+
 // Inline implementation of atan2 (arctangent of y/x).
 class MAtan2
   : public MBinaryInstruction,
@@ -8089,9 +8117,9 @@ class MRegExp : public MNullaryInstruction
     CompilerGCPointer<RegExpObject*> source_;
     bool mustClone_;
 
-    MRegExp(CompilerConstraintList* constraints, RegExpObject* source, bool mustClone)
+    MRegExp(CompilerConstraintList* constraints, RegExpObject* source)
       : source_(source),
-        mustClone_(mustClone)
+        mustClone_(true)
     {
         setResultType(MIRType::Object);
         setResultTypeSet(MakeSingletonTypeSet(constraints, source));
@@ -8101,11 +8129,14 @@ class MRegExp : public MNullaryInstruction
     INSTRUCTION_HEADER(RegExp)
 
     static MRegExp* New(TempAllocator& alloc, CompilerConstraintList* constraints,
-                        RegExpObject* source, bool mustClone)
+                        RegExpObject* source)
     {
-        return new(alloc) MRegExp(constraints, source, mustClone);
+        return new(alloc) MRegExp(constraints, source);
     }
 
+    void setDoNotClone() {
+        mustClone_ = false;
+    }
     bool mustClone() const {
         return mustClone_;
     }
@@ -9348,7 +9379,7 @@ class MNot
 // (unsigned comparisons may be used).
 class MBoundsCheck
   : public MBinaryInstruction,
-    public NoTypePolicy::Data
+    public MixPolicy<IntPolicy<0>, IntPolicy<1>>::Data
 {
     // Range over which to perform the bounds check, may be modified by GVN.
     int32_t minimum_;
@@ -9419,7 +9450,7 @@ class MBoundsCheck
 // Bailout if index < minimum.
 class MBoundsCheckLower
   : public MUnaryInstruction,
-    public NoTypePolicy::Data
+    public IntPolicy<0>::Data
 {
     int32_t minimum_;
     bool fallible_;
@@ -9535,6 +9566,7 @@ class MLoadElement
             return false;
         return congruentIfOperandsEqual(other);
     }
+    AliasType mightAlias(const MDefinition* store) const override;
     MDefinition* foldsTo(TempAllocator& alloc) override;
     AliasSet getAliasSet() const override {
         return AliasSet::Load(AliasSet::Element);
@@ -9694,6 +9726,7 @@ class MLoadUnboxedObjectOrNull
     AliasSet getAliasSet() const override {
         return AliasSet::Load(AliasSet::UnboxedElement);
     }
+    AliasType mightAlias(const MDefinition* store) const override;
     MDefinition* foldsTo(TempAllocator& alloc) override;
 
     ALLOW_CLONE(MLoadUnboxedObjectOrNull)
@@ -10936,6 +10969,8 @@ class MLoadFixedSlotAndUnbox
         }
         return congruentIfOperandsEqual(ins);
     }
+
+    MDefinition* foldsTo(TempAllocator& alloc) override;
 
     AliasSet getAliasSet() const override {
         return AliasSet::Load(AliasSet::FixedSlot);

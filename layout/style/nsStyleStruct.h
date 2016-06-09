@@ -228,7 +228,7 @@ public:
   bool HasCalc();
   uint32_t Hash(PLDHashNumber aHash);
 
-  NS_INLINE_DECL_REFCOUNTING(nsStyleGradient)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsStyleGradient)
 
 private:
   // Private destructor, to discourage deletion outside of Release():
@@ -472,12 +472,6 @@ private:
 };
 
 struct nsStyleImageLayers {
-  nsStyleImageLayers();
-  nsStyleImageLayers(const nsStyleImageLayers &aSource);
-  ~nsStyleImageLayers() {
-    MOZ_COUNT_DTOR(nsStyleImageLayers);
-  }
-
   // Indices into kBackgroundLayerTable and kMaskLayerTable
   enum {
     shorthand = 0,
@@ -493,6 +487,17 @@ struct nsStyleImageLayers {
     maskMode,
     composite
   };
+
+  enum class LayerType : uint8_t {
+    Background = 0,
+    Mask
+  };
+
+  explicit nsStyleImageLayers(LayerType aType);
+  nsStyleImageLayers(const nsStyleImageLayers &aSource);
+  ~nsStyleImageLayers() {
+    MOZ_COUNT_DTOR(nsStyleImageLayers);
+  }
 
   struct Position;
   friend struct Position;
@@ -598,13 +603,15 @@ struct nsStyleImageLayers {
     // Initialize nothing
     Repeat() {}
 
-    bool IsInitialValue() const {
-      return mXRepeat == NS_STYLE_IMAGELAYER_REPEAT_REPEAT &&
-             mYRepeat == NS_STYLE_IMAGELAYER_REPEAT_REPEAT;
+    bool IsInitialValue(LayerType aType) const;
+
+    bool DependsOnPositioningAreaSize() const {
+      return mXRepeat == NS_STYLE_IMAGELAYER_REPEAT_SPACE ||
+             mYRepeat == NS_STYLE_IMAGELAYER_REPEAT_SPACE;
     }
 
     // Initialize to initial values
-    void SetInitialValues();
+    void SetInitialValues(LayerType aType);
 
     bool operator==(const Repeat& aOther) const {
       return mXRepeat == aOther.mXRepeat &&
@@ -656,9 +663,13 @@ struct nsStyleImageLayers {
                                   // NS_STYLE_MASK_MODE_MATCH_SOURCE.
     Repeat        mRepeat;        // [reset] See nsStyleConsts.h
 
-    // Initializes only mImage
+    // This constructor does not initialize mRepeat or mOrigin and Initialize()
+    // must be called to do that.
     Layer();
     ~Layer();
+
+    // Initialize mRepeat and mOrigin by specified layer type
+    void Initialize(LayerType aType);
 
     // Register/unregister images with the document. We do this only
     // after the dust has settled in ComputeBackgroundData.
@@ -3189,7 +3200,7 @@ enum nsStyleSVGPaintType {
   eStyleSVGPaintType_ContextStroke
 };
 
-enum nsStyleSVGOpacitySource {
+enum nsStyleSVGOpacitySource : uint8_t {
   eStyleSVGOpacitySource_Normal,
   eStyleSVGOpacitySource_ContextFillOpacity,
   eStyleSVGOpacitySource_ContextStrokeOpacity
@@ -3272,16 +3283,46 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleSVG
   uint8_t          mStrokeLinejoin;   // [inherited] see nsStyleConsts.h
   uint8_t          mTextAnchor;       // [inherited] see nsStyleConsts.h
 
-  // In SVG glyphs, whether we inherit fill or stroke opacity from the outer
-  // text object.
-  // Use 3 bits to avoid signedness problems in MSVC.
-  nsStyleSVGOpacitySource mFillOpacitySource    : 3;
-  nsStyleSVGOpacitySource mStrokeOpacitySource  : 3;
+  nsStyleSVGOpacitySource FillOpacitySource() const {
+    uint8_t value = (mContextFlags & FILL_OPACITY_SOURCE_MASK) >>
+                    FILL_OPACITY_SOURCE_SHIFT;
+    return nsStyleSVGOpacitySource(value);
+  }
+  nsStyleSVGOpacitySource StrokeOpacitySource() const {
+    uint8_t value = (mContextFlags & STROKE_OPACITY_SOURCE_MASK) >>
+                    STROKE_OPACITY_SOURCE_SHIFT;
+    return nsStyleSVGOpacitySource(value);
+  }
+  bool StrokeDasharrayFromObject() const {
+    return mContextFlags & STROKE_DASHARRAY_CONTEXT;
+  }
+  bool StrokeDashoffsetFromObject() const {
+    return mContextFlags & STROKE_DASHOFFSET_CONTEXT;
+  }
+  bool StrokeWidthFromObject() const {
+    return mContextFlags & STROKE_WIDTH_CONTEXT;
+  }
 
-  // SVG glyph outer object inheritance for other properties
-  bool mStrokeDasharrayFromObject   : 1;
-  bool mStrokeDashoffsetFromObject  : 1;
-  bool mStrokeWidthFromObject       : 1;
+  void SetFillOpacitySource(nsStyleSVGOpacitySource aValue) {
+    mContextFlags = (mContextFlags & ~FILL_OPACITY_SOURCE_MASK) |
+                    (aValue << FILL_OPACITY_SOURCE_SHIFT);
+  }
+  void SetStrokeOpacitySource(nsStyleSVGOpacitySource aValue) {
+    mContextFlags = (mContextFlags & ~STROKE_OPACITY_SOURCE_MASK) |
+                    (aValue << STROKE_OPACITY_SOURCE_SHIFT);
+  }
+  void SetStrokeDasharrayFromObject(bool aValue) {
+    mContextFlags = (mContextFlags & ~STROKE_DASHARRAY_CONTEXT) |
+                    (aValue ? STROKE_DASHARRAY_CONTEXT : 0);
+  }
+  void SetStrokeDashoffsetFromObject(bool aValue) {
+    mContextFlags = (mContextFlags & ~STROKE_DASHOFFSET_CONTEXT) |
+                    (aValue ? STROKE_DASHOFFSET_CONTEXT : 0);
+  }
+  void SetStrokeWidthFromObject(bool aValue) {
+    mContextFlags = (mContextFlags & ~STROKE_WIDTH_CONTEXT) |
+                    (aValue ? STROKE_WIDTH_CONTEXT : 0);
+  }
 
   bool HasMarker() const {
     return mMarkerStart || mMarkerMid || mMarkerEnd;
@@ -3302,6 +3343,22 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleSVG
   bool HasFill() const {
     return mFill.mType != eStyleSVGPaintType_None && mFillOpacity > 0;
   }
+
+private:
+  // Flags to represent the use of context-fill and context-stroke
+  // for fill-opacity or stroke-opacity, and context-value for stroke-dasharray,
+  // stroke-dashoffset and stroke-width.
+  enum {
+    FILL_OPACITY_SOURCE_MASK   = 0x03,  // fill-opacity: context-{fill,stroke}
+    STROKE_OPACITY_SOURCE_MASK = 0x0C,  // stroke-opacity: context-{fill,stroke}
+    STROKE_DASHARRAY_CONTEXT   = 0x10,  // stroke-dasharray: context-value
+    STROKE_DASHOFFSET_CONTEXT  = 0x20,  // stroke-dashoffset: context-value
+    STROKE_WIDTH_CONTEXT       = 0x40,  // stroke-width: context-value
+    FILL_OPACITY_SOURCE_SHIFT   = 0,
+    STROKE_OPACITY_SOURCE_SHIFT = 2,
+  };
+
+  uint8_t          mContextFlags;     // [inherited]
 };
 
 class nsStyleBasicShape final
@@ -3541,7 +3598,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleSVGReset
   }
 
   nsStyleImageLayers    mMask;
-  nsStyleClipPath mClipPath;          // [reset]
+  nsStyleClipPath  mClipPath;         // [reset]
   nscolor          mStopColor;        // [reset]
   nscolor          mFloodColor;       // [reset]
   nscolor          mLightingColor;    // [reset]

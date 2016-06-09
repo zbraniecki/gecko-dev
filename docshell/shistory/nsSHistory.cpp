@@ -1497,6 +1497,12 @@ nsSHistory::LoadURIWithOptions(const char16_t* aURI,
 }
 
 NS_IMETHODIMP
+nsSHistory::SetOriginAttributesBeforeLoading(JS::HandleValue aOriginAttributes)
+{
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsSHistory::LoadURI(const char16_t* aURI,
                     uint32_t aLoadFlags,
                     nsIURI* aReferringURI,
@@ -1766,10 +1772,6 @@ nsSHistory::InitiateLoad(nsISHEntry* aFrameEntry, nsIDocShell* aFrameDS,
   nsCOMPtr<nsIURI> originalURI;
   aFrameEntry->GetOriginalURI(getter_AddRefs(originalURI));
   loadInfo->SetOriginalURI(originalURI);
-
-  bool loadReplace;
-  aFrameEntry->GetLoadReplace(&loadReplace);
-  loadInfo->SetLoadReplace(loadReplace);
 
   nsCOMPtr<nsIURI> nextURI;
   aFrameEntry->GetURI(getter_AddRefs(nextURI));

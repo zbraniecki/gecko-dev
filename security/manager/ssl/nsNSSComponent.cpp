@@ -1292,10 +1292,17 @@ static const CipherPref sCipherPrefs[] = {
    TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, true },
  { "security.ssl3.ecdhe_ecdsa_aes_128_gcm_sha256",
    TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, true },
+
  { "security.ssl3.ecdhe_ecdsa_chacha20_poly1305_sha256",
    TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256, true },
  { "security.ssl3.ecdhe_rsa_chacha20_poly1305_sha256",
    TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, true },
+
+ { "security.ssl3.ecdhe_ecdsa_aes_256_gcm_sha384",
+   TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, true },
+ { "security.ssl3.ecdhe_rsa_aes_256_gcm_sha384",
+   TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, true },
+
  { "security.ssl3.ecdhe_rsa_aes_128_sha",
    TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA, true },
  { "security.ssl3.ecdhe_ecdsa_aes_128_sha",
@@ -1315,11 +1322,6 @@ static const CipherPref sCipherPrefs[] = {
  { "security.ssl3.ecdhe_psk_aes_128_gcm_sha256",
    TLS_ECDHE_PSK_WITH_AES_128_GCM_SHA256, true },
 
- { "security.ssl3.ecdhe_rsa_rc4_128_sha",
-   TLS_ECDHE_RSA_WITH_RC4_128_SHA, true, true }, // deprecated (RC4)
- { "security.ssl3.ecdhe_ecdsa_rc4_128_sha",
-   TLS_ECDHE_ECDSA_WITH_RC4_128_SHA, true, true }, // deprecated (RC4)
-
  { "security.ssl3.rsa_aes_128_sha",
    TLS_RSA_WITH_AES_128_CBC_SHA, true }, // deprecated (RSA key exchange)
  { "security.ssl3.rsa_aes_256_sha",
@@ -1327,12 +1329,7 @@ static const CipherPref sCipherPrefs[] = {
  { "security.ssl3.rsa_des_ede3_sha",
    TLS_RSA_WITH_3DES_EDE_CBC_SHA, true }, // deprecated (RSA key exchange, 3DES)
 
- { "security.ssl3.rsa_rc4_128_sha",
-   TLS_RSA_WITH_RC4_128_SHA, true, true }, // deprecated (RSA key exchange, RC4)
- { "security.ssl3.rsa_rc4_128_md5",
-   TLS_RSA_WITH_RC4_128_MD5, true, true }, // deprecated (RSA key exchange, RC4, HMAC-MD5)
-
- // All the rest are disabled by default
+ // All the rest are disabled
 
  { nullptr, 0 } // end marker
 };
@@ -1691,9 +1688,8 @@ nsNSSComponent::InitializeNSS()
   MutexAutoLock lock(mutex);
 
   if (mNSSInitialized) {
-    PR_ASSERT(!"Trying to initialize NSS twice"); // We should never try to
-                                                  // initialize NSS more than
-                                                  // once in a process.
+    // We should never try to initialize NSS more than once in a process.
+    MOZ_ASSERT_UNREACHABLE("Trying to initialize NSS twice");
     return NS_ERROR_FAILURE;
   }
 

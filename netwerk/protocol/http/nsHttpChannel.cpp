@@ -285,10 +285,11 @@ nsHttpChannel::Init(nsIURI *uri,
                     uint32_t caps,
                     nsProxyInfo *proxyInfo,
                     uint32_t proxyResolveFlags,
-                    nsIURI *proxyURI)
+                    nsIURI *proxyURI,
+                    const nsID& channelId)
 {
     nsresult rv = HttpBaseChannel::Init(uri, caps, proxyInfo,
-                                        proxyResolveFlags, proxyURI);
+                                        proxyResolveFlags, proxyURI, channelId);
     if (NS_FAILED(rv))
         return rv;
 
@@ -590,7 +591,7 @@ nsHttpChannel::ContinueHandleAsyncRedirect(nsresult rv)
         }
     }
 
-    CloseCacheEntry(false);
+    CloseCacheEntry(true);
 
     mIsPending = false;
 
@@ -616,7 +617,7 @@ nsHttpChannel::HandleAsyncNotModified()
 
     DoNotifyListener();
 
-    CloseCacheEntry(true);
+    CloseCacheEntry(false);
 
     mIsPending = false;
 
@@ -1814,14 +1815,32 @@ nsHttpChannel::ContinueProcessResponse1(nsresult rv)
         }
         break;
     case 304:
-        rv = ProcessNotModified();
-        if (NS_FAILED(rv)) {
+        if (!ShouldBypassProcessNotModified()) {
+            rv = ProcessNotModified();
+            if (NS_SUCCEEDED(rv)) {
+                successfulReval = true;
+                break;
+            }
+
             LOG(("ProcessNotModified failed [rv=%x]\n", rv));
+
+            // We cannot read from the cache entry, it might be in an
+            // incosistent state.  Doom it and redirect the channel
+            // to the same URI to reload from the network.
             mCacheInputStream.CloseAndRelease();
-            rv = ProcessNormal();
+            if (mCacheEntry) {
+                mCacheEntry->AsyncDoom(nullptr);
+                mCacheEntry = nullptr;
+            }
+
+            rv = StartRedirectChannelToURI(mURI, nsIChannelEventSink::REDIRECT_INTERNAL);
+            if (NS_SUCCEEDED(rv)) {
+                return NS_OK;
+            }
         }
-        else {
-            successfulReval = true;
+
+        if (ShouldBypassProcessNotModified() || NS_FAILED(rv)) {
+            rv = ProcessNormal();
         }
         break;
     case 401:
@@ -2820,6 +2839,23 @@ nsHttpChannel::OnDoneReadingPartialCacheEntry(bool *streamDone)
 // nsHttpChannel <cache>
 //-----------------------------------------------------------------------------
 
+bool
+nsHttpChannel::ShouldBypassProcessNotModified()
+{
+    if (mCustomConditionalRequest) {
+        LOG(("Bypassing ProcessNotModified due to custom conditional headers"));
+        return true;
+    }
+
+    if (!mDidReval) {
+        LOG(("Server returned a 304 response even though we did not send a "
+             "conditional request"));
+        return true;
+    }
+
+    return false;
+}
+
 nsresult
 nsHttpChannel::ProcessNotModified()
 {
@@ -2827,16 +2863,9 @@ nsHttpChannel::ProcessNotModified()
 
     LOG(("nsHttpChannel::ProcessNotModified [this=%p]\n", this));
 
-    if (mCustomConditionalRequest) {
-        LOG(("Bypassing ProcessNotModified due to custom conditional headers"));
-        return NS_ERROR_FAILURE;
-    }
-
-    if (!mDidReval) {
-        LOG(("Server returned a 304 response even though we did not send a "
-             "conditional request"));
-        return NS_ERROR_FAILURE;
-    }
+    // Assert ShouldBypassProcessNotModified() has been checked before call to
+    // ProcessNotModified().
+    MOZ_ASSERT(!ShouldBypassProcessNotModified());
 
     MOZ_ASSERT(mCachedResponseHead);
     MOZ_ASSERT(mCacheEntry);
@@ -3375,12 +3404,28 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry, nsIApplicationCache* appC
             (gHttpHandler->SessionStartTime() > lastModifiedTime);
 
     // Get the cached HTTP response headers
+    mCachedResponseHead = new nsHttpResponseHead();
+
+    // A "original-response-headers" metadata element holds network original headers,
+    // i.e. the headers in the form as they arrieved from the network.
+    // We need to get the network original headers first, because we need to keep them
+    // in order.
+    rv = entry->GetMetaDataElement("original-response-headers", getter_Copies(buf));
+    if (NS_SUCCEEDED(rv)) {
+        mCachedResponseHead->ParseCachedOriginalHeaders((char *) buf.get());
+    }
+
+    buf.Adopt(0);
+    // A "response-head" metadata element holds response head, e.g. response status
+    // line and headers in the form Firefox uses them internally (no dupicate
+    // headers, etc.).
     rv = entry->GetMetaDataElement("response-head", getter_Copies(buf));
     NS_ENSURE_SUCCESS(rv, rv);
 
-    // Parse the cached HTTP response headers
-    mCachedResponseHead = new nsHttpResponseHead();
-    rv = mCachedResponseHead->Parse((char *) buf.get());
+    // Parse string stored in a "response-head" metadata element.
+    // These response headers will be merged with the orignal headers (i.e. the
+    // headers stored in a "original-response-headers" metadata element).
+    rv = mCachedResponseHead->ParseCachedHead((char *) buf.get());
     NS_ENSURE_SUCCESS(rv, rv);
     buf.Adopt(0);
 
@@ -3772,7 +3817,7 @@ nsHttpChannel::OnCacheEntryAvailable(nsICacheEntry *entry,
 
     rv = OnCacheEntryAvailableInternal(entry, aNew, aAppCache, status);
     if (NS_FAILED(rv)) {
-        CloseCacheEntry(true);
+        CloseCacheEntry(false);
         AsyncAbort(rv);
     }
 
@@ -4625,6 +4670,10 @@ DoAddCacheEntryHeaders(nsHttpChannel *self,
     responseHead->Flatten(head, true);
     rv = entry->SetMetaDataElement("response-head", head.get());
     if (NS_FAILED(rv)) return rv;
+    head.Truncate();
+    responseHead->FlattenNetworkOriginalHeaders(head);
+    rv = entry->SetMetaDataElement("original-response-headers", head.get());
+    if (NS_FAILED(rv)) return rv;
 
     // Indicate we have successfully finished setting metadata on the cache entry.
     rv = entry->MetaDataReady();
@@ -5415,6 +5464,8 @@ nsHttpChannel::BeginConnect()
 
     mRequestHead.SetHTTPS(isHttps);
     mRequestHead.SetOrigin(scheme, host, port);
+
+    SetDoNotTrack();
 
     RefPtr<AltSvcMapping> mapping;
     if (mAllowAltSvc && // per channel
@@ -7479,7 +7530,7 @@ nsHttpChannel::OnPreflightFailed(nsresult aError)
     mIsCorsPreflightDone = 1;
     mPreflightChannel = nullptr;
 
-    CloseCacheEntry(true);
+    CloseCacheEntry(false);
     AsyncAbort(aError);
     return NS_OK;
 }
@@ -7610,6 +7661,24 @@ nsHttpChannel::SetLoadGroupUserAgentOverride()
             }
         }
     }
+}
+
+void
+nsHttpChannel::SetDoNotTrack()
+{
+  /**
+   * 'DoNotTrack' header should be added if 'privacy.donottrackheader.enabled'
+   * is true or tracking protection is enabled. See bug 1258033.
+   */
+  nsCOMPtr<nsILoadContext> loadContext;
+  NS_QueryNotificationCallbacks(this, loadContext);
+
+  if ((loadContext && loadContext->UseTrackingProtection()) ||
+      nsContentUtils::DoNotTrackEnabled()) {
+    mRequestHead.SetHeader(nsHttp::DoNotTrack,
+                           NS_LITERAL_CSTRING("1"),
+                           false);
+  }
 }
 
 } // namespace net

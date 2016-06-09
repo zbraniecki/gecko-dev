@@ -106,6 +106,9 @@
               <hbox id="unsupportedSystem" align="center" data-l10n-id="aboutDialog-update-unsupported">
                 <label id="unsupportedLink" class="text-link"></label>
               </hbox>
+              <hbox id="restarting" align="center">
+                <label>&update.restarting;</label>
+              </hbox>
             </deck>
 #endif
           </vbox>

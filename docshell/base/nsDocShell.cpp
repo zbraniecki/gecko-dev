@@ -14,6 +14,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Casting.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/TabChild.h"
 #include "mozilla/dom/ProfileTimelineMarkerBinding.h"
@@ -814,6 +815,7 @@ nsDocShell::nsDocShell()
   , mParentCharsetSource(0)
   , mJSRunToCompletionDepth(0)
 {
+  AssertOriginAttributesMatchPrivateBrowsing();
   mHistoryID = ++gDocshellIDCounter;
   if (gDocShellCount++ == 0) {
     NS_ASSERTION(sURIFixup == nullptr,
@@ -1253,7 +1255,6 @@ nsDocShell::LoadURI(nsIURI* aURI,
 
   nsCOMPtr<nsIURI> referrer;
   nsCOMPtr<nsIURI> originalURI;
-  bool loadReplace = false;
   nsCOMPtr<nsIInputStream> postStream;
   nsCOMPtr<nsIInputStream> headersStream;
   nsCOMPtr<nsISupports> owner;
@@ -1281,7 +1282,6 @@ nsDocShell::LoadURI(nsIURI* aURI,
   if (aLoadInfo) {
     aLoadInfo->GetReferrer(getter_AddRefs(referrer));
     aLoadInfo->GetOriginalURI(getter_AddRefs(originalURI));
-    aLoadInfo->GetLoadReplace(&loadReplace);
     nsDocShellInfoLoadType lt = nsIDocShellLoadInfo::loadNormal;
     aLoadInfo->GetLoadType(&lt);
     // Get the appropriate loadType from nsIDocShellLoadInfo type
@@ -1541,7 +1541,6 @@ nsDocShell::LoadURI(nsIURI* aURI,
 
   return InternalLoad(aURI,
                       originalURI,
-                      loadReplace,
                       referrer,
                       referrerPolicy,
                       owner,
@@ -2182,7 +2181,7 @@ NS_IMETHODIMP
 nsDocShell::GetUsePrivateBrowsing(bool* aUsePrivateBrowsing)
 {
   NS_ENSURE_ARG_POINTER(aUsePrivateBrowsing);
-
+  AssertOriginAttributesMatchPrivateBrowsing();
   *aUsePrivateBrowsing = mInPrivateBrowsing;
   return NS_OK;
 }
@@ -2205,6 +2204,9 @@ nsDocShell::SetPrivateBrowsing(bool aUsePrivateBrowsing)
   bool changed = aUsePrivateBrowsing != mInPrivateBrowsing;
   if (changed) {
     mInPrivateBrowsing = aUsePrivateBrowsing;
+
+    mOriginAttributes.SyncAttributesWithPrivateBrowsing(mInPrivateBrowsing);
+
     if (mAffectPrivateSessionLifetime) {
       if (aUsePrivateBrowsing) {
         IncreasePrivateDocShellCount();
@@ -2274,6 +2276,7 @@ nsDocShell::SetAffectPrivateSessionLifetime(bool aAffectLifetime)
 {
   bool change = aAffectLifetime != mAffectPrivateSessionLifetime;
   if (change && mInPrivateBrowsing) {
+    AssertOriginAttributesMatchPrivateBrowsing();
     if (aAffectLifetime) {
       IncreasePrivateDocShellCount();
     } else {
@@ -2966,6 +2969,7 @@ nsDocShell::GetSessionStorageForPrincipal(nsIPrincipal* aPrincipal,
 
   nsCOMPtr<nsPIDOMWindowOuter> domWin = GetWindow();
 
+  AssertOriginAttributesMatchPrivateBrowsing();
   if (aCreate) {
     return manager->CreateStorage(domWin->GetCurrentInnerWindow(), aPrincipal,
                                   aDocumentURI, mInPrivateBrowsing, aStorage);
@@ -3658,6 +3662,11 @@ nsDocShell::FindItemWithName(const char16_t* aName,
     }
     return NS_OK;
   }
+}
+
+void
+nsDocShell::AssertOriginAttributesMatchPrivateBrowsing() {
+  MOZ_ASSERT((mOriginAttributes.mPrivateBrowsingId != 0) == mInPrivateBrowsing);
 }
 
 nsresult
@@ -5288,7 +5297,7 @@ nsDocShell::LoadErrorPage(nsIURI* aURI, const char16_t* aURL,
   rv = NS_NewURI(getter_AddRefs(errorPageURI), errorPageUrl);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return InternalLoad(errorPageURI, nullptr, false, nullptr,
+  return InternalLoad(errorPageURI, nullptr, nullptr,
                       mozilla::net::RP_Default,
                       nullptr, INTERNAL_LOAD_FLAGS_INHERIT_OWNER, nullptr,
                       nullptr, NullString(), nullptr, nullptr, LOAD_ERROR_PAGE,
@@ -5340,7 +5349,6 @@ nsDocShell::Reload(uint32_t aReloadFlags)
     nsAutoString contentTypeHint;
     nsCOMPtr<nsIURI> baseURI;
     nsCOMPtr<nsIURI> originalURI;
-    bool loadReplace = false;
     if (doc) {
       principal = doc->NodePrincipal();
       doc->GetContentType(contentTypeHint);
@@ -5352,9 +5360,6 @@ nsDocShell::Reload(uint32_t aReloadFlags)
       }
       nsCOMPtr<nsIChannel> chan = doc->GetChannel();
       if (chan) {
-        uint32_t loadFlags;
-        chan->GetLoadFlags(&loadFlags);
-        loadReplace = loadFlags & nsIChannel::LOAD_REPLACE;
         nsCOMPtr<nsIHttpChannel> httpChan(do_QueryInterface(chan));
         if (httpChan) {
           httpChan->GetOriginalURI(getter_AddRefs(originalURI));
@@ -5364,7 +5369,6 @@ nsDocShell::Reload(uint32_t aReloadFlags)
 
     rv = InternalLoad(mCurrentURI,
                       originalURI,
-                      loadReplace,
                       mReferrerURI,
                       mReferrerPolicy,
                       principal,
@@ -5763,6 +5767,7 @@ nsDocShell::Destroy()
 
   if (mInPrivateBrowsing) {
     mInPrivateBrowsing = false;
+    mOriginAttributes.SyncAttributesWithPrivateBrowsing(mInPrivateBrowsing);
     if (mAffectPrivateSessionLifetime) {
       DecreasePrivateDocShellCount();
     }
@@ -6420,6 +6425,7 @@ nsDocShell::SetTitle(const char16_t* aTitle)
     }
   }
 
+  AssertOriginAttributesMatchPrivateBrowsing();
   if (mCurrentURI && mLoadType != LOAD_ERROR_PAGE && mUseGlobalHistory &&
       !mInPrivateBrowsing) {
     nsCOMPtr<IHistory> history = services::GetHistoryService();
@@ -7929,6 +7935,13 @@ nsDocShell::CreateAboutBlankContentViewer(nsIPrincipal* aPrincipal,
 
   // mContentViewer->PermitUnload may release |this| docshell.
   nsCOMPtr<nsIDocShell> kungFuDeathGrip(this);
+
+  if (aPrincipal && !nsContentUtils::IsSystemPrincipal(aPrincipal) &&
+      mItemType != typeChrome) {
+    MOZ_ASSERT(ChromeUtils::IsOriginAttributesEqualIgnoringAddonId(
+      BasePrincipal::Cast(aPrincipal)->OriginAttributesRef(),
+      mOriginAttributes));
+  }
 
   // Make sure timing is created.  But first record whether we had it
   // already, so we don't clobber the timing for an in-progress load.
@@ -9506,7 +9519,7 @@ class InternalLoadEvent : public Runnable
 {
 public:
   InternalLoadEvent(nsDocShell* aDocShell, nsIURI* aURI,
-                    nsIURI* aOriginalURI, bool aLoadReplace,
+                    nsIURI* aOriginalURI,
                     nsIURI* aReferrer, uint32_t aReferrerPolicy,
                     nsISupports* aOwner, uint32_t aFlags,
                     const char* aTypeHint, nsIInputStream* aPostData,
@@ -9518,7 +9531,6 @@ public:
     , mDocShell(aDocShell)
     , mURI(aURI)
     , mOriginalURI(aOriginalURI)
-    , mLoadReplace(aLoadReplace)
     , mReferrer(aReferrer)
     , mReferrerPolicy(aReferrerPolicy)
     , mOwner(aOwner)
@@ -9541,7 +9553,6 @@ public:
   Run()
   {
     return mDocShell->InternalLoad(mURI, mOriginalURI,
-                                   mLoadReplace,
                                    mReferrer,
                                    mReferrerPolicy,
                                    mOwner, mFlags,
@@ -9561,7 +9572,6 @@ private:
   RefPtr<nsDocShell> mDocShell;
   nsCOMPtr<nsIURI> mURI;
   nsCOMPtr<nsIURI> mOriginalURI;
-  bool mLoadReplace;
   nsCOMPtr<nsIURI> mReferrer;
   uint32_t mReferrerPolicy;
   nsCOMPtr<nsISupports> mOwner;
@@ -9628,7 +9638,6 @@ nsDocShell::IsAboutNewtab(nsIURI* aURI)
 NS_IMETHODIMP
 nsDocShell::InternalLoad(nsIURI* aURI,
                          nsIURI* aOriginalURI,
-                         bool aLoadReplace,
                          nsIURI* aReferrer,
                          uint32_t aReferrerPolicy,
                          nsISupports* aOwner,
@@ -9892,7 +9901,6 @@ nsDocShell::InternalLoad(nsIURI* aURI,
     if (NS_SUCCEEDED(rv) && targetDocShell) {
       rv = targetDocShell->InternalLoad(aURI,
                                         aOriginalURI,
-                                        aLoadReplace,
                                         aReferrer,
                                         aReferrerPolicy,
                                         owner,
@@ -9973,7 +9981,7 @@ nsDocShell::InternalLoad(nsIURI* aURI,
 
       // Do this asynchronously
       nsCOMPtr<nsIRunnable> ev =
-        new InternalLoadEvent(this, aURI, aOriginalURI, aLoadReplace,
+        new InternalLoadEvent(this, aURI, aOriginalURI,
                               aReferrer, aReferrerPolicy, aOwner, aFlags,
                               aTypeHint, aPostData, aHeadersData,
                               aLoadType, aSHEntry, aFirstParty, aSrcdoc,
@@ -10490,7 +10498,10 @@ nsDocShell::InternalLoad(nsIURI* aURI,
                         nsINetworkPredictor::PREDICT_LOAD, this, nullptr);
 
   nsCOMPtr<nsIRequest> req;
-  rv = DoURILoad(aURI, aOriginalURI, aLoadReplace, aReferrer,
+  // At this point we will open a new channel to load data. If aOriginalURI
+  // is present, we load aOriginalURI instead of aURI because we want to load
+  // all redirects again.
+  rv = DoURILoad(aOriginalURI ? aOriginalURI : aURI, aReferrer,
                  !(aFlags & INTERNAL_LOAD_FLAGS_DONT_SEND_REFERRER),
                  aReferrerPolicy,
                  owner, aTypeHint, aFileName, aPostData, aHeadersData,
@@ -10567,8 +10578,6 @@ nsDocShell::GetInheritedPrincipal(bool aConsiderCurrentDocument)
 
 nsresult
 nsDocShell::DoURILoad(nsIURI* aURI,
-                      nsIURI* aOriginalURI,
-                      bool aLoadReplace,
                       nsIURI* aReferrerURI,
                       bool aSendReferrer,
                       uint32_t aReferrerPolicy,
@@ -10751,7 +10760,10 @@ nsDocShell::DoURILoad(nsIURI* aURI,
   // parent document.
   NeckoOriginAttributes neckoAttrs;
   neckoAttrs.InheritFromDocShellToNecko(GetOriginAttributes());
-  loadInfo->SetOriginAttributes(neckoAttrs);
+  rv = loadInfo->SetOriginAttributes(neckoAttrs);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
   if (!isSrcdoc) {
     rv = NS_NewChannelInternal(getter_AddRefs(channel),
@@ -10841,17 +10853,7 @@ nsDocShell::DoURILoad(nsIURI* aURI,
     NS_ADDREF(*aRequest = channel);
   }
 
-  if (aOriginalURI) {
-    channel->SetOriginalURI(aOriginalURI);
-    if (aLoadReplace) {
-      uint32_t loadFlags;
-      channel->GetLoadFlags(&loadFlags);
-      NS_ENSURE_SUCCESS(rv, rv);
-      channel->SetLoadFlags(loadFlags | nsIChannel::LOAD_REPLACE);
-    }
-  } else {
-    channel->SetOriginalURI(aURI);
-  }
+  channel->SetOriginalURI(aURI);
 
   if (aTypeHint && *aTypeHint) {
     channel->SetContentType(nsDependentCString(aTypeHint));
@@ -10988,8 +10990,8 @@ nsDocShell::DoURILoad(nsIURI* aURI,
       httpChannel->SetReferrerWithPolicy(aReferrerURI, aReferrerPolicy);
     }
     // set Content-Signature enforcing bit if aOriginalURI == about:newtab
-    if (aOriginalURI && httpChannel) {
-      if (IsAboutNewtab(aOriginalURI)) {
+    if (httpChannel) {
+      if (IsAboutNewtab(aURI)) {
         nsCOMPtr<nsILoadInfo> loadInfo = httpChannel->GetLoadInfo();
         if (loadInfo) {
           loadInfo->SetVerifySignedContent(true);
@@ -11853,7 +11855,6 @@ nsDocShell::AddState(JS::Handle<JS::Value> aData, const nsAString& aTitle,
     newSHEntry = mOSHE;
     newSHEntry->SetURI(newURI);
     newSHEntry->SetOriginalURI(newURI);
-    newSHEntry->SetLoadReplace(false);
   }
 
   // Step 4: Modify new/original session history entry and clear its POST
@@ -12064,7 +12065,6 @@ nsDocShell::AddToSessionHistory(nsIURI* aURI, nsIChannel* aChannel,
   // Get the post data & referrer
   nsCOMPtr<nsIInputStream> inputStream;
   nsCOMPtr<nsIURI> originalURI;
-  bool loadReplace = false;
   nsCOMPtr<nsIURI> referrerURI;
   uint32_t referrerPolicy = mozilla::net::RP_Default;
   nsCOMPtr<nsISupports> cacheKey;
@@ -12095,7 +12095,6 @@ nsDocShell::AddToSessionHistory(nsIURI* aURI, nsIChannel* aChannel,
       httpChannel->GetOriginalURI(getter_AddRefs(originalURI));
       uint32_t loadFlags;
       aChannel->GetLoadFlags(&loadFlags);
-      loadReplace = loadFlags & nsIChannel::LOAD_REPLACE;
       httpChannel->GetReferrer(getter_AddRefs(referrerURI));
       httpChannel->GetReferrerPolicy(&referrerPolicy);
 
@@ -12139,7 +12138,6 @@ nsDocShell::AddToSessionHistory(nsIURI* aURI, nsIChannel* aChannel,
                 mDynamicallyCreated);
 
   entry->SetOriginalURI(originalURI);
-  entry->SetLoadReplace(loadReplace);
   entry->SetReferrerURI(referrerURI);
   entry->SetReferrerPolicy(referrerPolicy);
   nsCOMPtr<nsIInputStreamChannel> inStrmChan = do_QueryInterface(aChannel);
@@ -12239,7 +12237,6 @@ nsDocShell::LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType)
 
   nsCOMPtr<nsIURI> uri;
   nsCOMPtr<nsIURI> originalURI;
-  bool loadReplace = false;
   nsCOMPtr<nsIInputStream> postData;
   nsCOMPtr<nsIURI> referrerURI;
   uint32_t referrerPolicy;
@@ -12250,8 +12247,6 @@ nsDocShell::LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType)
 
   NS_ENSURE_SUCCESS(aEntry->GetURI(getter_AddRefs(uri)), NS_ERROR_FAILURE);
   NS_ENSURE_SUCCESS(aEntry->GetOriginalURI(getter_AddRefs(originalURI)),
-                    NS_ERROR_FAILURE);
-  NS_ENSURE_SUCCESS(aEntry->GetLoadReplace(&loadReplace),
                     NS_ERROR_FAILURE);
   NS_ENSURE_SUCCESS(aEntry->GetReferrerURI(getter_AddRefs(referrerURI)),
                     NS_ERROR_FAILURE);
@@ -12333,7 +12328,6 @@ nsDocShell::LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType)
   // first created. bug 947716 has been created to address this issue.
   rv = InternalLoad(uri,
                     originalURI,
-                    loadReplace,
                     referrerURI,
                     referrerPolicy,
                     owner,
@@ -13376,6 +13370,21 @@ nsDocShell::IsAppOfType(uint32_t aAppType, bool* aIsOfType)
 }
 
 NS_IMETHODIMP
+nsDocShell::IsTrackingProtectionOn(bool* aIsTrackingProtectionOn)
+{
+  if (Preferences::GetBool("privacy.trackingprotection.enabled", false)) {
+    *aIsTrackingProtectionOn = true;
+  } else if (mInPrivateBrowsing &&
+             Preferences::GetBool("privacy.trackingprotection.pbmode.enabled", false)) {
+    *aIsTrackingProtectionOn = true;
+  } else {
+    *aIsTrackingProtectionOn = false;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsDocShell::GetIsContent(bool* aIsContent)
 {
   *aIsContent = (mItemType == typeContent);
@@ -13820,7 +13829,6 @@ nsDocShell::OnLinkClickSync(nsIContent* aContent,
 
   nsresult rv = InternalLoad(clonedURI,                 // New URI
                              nullptr,                   // Original URI
-                             false,                     // LoadReplace
                              referer,                   // Referer URI
                              refererPolicy,             // Referer policy
                              aContent->NodePrincipal(), // Owner is our node's
@@ -14129,10 +14137,13 @@ nsDocShell::GetOriginAttributes(JSContext* aCx,
   return NS_OK;
 }
 
-void
+nsresult
 nsDocShell::SetOriginAttributes(const DocShellOriginAttributes& aAttrs)
 {
-  MOZ_ASSERT(mChildList.Length() == 0);
+  MOZ_ASSERT(mChildList.IsEmpty());
+  if (!mChildList.IsEmpty()) {
+    return NS_ERROR_FAILURE;
+  }
 
   // TODO: Bug 1273058 - mContentViewer should be null when setting origin
   // attributes.
@@ -14140,16 +14151,43 @@ nsDocShell::SetOriginAttributes(const DocShellOriginAttributes& aAttrs)
     nsIDocument* doc = mContentViewer->GetDocument();
     if (doc) {
       nsIURI* uri = doc->GetDocumentURI();
-      MOZ_ASSERT(uri);
-      if (uri) {
-        nsAutoCString uriSpec;
-        uri->GetSpec(uriSpec);
-        MOZ_ASSERT(uriSpec.EqualsLiteral("about:blank"));
+      if (!uri) {
+        return NS_ERROR_FAILURE;
+      }
+      nsAutoCString uriSpec;
+      uri->GetSpec(uriSpec);
+      MOZ_ASSERT(uriSpec.EqualsLiteral("about:blank"));
+      if (!uriSpec.EqualsLiteral("about:blank")) {
+        return NS_ERROR_FAILURE;
       }
     }
   }
 
   mOriginAttributes = aAttrs;
+  SetPrivateBrowsing(mOriginAttributes.mPrivateBrowsingId > 0);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDocShell::SetOriginAttributesBeforeLoading(JS::Handle<JS::Value> aOriginAttributes)
+{
+  if (!aOriginAttributes.isObject()) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  AutoJSAPI jsapi;
+  jsapi.Init(&aOriginAttributes.toObject());
+  JSContext* cx = jsapi.cx();
+  if (NS_WARN_IF(!cx)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  DocShellOriginAttributes attrs;
+  if (!aOriginAttributes.isObject() || !attrs.Init(cx, aOriginAttributes)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  return SetOriginAttributes(attrs);
 }
 
 NS_IMETHODIMP
@@ -14161,8 +14199,7 @@ nsDocShell::SetOriginAttributes(JS::Handle<JS::Value> aOriginAttributes,
     return NS_ERROR_INVALID_ARG;
   }
 
-  SetOriginAttributes(attrs);
-  return NS_OK;
+  return SetOriginAttributes(attrs);
 }
 
 NS_IMETHODIMP

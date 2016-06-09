@@ -184,12 +184,12 @@ if test -n "$gonkdir" ; then
         ;;
     esac
     CPPFLAGS="-DANDROID $TARGET_C_INCLUDES -I$gonkdir/system -I$gonkdir/system/core/include -isystem $gonkdir/bionic -I$gonkdir/hardware/libhardware/include -I$gonkdir/external/valgrind/fxos-include $GONK_INCLUDES $CPPFLAGS"
-    CFLAGS="-mandroid -fno-short-enums -fno-exceptions $CFLAGS"
-    CXXFLAGS="-mandroid -fno-short-enums -fno-exceptions $CXXFLAGS $STLPORT_CPPFLAGS"
+    CFLAGS="-fno-short-enums -fno-exceptions $CFLAGS"
+    CXXFLAGS="-fno-short-enums -fno-exceptions $CXXFLAGS $STLPORT_CPPFLAGS"
     dnl Add -llog by default, since we use it all over the place.
     LIBS="$LIBS -llog"
 
-    LDFLAGS="-mandroid -L$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib -Wl,-rpath-link=$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib --sysroot=$gonkdir/out/target/product/$GONK_PRODUCT/obj/ $LDFLAGS"
+    LDFLAGS="-L$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib -Wl,-rpath-link=$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib --sysroot=$gonkdir/out/target/product/$GONK_PRODUCT/obj/ $LDFLAGS"
 
     AC_DEFINE(ANDROID)
     AC_DEFINE_UNQUOTED(ANDROID_VERSION, $ANDROID_VERSION)
@@ -1090,6 +1090,24 @@ if test "$MOZ_PROFILING" -a -z "$STRIP_FLAGS"; then
 fi
 
 dnl ========================================================
+dnl = Enable Gecko integrated IPC fuzzer
+dnl ========================================================
+MOZ_ARG_ENABLE_BOOL(ipc-fuzzer,
+[  --enable-ipc-fuzzer       Enable IPC fuzzer (default=no)],
+    MOZ_FAULTY=1,
+    MOZ_FAULTY= )
+AC_SUBST(MOZ_FAULTY)
+
+if test -n "$MOZ_FAULTY" && test "$OS_ARCH" = "WINNT"; then
+    AC_MSG_ERROR([--enable-ipc-fuzzer is not supported on this platform.])
+fi
+
+if test -n "$MOZ_FAULTY"; then
+    MOZ_FAULTY=1
+    AC_DEFINE(MOZ_FAULTY)
+fi
+
+dnl ========================================================
 dnl = Enable DMD
 dnl ========================================================
 
@@ -1286,17 +1304,12 @@ case "$target" in
         CXXFLAGS="$CXXFLAGS -mieee"
     ;;
     esac
-
-    if test -z "$MC"; then
-        MC=mc.exe
-    fi
     ;;
 *-mingw*)
     DSO_CFLAGS=
     DSO_PIC_CFLAGS=
     DLL_SUFFIX=.dll
     RC=rc.exe
-    MC=mc.exe
     # certain versions of cygwin's makedepend barf on the
     # #include <string> vs -I./dist/include/string issue so don't use it
     if test -n "$GNU_CC" -o -n "$CLANG_CC"; then
@@ -1315,7 +1328,7 @@ case "$target" in
         # Use temp file for windres (bug 213281)
         RCFLAGS='-O coff --use-temp-file'
         # mingw doesn't require kernel32, user32, and advapi32 explicitly
-        LIBS="$LIBS -luuid -lgdi32 -lwinmm -lwsock32 -luserenv -lsecur32 -lnetapi32"
+        LIBS="$LIBS -luuid -lgdi32 -lwinmm -lwsock32 -luserenv -lsecur32"
         MOZ_FIX_LINK_PATHS=
         DLL_PREFIX=
         IMPORT_LIB_SUFFIX=a
@@ -1471,7 +1484,7 @@ case "$target" in
         # make 'foo == bar;' error out
         CFLAGS="$CFLAGS -we4553"
         CXXFLAGS="$CXXFLAGS -we4553"
-        LIBS="$LIBS kernel32.lib user32.lib gdi32.lib winmm.lib wsock32.lib advapi32.lib secur32.lib netapi32.lib"
+        LIBS="$LIBS kernel32.lib user32.lib gdi32.lib winmm.lib wsock32.lib advapi32.lib secur32.lib"
         MOZ_DEBUG_LDFLAGS='-DEBUG -DEBUGTYPE:CV'
         WARNINGS_AS_ERRORS='-WX'
         MOZ_OPTIMIZE_FLAGS='-O1 -Oi'
@@ -5284,31 +5297,6 @@ elif test -z "$_ENABLE_LOGREFCNT"; then
 fi
 
 dnl ========================================================
-dnl moz_aproximate_location
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(approximate_location,
-[ --enable-approximate-location    Enable approximate location ],
-    MOZ_APPROX_LOCATION=1,
-    MOZ_APPROX_LOCATION= )
-if test -n "$MOZ_APPROX_LOCATION"; then
-    AC_DEFINE(MOZ_APPROX_LOCATION)
-fi
-
-dnl ========================================================
-dnl moz_gps_debug
-dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(gps_debug,
-[ --enable-gps-debug    Enable gps specific debug messages ],
-    MOZ_GPS_DEBUG=1,
-    MOZ_GPS_DEBUG= )
-if test -n "$MOZ_GPS_DEBUG"; then
-    AC_DEFINE(MOZ_GPS_DEBUG)
-fi
-if test -n "$MOZ_DEBUG"; then
-    AC_DEFINE(MOZ_GPS_DEBUG)
-fi
-
-dnl ========================================================
 dnl moz_dump_painting
 dnl ========================================================
 MOZ_ARG_ENABLE_BOOL(dump-painting,
@@ -6489,7 +6477,6 @@ AC_SUBST(AS_DASH_C_FLAG)
 AC_SUBST(LD)
 AC_SUBST(RC)
 AC_SUBST(RCFLAGS)
-AC_SUBST(MC)
 AC_SUBST(WINDRES)
 AC_SUBST(IMPLIB)
 AC_SUBST(FILTER)

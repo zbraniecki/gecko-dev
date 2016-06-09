@@ -32,6 +32,7 @@
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/DOMStorageIPC.h"
 #include "mozilla/dom/ExternalHelperAppChild.h"
+#include "mozilla/dom/FlyWebPublishedServerIPC.h"
 #include "mozilla/dom/PCrashReporterChild.h"
 #include "mozilla/dom/ProcessGlobal.h"
 #include "mozilla/dom/Promise.h"
@@ -176,7 +177,7 @@
 #endif
 
 #ifndef MOZ_SIMPLEPUSH
-#include "nsIPushNotifier.h"
+#include "mozilla/dom/PushNotifier.h"
 #endif
 
 #include "mozilla/dom/File.h"
@@ -1036,18 +1037,19 @@ ContentChild::InitXPCOM()
   if (NS_FAILED(svc->RegisterListener(mConsoleListener)))
     NS_WARNING("Couldn't register console listener for child process");
 
-  bool isOffline, isLangRTL;
+  bool isOffline, isLangRTL, haveBidiKeyboards;
   bool isConnected;
   ClipboardCapabilities clipboardCaps;
   DomainPolicyClone domainPolicy;
   StructuredCloneData initialData;
 
   SendGetXPCOMProcessAttributes(&isOffline, &isConnected,
-                                &isLangRTL, &mAvailableDictionaries,
+                                &isLangRTL, &haveBidiKeyboards,
+                                &mAvailableDictionaries,
                                 &clipboardCaps, &domainPolicy, &initialData);
   RecvSetOffline(isOffline);
   RecvSetConnectivity(isConnected);
-  RecvBidiKeyboardNotify(isLangRTL);
+  RecvBidiKeyboardNotify(isLangRTL, haveBidiKeyboards);
 
   // Create the CPOW manager as soon as possible.
   SendPJavaScriptConstructor();
@@ -1510,13 +1512,14 @@ ContentChild::RecvSpeakerManagerNotify()
 }
 
 bool
-ContentChild::RecvBidiKeyboardNotify(const bool& aIsLangRTL)
+ContentChild::RecvBidiKeyboardNotify(const bool& aIsLangRTL,
+                                     const bool& aHaveBidiKeyboards)
 {
   // bidi is always of type PuppetBidiKeyboard* (because in the child, the only
   // possible implementation of nsIBidiKeyboard is PuppetBidiKeyboard).
   PuppetBidiKeyboard* bidi = static_cast<PuppetBidiKeyboard*>(nsContentUtils::GetBidiKeyboard());
   if (bidi) {
-    bidi->SetIsLangRTL(aIsLangRTL);
+    bidi->SetBidiKeyboardInfo(aIsLangRTL, aHaveBidiKeyboards);
   }
   return true;
 }
@@ -1686,6 +1689,22 @@ bool
 ContentChild::DeallocPPresentationChild(PPresentationChild* aActor)
 {
   delete aActor;
+  return true;
+}
+
+PFlyWebPublishedServerChild*
+ContentChild::AllocPFlyWebPublishedServerChild(const nsString& name,
+                                               const FlyWebPublishOptions& params)
+{
+  MOZ_CRASH("We should never be manually allocating PFlyWebPublishedServerChild actors");
+  return nullptr;
+}
+
+bool
+ContentChild::DeallocPFlyWebPublishedServerChild(PFlyWebPublishedServerChild* aActor)
+{
+  RefPtr<FlyWebPublishedServerChild> actor =
+    dont_AddRef(static_cast<FlyWebPublishedServerChild*>(aActor));
   return true;
 }
 
@@ -2250,6 +2269,11 @@ ContentChild::RecvSetConnectivity(const bool& connectivity)
 void
 ContentChild::ActorDestroy(ActorDestroyReason why)
 {
+  if (mForceKillTimer) {
+    mForceKillTimer->Cancel();
+    mForceKillTimer = nullptr;
+  }
+
   if (AbnormalShutdown == why) {
     NS_WARNING("shutting down early because of crash!");
     ProcessChild::QuickExit();
@@ -3026,9 +3050,51 @@ ContentChild::RecvDomainSetChanged(const uint32_t& aSetType,
   return true;
 }
 
+void
+ContentChild::StartForceKillTimer()
+{
+  if (mForceKillTimer) {
+    return;
+  }
+
+  int32_t timeoutSecs = Preferences::GetInt("dom.ipc.tabs.shutdownTimeoutSecs", 5);
+  if (timeoutSecs > 0) {
+    mForceKillTimer = do_CreateInstance("@mozilla.org/timer;1");
+    MOZ_ASSERT(mForceKillTimer);
+    mForceKillTimer->InitWithFuncCallback(ContentChild::ForceKillTimerCallback,
+      this,
+      timeoutSecs * 1000,
+      nsITimer::TYPE_ONE_SHOT);
+  }
+}
+
+/* static */ void
+ContentChild::ForceKillTimerCallback(nsITimer* aTimer, void* aClosure)
+{
+  ProcessChild::QuickExit();
+}
+
 bool
 ContentChild::RecvShutdown()
 {
+  // If we receive the shutdown message from within a nested event loop, we want
+  // to wait for that event loop to finish. Otherwise we could prematurely
+  // terminate an "unload" or "pagehide" event handler (which might be doing a
+  // sync XHR, for example).
+  nsCOMPtr<nsIThread> thread;
+  nsresult rv = NS_GetMainThread(getter_AddRefs(thread));
+  if (NS_SUCCEEDED(rv) && thread) {
+    RefPtr<nsThread> mainThread(thread.forget().downcast<nsThread>());
+    if (mainThread->RecursionDepth() > 1) {
+      // We're in a nested event loop. Let's delay for an arbitrary period of
+      // time (100ms) in the hopes that the event loop will have finished by
+      // then.
+      MessageLoop::current()->PostDelayedTask(
+        NewRunnableMethod(this, &ContentChild::RecvShutdown), 100);
+      return true;
+    }
+  }
+
   if (mPolicy) {
     mPolicy->Deactivate();
     mPolicy = nullptr;
@@ -3054,6 +3120,11 @@ ContentChild::RecvShutdown()
     Unused << RecvGatherProfile();
   }
 #endif
+
+  // Start a timer that will insure we quickly exit after a reasonable
+  // period of time. Prevents shutdown hangs after our connection to the
+  // parent closes.
+  StartForceKillTimer();
 
   // Ignore errors here. If this fails, the parent will kill us after a
   // timeout.
@@ -3285,19 +3356,8 @@ ContentChild::RecvPush(const nsCString& aScope,
                        const nsString& aMessageId)
 {
 #ifndef MOZ_SIMPLEPUSH
-  nsCOMPtr<nsIPushNotifier> pushNotifier =
-      do_GetService("@mozilla.org/push/Notifier;1");
-  if (NS_WARN_IF(!pushNotifier)) {
-      return true;
-  }
-
-  nsresult rv = pushNotifier->NotifyPushObservers(aScope, aPrincipal,
-                                                  Nothing());
-  Unused << NS_WARN_IF(NS_FAILED(rv));
-
-  rv = pushNotifier->NotifyPushWorkers(aScope, aPrincipal,
-                                       aMessageId, Nothing());
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  PushMessageDispatcher dispatcher(aScope, aPrincipal, aMessageId, Nothing());
+  Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObserversAndWorkers()));
 #endif
   return true;
 }
@@ -3309,19 +3369,8 @@ ContentChild::RecvPushWithData(const nsCString& aScope,
                                InfallibleTArray<uint8_t>&& aData)
 {
 #ifndef MOZ_SIMPLEPUSH
-  nsCOMPtr<nsIPushNotifier> pushNotifier =
-      do_GetService("@mozilla.org/push/Notifier;1");
-  if (NS_WARN_IF(!pushNotifier)) {
-      return true;
-  }
-
-  nsresult rv = pushNotifier->NotifyPushObservers(aScope, aPrincipal,
-                                                  Some(aData));
-  Unused << NS_WARN_IF(NS_FAILED(rv));
-
-  rv = pushNotifier->NotifyPushWorkers(aScope, aPrincipal,
-                                       aMessageId, Some(aData));
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  PushMessageDispatcher dispatcher(aScope, aPrincipal, aMessageId, Some(aData));
+  Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObserversAndWorkers()));
 #endif
   return true;
 }
@@ -3331,33 +3380,30 @@ ContentChild::RecvPushSubscriptionChange(const nsCString& aScope,
                                          const IPC::Principal& aPrincipal)
 {
 #ifndef MOZ_SIMPLEPUSH
-  nsCOMPtr<nsIPushNotifier> pushNotifier =
-      do_GetService("@mozilla.org/push/Notifier;1");
-  if (NS_WARN_IF(!pushNotifier)) {
-      return true;
-  }
-
-  nsresult rv = pushNotifier->NotifySubscriptionChangeObservers(aScope,
-                                                                aPrincipal);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
-
-  rv = pushNotifier->NotifySubscriptionChangeWorkers(aScope, aPrincipal);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  PushSubscriptionChangeDispatcher dispatcher(aScope, aPrincipal);
+  Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObserversAndWorkers()));
 #endif
   return true;
 }
 
 bool
-ContentChild::RecvPushError(const nsCString& aScope, const nsString& aMessage,
-                            const uint32_t& aFlags)
+ContentChild::RecvPushError(const nsCString& aScope, const IPC::Principal& aPrincipal,
+                            const nsString& aMessage, const uint32_t& aFlags)
 {
 #ifndef MOZ_SIMPLEPUSH
-  nsCOMPtr<nsIPushNotifier> pushNotifier =
-      do_GetService("@mozilla.org/push/Notifier;1");
-  if (NS_WARN_IF(!pushNotifier)) {
-      return true;
-  }
-  pushNotifier->NotifyErrorWorkers(aScope, aMessage, aFlags);
+  PushErrorDispatcher dispatcher(aScope, aPrincipal, aMessage, aFlags);
+  Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObserversAndWorkers()));
+#endif
+  return true;
+}
+
+bool
+ContentChild::RecvNotifyPushSubscriptionModifiedObservers(const nsCString& aScope,
+                                                          const IPC::Principal& aPrincipal)
+{
+#ifndef MOZ_SIMPLEPUSH
+  PushSubscriptionModifiedDispatcher dispatcher(aScope, aPrincipal);
+  Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObservers()));
 #endif
   return true;
 }
