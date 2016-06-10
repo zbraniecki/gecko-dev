@@ -412,7 +412,7 @@ ValueToStableChars(JSContext* cx, const char *fnname, HandleValue value,
 {
     if (!value.isString()) {
         JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_NOT_EXPECTED_TYPE,
-                             fnname, "string", "string");
+                             fnname, "string", InformalValueTypeName(value));
         return false;
     }
     RootedLinearString linear(cx, value.toString()->ensureLinear(cx));
@@ -422,19 +422,6 @@ ValueToStableChars(JSContext* cx, const char *fnname, HandleValue value,
         return false;
     return true;
 }
-
-class MOZ_RAII EvalOptions {
-    const char* filename_;
-    unsigned lineno_;
-
-  public:
-    EvalOptions() : filename_(nullptr), lineno_(1) {}
-    ~EvalOptions();
-    const char* filename() const { return filename_; }
-    unsigned lineno() const { return lineno_; }
-    bool setFilename(JSContext* cx, const char* filename);
-    void setLineno(unsigned lineno) { lineno_ = lineno; }
-};
 
 EvalOptions::~EvalOptions()
 {
@@ -487,6 +474,42 @@ ParseEvalOptions(JSContext* cx, HandleValue value, EvalOptions& options)
         if (!ToUint32(cx, v, &lineno))
             return false;
         options.setLineno(lineno);
+    }
+
+    return true;
+}
+
+static bool
+RequireGlobalObject(JSContext* cx, HandleValue dbgobj, HandleObject referent)
+{
+    RootedObject obj(cx, referent);
+
+    if (!obj->is<GlobalObject>()) {
+        const char* isWrapper = "";
+        const char* isWindowProxy = "";
+
+        /* Help the poor programmer by pointing out wrappers around globals... */
+        if (obj->is<WrapperObject>()) {
+            obj = js::UncheckedUnwrap(obj);
+            isWrapper = "a wrapper around ";
+        }
+
+        /* ... and WindowProxies around Windows. */
+        if (IsWindowProxy(obj)) {
+            obj = ToWindowIfWindowProxy(obj);
+            isWindowProxy = "a WindowProxy referring to ";
+        }
+
+        if (obj->is<GlobalObject>()) {
+            ReportValueErrorFlags(cx, JSREPORT_ERROR, JSMSG_DEBUG_WRAPPER_IN_WAY,
+                                  JSDVG_SEARCH_STACK, dbgobj, nullptr,
+                                  isWrapper, isWindowProxy);
+        } else {
+            ReportValueErrorFlags(cx, JSREPORT_ERROR, JSMSG_DEBUG_BAD_REFERENT,
+                                  JSDVG_SEARCH_STACK, dbgobj, nullptr,
+                                  "a global object", nullptr);
+        }
+        return false;
     }
 
     return true;
@@ -701,6 +724,9 @@ Debugger::getScriptFrameWithIter(JSContext* cx, AbstractFramePtr frame,
 {
     MOZ_ASSERT_IF(maybeIter, maybeIter->abstractFramePtr() == frame);
     MOZ_ASSERT(!frame.script()->selfHosted());
+
+    if (!frame.script()->ensureHasAnalyzedArgsUsage(cx))
+        return false;
 
     FrameMap::AddPtr p = frames.lookupForAdd(frame);
     if (!p) {
@@ -1054,41 +1080,10 @@ Debugger::wrapDebuggeeValue(JSContext* cx, MutableHandleValue vp)
     if (vp.isObject()) {
         RootedObject obj(cx, &vp.toObject());
 
-        if (obj->is<JSFunction>()) {
-            MOZ_ASSERT(!IsInternalFunctionObject(*obj));
-            RootedFunction fun(cx, &obj->as<JSFunction>());
-            if (!EnsureFunctionHasScript(cx, fun))
-                return false;
-        }
+        if (!wrapDebuggeeObject(cx, &obj))
+            return false;
 
-        DependentAddPtr<ObjectWeakMap> p(cx, objects, obj);
-        if (p) {
-            vp.setObject(*p->value());
-        } else {
-            /* Create a new Debugger.Object for obj. */
-            RootedNativeObject debugger(cx, object);
-            RootedObject proto(cx, &object->getReservedSlot(JSSLOT_DEBUG_OBJECT_PROTO).toObject());
-            NativeObject* dobj = DebuggerObject::create(cx, proto, obj, debugger);
-            if (!dobj)
-                return false;
-
-            if (!p.add(cx, objects, obj, dobj)) {
-                NukeDebuggerWrapper(dobj);
-                return false;
-            }
-
-            if (obj->compartment() != object->compartment()) {
-                CrossCompartmentKey key(object, obj, CrossCompartmentKey::DebuggerObject);
-                if (!object->compartment()->putWrapper(cx, key, ObjectValue(*dobj))) {
-                    NukeDebuggerWrapper(dobj);
-                    objects.remove(obj);
-                    ReportOutOfMemory(cx);
-                    return false;
-                }
-            }
-
-            vp.setObject(*dobj);
-        }
+        vp.setObject(*obj);
     } else if (vp.isMagic()) {
         RootedPlainObject optObj(cx, NewBuiltinClassInstance<PlainObject>(cx));
         if (!optObj)
@@ -1115,6 +1110,50 @@ Debugger::wrapDebuggeeValue(JSContext* cx, MutableHandleValue vp)
     } else if (!cx->compartment()->wrap(cx, vp)) {
         vp.setUndefined();
         return false;
+    }
+
+    return true;
+}
+
+bool
+Debugger::wrapDebuggeeObject(JSContext* cx, MutableHandleObject obj)
+{
+    MOZ_ASSERT(obj);
+
+    if (obj->is<JSFunction>()) {
+        MOZ_ASSERT(!IsInternalFunctionObject(*obj));
+        RootedFunction fun(cx, &obj->as<JSFunction>());
+        if (!EnsureFunctionHasScript(cx, fun))
+            return false;
+    }
+
+    DependentAddPtr<ObjectWeakMap> p(cx, objects, obj);
+    if (p) {
+        obj.set(p->value());
+    } else {
+        /* Create a new Debugger.Object for obj. */
+        RootedNativeObject debugger(cx, object);
+        RootedObject proto(cx, &object->getReservedSlot(JSSLOT_DEBUG_OBJECT_PROTO).toObject());
+        NativeObject* dobj = DebuggerObject::create(cx, proto, obj, debugger);
+        if (!dobj)
+            return false;
+
+        if (!p.add(cx, objects, obj, dobj)) {
+            NukeDebuggerWrapper(dobj);
+            return false;
+        }
+
+        if (obj->compartment() != object->compartment()) {
+            CrossCompartmentKey key(object, obj, CrossCompartmentKey::DebuggerObject);
+            if (!object->compartment()->putWrapper(cx, key, ObjectValue(*dobj))) {
+                NukeDebuggerWrapper(dobj);
+                objects.remove(obj);
+                ReportOutOfMemory(cx);
+                return false;
+            }
+        }
+
+        obj.set(dobj);
     }
 
     return true;
@@ -4891,12 +4930,12 @@ Debugger::isCompilableUnit(JSContext* cx, unsigned argc, Value* vp)
                                                         options, chars.twoByteChars(),
                                                         length, /* foldConstants = */ true,
                                                         nullptr, nullptr);
-    JSErrorReporter older = JS_SetErrorReporter(cx->runtime(), nullptr);
+    JS::WarningReporter older = JS::SetWarningReporter(cx->runtime(), nullptr);
     if (!parser.checkOptions() || !parser.parse()) {
         // We ran into an error. If it was because we ran out of memory we report
         // it in the usual way.
         if (cx->isThrowingOutOfMemory()) {
-            JS_SetErrorReporter(cx->runtime(), older);
+            JS::SetWarningReporter(cx->runtime(), older);
             return false;
         }
 
@@ -4907,7 +4946,7 @@ Debugger::isCompilableUnit(JSContext* cx, unsigned argc, Value* vp)
 
         cx->clearPendingException();
     }
-    JS_SetErrorReporter(cx->runtime(), older);
+    JS::SetWarningReporter(cx->runtime(), older);
     args.rval().setBoolean(result);
     return true;
 }
@@ -7830,143 +7869,145 @@ DebuggerObject_construct(JSContext* cx, unsigned argc, Value* vp)
     return false;
 }
 
-static bool
-DebuggerObject_getProto(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::callableGetter(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get proto", args, dbg, refobj);
-    RootedObject proto(cx);
-    {
-        AutoCompartment ac(cx, refobj);
-        if (!GetPrototype(cx, refobj, &proto))
-            return false;
+    THIS_DEBUGOBJECT(cx, argc, vp, "get callable", args, object)
+
+    args.rval().setBoolean(DebuggerObject::isCallable(cx, object));
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::isBoundFunctionGetter(JSContext* cx, unsigned argc, Value* vp)
+{
+    THIS_DEBUGOBJECT(cx, argc, vp, "get isBoundFunction", args, object)
+
+    if (!DebuggerObject::isDebuggeeFunction(cx, object)) {
+        args.rval().setUndefined();
+        return true;
     }
-    RootedValue protov(cx, ObjectOrNullValue(proto));
-    if (!dbg->wrapDebuggeeValue(cx, &protov))
+
+    args.rval().setBoolean(DebuggerObject::isBoundFunction(cx, object));
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::isArrowFunctionGetter(JSContext* cx, unsigned argc, Value* vp)
+{
+    THIS_DEBUGOBJECT(cx, argc, vp, "get isArrowFunction", args, object)
+
+    if (!DebuggerObject::isDebuggeeFunction(cx, object)) {
+        args.rval().setUndefined();
+        return true;
+    }
+
+    args.rval().setBoolean(DebuggerObject::isArrowFunction(cx, object));
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::protoGetter(JSContext* cx, unsigned argc, Value* vp)
+{
+    THIS_DEBUGOBJECT(cx, argc, vp, "get proto", args, object)
+
+    RootedObject result(cx);
+    if (!DebuggerObject::getPrototypeOf(cx, object, &result))
         return false;
-    args.rval().set(protov);
+
+    args.rval().setObjectOrNull(result);
     return true;
 }
 
-static bool
-DebuggerObject_getClass(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::classGetter(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "get class", args, refobj);
-    const char* className;
-    {
-        AutoCompartment ac(cx, refobj);
-        className = GetObjectClassName(cx, refobj);
-    }
-    JSAtom* str = Atomize(cx, className, strlen(className));
-    if (!str)
+    THIS_DEBUGOBJECT(cx, argc, vp, "get class", args, object)
+
+    RootedString result(cx);
+    if (!DebuggerObject::className(cx, object, &result))
         return false;
-    args.rval().setString(str);
+
+    args.rval().setString(result);
     return true;
 }
 
-static bool
-DebuggerObject_getCallable(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::nameGetter(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "get callable", args, refobj);
-    args.rval().setBoolean(refobj->isCallable());
-    return true;
-}
+    THIS_DEBUGOBJECT(cx, argc, vp, "get name", args, object)
 
-static bool
-DebuggerObject_getName(JSContext* cx, unsigned argc, Value* vp)
-{
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get name", args, dbg, obj);
-    if (!obj->is<JSFunction>()) {
+    if (!DebuggerObject::isFunction(cx, object)) {
         args.rval().setUndefined();
         return true;
     }
 
-    JSString* name = obj->as<JSFunction>().name();
-    if (!name) {
-        args.rval().setUndefined();
-        return true;
-    }
-
-    RootedValue namev(cx, StringValue(name));
-    if (!dbg->wrapDebuggeeValue(cx, &namev))
+    RootedString result(cx);
+    if (!DebuggerObject::name(cx, object, &result))
         return false;
-    args.rval().set(namev);
+
+    if (result)
+        args.rval().setString(result);
+    else
+        args.rval().setUndefined();
     return true;
 }
 
-static bool
-DebuggerObject_getDisplayName(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::displayNameGetter(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get display name", args, dbg, obj);
-    if (!obj->is<JSFunction>()) {
+    THIS_DEBUGOBJECT(cx, argc, vp, "get displayName", args, object)
+
+    if (!DebuggerObject::isFunction(cx, object)) {
         args.rval().setUndefined();
         return true;
     }
 
-    JSString* name = obj->as<JSFunction>().displayAtom();
-    if (!name) {
-        args.rval().setUndefined();
-        return true;
-    }
-
-    RootedValue namev(cx, StringValue(name));
-    if (!dbg->wrapDebuggeeValue(cx, &namev))
+    RootedString result(cx);
+    if (!DebuggerObject::displayName(cx, object, &result))
         return false;
-    args.rval().set(namev);
+
+    if (result)
+        args.rval().setString(result);
+    else
+        args.rval().setUndefined();
     return true;
 }
 
-static bool
-DebuggerObject_getParameterNames(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::parameterNamesGetter(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get parameterNames", args, dbg, obj);
-    if (!obj->is<JSFunction>()) {
+    THIS_DEBUGOBJECT(cx, argc, vp, "get parameterNames", args, object)
+
+    if (!DebuggerObject::isDebuggeeFunction(cx, object)) {
         args.rval().setUndefined();
         return true;
     }
 
-    RootedFunction fun(cx, &obj->as<JSFunction>());
-
-    /* Only hand out parameter info for debuggee functions. */
-    if (!dbg->observesGlobal(&fun->global())) {
-        args.rval().setUndefined();
-        return true;
-    }
-
-    RootedArrayObject result(cx, NewDenseFullyAllocatedArray(cx, fun->nargs()));
-    if (!result)
+    Rooted<StringVector> names(cx, StringVector(cx));
+    if (!DebuggerObject::parameterNames(cx, object, &names))
         return false;
-    result->ensureDenseInitializedLength(cx, 0, fun->nargs());
 
-    if (fun->isInterpreted()) {
-        RootedScript script(cx, GetOrCreateFunctionScript(cx, fun));
-        if (!script)
-            return false;
+    RootedArrayObject obj(cx, NewDenseFullyAllocatedArray(cx, names.length()));
+    if (!obj)
+        return false;
 
-        MOZ_ASSERT(fun->nargs() == script->bindings.numArgs());
-
-        if (fun->nargs() > 0) {
-            BindingIter bi(script);
-            for (size_t i = 0; i < fun->nargs(); i++, bi++) {
-                MOZ_ASSERT(bi.argIndex() == i);
-                Value v;
-                if (bi->name()->length() == 0)
-                    v = UndefinedValue();
-                else
-                    v = StringValue(bi->name());
-                result->setDenseElement(i, v);
-            }
-        }
-    } else {
-        for (size_t i = 0; i < fun->nargs(); i++)
-            result->setDenseElement(i, UndefinedValue());
+    obj->ensureDenseInitializedLength(cx, 0, names.length());
+    for (size_t i = 0; i < names.length(); ++i) {
+        Value v;
+        if (names[i])
+            v = StringValue(names[i]);
+        else
+            v = UndefinedValue();
+        obj->setDenseElement(i, v);
     }
 
-    args.rval().setObject(*result);
+    args.rval().setObject(*obj);
     return true;
 }
 
-static bool
-DebuggerObject_getScript(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::scriptGetter(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get script", args, dbg, obj);
 
@@ -7999,8 +8040,8 @@ DebuggerObject_getScript(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_getEnvironment(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::environmentGetter(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get environment", args, dbg, obj);
 
@@ -8028,84 +8069,107 @@ DebuggerObject_getEnvironment(JSContext* cx, unsigned argc, Value* vp)
     return dbg->wrapEnvironment(cx, env, args.rval());
 }
 
-static bool
-DebuggerObject_getIsArrowFunction(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::boundTargetFunctionGetter(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "get isArrowFunction", args, refobj);
+    THIS_DEBUGOBJECT(cx, argc, vp, "get boundTargetFunction", args, object)
 
-    args.rval().setBoolean(refobj->is<JSFunction>()
-                           && refobj->as<JSFunction>().isArrow());
-    return true;
-}
-
-static bool
-DebuggerObject_getIsBoundFunction(JSContext* cx, unsigned argc, Value* vp)
-{
-    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "get isBoundFunction", args, refobj);
-
-    args.rval().setBoolean(refobj->isBoundFunction());
-    return true;
-}
-
-static bool
-DebuggerObject_getBoundTargetFunction(JSContext* cx, unsigned argc, Value* vp)
-{
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get boundFunctionTarget", args, dbg, refobj);
-
-    if (!refobj->isBoundFunction()) {
+    if (!DebuggerObject::isDebuggeeFunction(cx, object) ||
+        !DebuggerObject::isBoundFunction(cx, object))
+    {
         args.rval().setUndefined();
         return true;
     }
 
-    args.rval().setObject(*refobj->as<JSFunction>().getBoundFunctionTarget());
-    return dbg->wrapDebuggeeValue(cx, args.rval());
-}
-
-static bool
-DebuggerObject_getBoundThis(JSContext* cx, unsigned argc, Value* vp)
-{
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get boundThis", args, dbg, refobj);
-
-    if (!refobj->isBoundFunction()) {
-        args.rval().setUndefined();
-        return true;
-    }
-    args.rval().set(refobj->as<JSFunction>().getBoundFunctionThis());
-    return dbg->wrapDebuggeeValue(cx, args.rval());
-}
-
-static bool
-DebuggerObject_getBoundArguments(JSContext* cx, unsigned argc, Value* vp)
-{
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get boundArguments", args, dbg, refobj);
-
-    if (!refobj->isBoundFunction()) {
-        args.rval().setUndefined();
-        return true;
-    }
-
-    Rooted<JSFunction*> fun(cx, &refobj->as<JSFunction>());
-    size_t length = fun->getBoundFunctionArgumentCount();
-    AutoValueVector boundArgs(cx);
-    if (!boundArgs.resize(length))
+    RootedObject result(cx);
+    if (!DebuggerObject::boundTargetFunction(cx, object, &result))
         return false;
-    for (size_t i = 0; i < length; i++) {
-        boundArgs[i].set(fun->getBoundFunctionArgument(cx, i));
-        if (!dbg->wrapDebuggeeValue(cx, boundArgs[i]))
-            return false;
-    }
 
-    JSObject* aobj = NewDenseCopiedArray(cx, boundArgs.length(), boundArgs.begin());
-    if (!aobj)
-        return false;
-    args.rval().setObject(*aobj);
+    args.rval().setObjectOrNull(result);
     return true;
 }
 
-static bool
-null(CallArgs& args)
+/* static */ bool
+DebuggerObject::boundThisGetter(JSContext* cx, unsigned argc, Value* vp)
 {
-    args.rval().setNull();
+    THIS_DEBUGOBJECT(cx, argc, vp, "get boundThis", args, object)
+
+    if (!DebuggerObject::isDebuggeeFunction(cx, object) ||
+        !DebuggerObject::isBoundFunction(cx, object))
+    {
+        args.rval().setUndefined();
+        return true;
+    }
+
+    return DebuggerObject::boundThis(cx, object, args.rval());
+}
+
+/* static */ bool
+DebuggerObject::boundArgumentsGetter(JSContext* cx, unsigned argc, Value* vp)
+{
+    THIS_DEBUGOBJECT(cx, argc, vp, "get boundArguments", args, object)
+
+    if (!DebuggerObject::isDebuggeeFunction(cx, object) ||
+        !DebuggerObject::isBoundFunction(cx, object))
+    {
+        args.rval().setUndefined();
+        return true;
+    }
+
+    Rooted<ValueVector> result(cx, ValueVector(cx));
+    if (!DebuggerObject::boundArguments(cx, object, &result))
+        return false;
+
+    RootedObject obj(cx, NewDenseCopiedArray(cx, result.length(), result.begin()));
+    if (!obj)
+        return false;
+
+    args.rval().setObject(*obj);
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::globalGetter(JSContext* cx, unsigned argc, Value* vp)
+{
+    THIS_DEBUGOBJECT(cx, argc, vp, "get global", args, object)
+
+    RootedObject result(cx);
+    if (!DebuggerObject::global(cx, object, &result))
+        return false;
+
+    args.rval().setObject(*result);
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::allocationSiteGetter(JSContext* cx, unsigned argc, Value* vp)
+{
+    THIS_DEBUGOBJECT(cx, argc, vp, "get allocationSite", args, object)
+
+    RootedObject result(cx);
+    if (!DebuggerObject::allocationSite(cx, object, &result))
+        return false;
+
+    args.rval().setObjectOrNull(result);
+    return true;
+}
+
+// Returns the "name" field (see js.msg), which may be used as a unique
+// identifier, for any error object with a JSErrorReport or undefined
+// if the object has no JSErrorReport.
+/* static */ bool
+DebuggerObject::errorMessageNameGetter(JSContext *cx, unsigned argc, Value* vp)
+{
+    THIS_DEBUGOBJECT(cx, argc, vp, "get errorMessageName", args, object)
+
+    RootedString result(cx);
+    if (!DebuggerObject::errorMessageName(cx, object, &result))
+        return false;
+
+    if (result)
+        args.rval().setString(result);
+    else
+        args.rval().setUndefined();
     return true;
 }
 
@@ -8252,83 +8316,8 @@ DebuggerObject_getPromiseDependentPromises(JSContext* cx, unsigned argc, Value* 
 }
 #endif // SPIDERMONKEY_PROMISE
 
-static bool
-DebuggerObject_getGlobal(JSContext* cx, unsigned argc, Value* vp)
-{
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "get global", args, dbg, obj);
-
-    RootedValue v(cx, ObjectValue(obj->global()));
-    if (!dbg->wrapDebuggeeValue(cx, &v))
-        return false;
-    args.rval().set(v);
-    return true;
-}
-
-/* static */ SavedFrame*
-Debugger::getObjectAllocationSite(JSObject& obj)
-{
-    JSObject* metadata = GetAllocationMetadata(&obj);
-    if (!metadata)
-        return nullptr;
-
-    MOZ_ASSERT(!metadata->is<WrapperObject>());
-    return SavedFrame::isSavedFrameAndNotProto(*metadata)
-        ? &metadata->as<SavedFrame>()
-        : nullptr;
-}
-
-static bool
-DebuggerObject_getAllocationSite(JSContext* cx, unsigned argc, Value* vp)
-{
-    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "get allocationSite", args, obj);
-
-    RootedObject allocSite(cx, Debugger::getObjectAllocationSite(*obj));
-    if (!allocSite)
-        return null(args);
-    if (!cx->compartment()->wrap(cx, &allocSite))
-        return false;
-    args.rval().setObject(*allocSite);
-    return true;
-}
-
-// Returns the "name" field (see js.msg), which may be used as a unique
-// identifier, for any error object with a JSErrorReport or undefined
-// if the object has no JSErrorReport.
-static bool
-DebuggerObject_getErrorMessageName(JSContext *cx, unsigned argc, Value* vp)
-{
-    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "get errorMessageName", args, referent);
-
-    JSObject* obj = referent;
-    if (IsCrossCompartmentWrapper(obj))
-        obj = CheckedUnwrap(obj);
-
-    if (!obj) {
-        JS_ReportError(cx, "Permission denied to access object");
-        return false;
-    }
-
-    JSErrorReport* report = nullptr;
-    if (obj->is<ErrorObject>())
-        report = obj->as<ErrorObject>().getErrorReport();
-
-    if (report) {
-        const JSErrorFormatString* efs = GetErrorMessage(nullptr, report->errorNumber);
-        if (efs) {
-            RootedString str(cx, JS_NewStringCopyZ(cx, efs->name));
-            if (!cx->compartment()->wrap(cx, &str))
-                return false;
-            args.rval().setString(str);
-            return true;
-        }
-    }
-
-    args.rval().setUndefined();
-    return true;
-}
-
-static bool
-DebuggerObject_isExtensible(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::isExtensibleMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "isExtensible", args, object)
 
@@ -8340,8 +8329,8 @@ DebuggerObject_isExtensible(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_isSealed(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::isSealedMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "isSealed", args, object)
 
@@ -8353,8 +8342,8 @@ DebuggerObject_isSealed(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_isFrozen(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::isFrozenMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "isFrozen", args, object)
 
@@ -8392,8 +8381,8 @@ IdVectorToArray(JSContext* cx, Handle<IdVector> ids)
     return NewDenseCopiedArray(cx, vals.length(), vals.begin());
 }
 
-static bool
-DebuggerObject_getOwnPropertyNames(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::getOwnPropertyNamesMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "getOwnPropertyNames", args, object)
 
@@ -8409,8 +8398,8 @@ DebuggerObject_getOwnPropertyNames(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_getOwnPropertySymbols(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::getOwnPropertySymbolsMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "getOwnPropertySymbols", args, object)
 
@@ -8426,8 +8415,8 @@ DebuggerObject_getOwnPropertySymbols(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_getOwnPropertyDescriptor(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::getOwnPropertyDescriptorMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "getOwnPropertyDescriptor", args, object)
 
@@ -8442,8 +8431,8 @@ DebuggerObject_getOwnPropertyDescriptor(JSContext* cx, unsigned argc, Value* vp)
     return JS::FromPropertyDescriptor(cx, desc, args.rval());
 }
 
-static bool
-DebuggerObject_preventExtensions(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::preventExtensionsMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "preventExtensions", args, object)
 
@@ -8454,8 +8443,8 @@ DebuggerObject_preventExtensions(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_seal(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::sealMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "seal", args, object)
 
@@ -8466,8 +8455,8 @@ DebuggerObject_seal(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_freeze(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::freezeMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "freeze", args, object)
 
@@ -8478,8 +8467,8 @@ DebuggerObject_freeze(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_defineProperty(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::definePropertyMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "defineProperty", args, object)
     if (!args.requireAtLeast(cx, "Debugger.Object.defineProperty", 2))
@@ -8500,8 +8489,8 @@ DebuggerObject_defineProperty(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_defineProperties(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::definePropertiesMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "defineProperties", args, object);
     if (!args.requireAtLeast(cx, "Debugger.Object.defineProperties", 1))
@@ -8530,8 +8519,8 @@ DebuggerObject_defineProperties(JSContext* cx, unsigned argc, Value* vp)
  * This does a non-strict delete, as a matter of API design. The case where the
  * property is non-configurable isn't necessarily exceptional here.
  */
-static bool
-DebuggerObject_deleteProperty(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::deletePropertyMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "deleteProperty", args, object)
 
@@ -8547,8 +8536,8 @@ DebuggerObject_deleteProperty(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static bool
-DebuggerObject_call(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::callMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "call", callArgs, object);
 
@@ -8565,8 +8554,8 @@ DebuggerObject_call(JSContext* cx, unsigned argc, Value* vp)
     return object->call(cx, object, thisv, args, callArgs.rval());
 }
 
-static bool
-DebuggerObject_apply(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::applyMethod(JSContext* cx, unsigned argc, Value* vp)
 {
     THIS_DEBUGOBJECT(cx, argc, vp, "apply", callArgs, object);
 
@@ -8594,121 +8583,58 @@ DebuggerObject_apply(JSContext* cx, unsigned argc, Value* vp)
     return object->call(cx, object, thisv, args, callArgs.rval());
 }
 
-static bool
-DebuggerObject_makeDebuggeeValue(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::asEnvironmentMethod(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "makeDebuggeeValue", args, dbg, referent);
-    if (!args.requireAtLeast(cx, "Debugger.Object.prototype.makeDebuggeeValue", 1))
-        return false;
-
-    RootedValue arg0(cx, args[0]);
-
-    /* Non-objects are already debuggee values. */
-    if (arg0.isObject()) {
-        // Enter this Debugger.Object's referent's compartment, and wrap the
-        // argument as appropriate for references from there.
-        {
-            AutoCompartment ac(cx, referent);
-            if (!cx->compartment()->wrap(cx, &arg0))
-                return false;
-        }
-
-        // Back in the debugger's compartment, produce a new Debugger.Object
-        // instance referring to the wrapped argument.
-        if (!dbg->wrapDebuggeeValue(cx, &arg0))
-            return false;
-    }
-
-    args.rval().set(arg0);
-    return true;
-}
-
-static bool
-RequireGlobalObject(JSContext* cx, HandleValue dbgobj, HandleObject referent)
-{
-    RootedObject obj(cx, referent);
-
-    if (!obj->is<GlobalObject>()) {
-        const char* isWrapper = "";
-        const char* isWindowProxy = "";
-
-        /* Help the poor programmer by pointing out wrappers around globals... */
-        if (obj->is<WrapperObject>()) {
-            obj = js::UncheckedUnwrap(obj);
-            isWrapper = "a wrapper around ";
-        }
-
-        /* ... and WindowProxies around Windows. */
-        if (IsWindowProxy(obj)) {
-            obj = ToWindowIfWindowProxy(obj);
-            isWindowProxy = "a WindowProxy referring to ";
-        }
-
-        if (obj->is<GlobalObject>()) {
-            ReportValueErrorFlags(cx, JSREPORT_ERROR, JSMSG_DEBUG_WRAPPER_IN_WAY,
-                                  JSDVG_SEARCH_STACK, dbgobj, nullptr,
-                                  isWrapper, isWindowProxy);
-        } else {
-            ReportValueErrorFlags(cx, JSREPORT_ERROR, JSMSG_DEBUG_BAD_REFERENT,
-                                  JSDVG_SEARCH_STACK, dbgobj, nullptr,
-                                  "a global object", nullptr);
-        }
-        return false;
-    }
-
-    return true;
-}
-
-// Lookup a binding on the referent's global scope and change it to undefined
-// if it is an uninitialized lexical, otherwise do nothing. The method's return
-// value is true _only_ when an uninitialized lexical has been altered, otherwise
-// it is false.
-bool
-DebuggerObject_forceLexicalInitializationByName(JSContext *cx, unsigned argc, Value* vp)
-{
-    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "forceLexicalInitializationByname", args, referent);
-    if (!args.requireAtLeast(cx, "Debugger.Object.prototype.forceLexicalInitializationByName", 1))
-        return false;
+    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "asEnvironment", args, dbg, referent);
     if (!RequireGlobalObject(cx, args.thisv(), referent))
         return false;
 
-    RootedObject globalLexical(cx, &referent->as<GlobalObject>().lexicalScope());
-
-    if (!args[0].isString()) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr,
-                             JSMSG_NOT_EXPECTED_TYPE, "Debugger.Object.prototype.forceLexicalInitializationByName",
-                             "string", InformalValueTypeName(args[0]));
-        return false;
+    Rooted<Env*> env(cx);
+    {
+        AutoCompartment ac(cx, referent);
+        env = GetDebugScopeForGlobalLexicalScope(cx);
+        if (!env)
+            return false;
     }
+
+    return dbg->wrapEnvironment(cx, env, args.rval());
+}
+
+// Lookup a binding on the referent's global scope and change it to undefined
+// if it is an uninitialized lexical, otherwise do nothing. The method's
+// JavaScript return value is true _only_ when an uninitialized lexical has been
+// altered, otherwise it is false.
+/* static */ bool
+DebuggerObject::forceLexicalInitializationByNameMethod(JSContext *cx, unsigned argc, Value* vp)
+{
+    THIS_DEBUGOBJECT(cx, argc, vp, "forceLexicalInitializationByName", args, object)
+    if (!args.requireAtLeast(cx, "Debugger.Object.prototype.forceLexicalInitializationByName", 1))
+        return false;
+
+    if (!DebuggerObject::requireGlobal(cx, object))
+        return false;
 
     RootedId id(cx);
     if (!ValueToIdentifier(cx, args[0], &id))
         return false;
 
-    RootedObject pobj(cx);
-    RootedShape shape(cx);
-    if (!LookupProperty(cx, globalLexical, id, &pobj, &shape))
+    bool result;
+    if (!DebuggerObject::forceLexicalInitializationByName(cx, object, id, result))
         return false;
 
-    bool initialized = false;
-    if (shape) {
-        Value v = globalLexical->as<NativeObject>().getSlot(shape->slot());
-        if (shape->hasSlot() && v.isMagic() && v.whyMagic() == JS_UNINITIALIZED_LEXICAL) {
-            globalLexical->as<NativeObject>().setSlot(shape->slot(), UndefinedValue());
-            initialized = true;
-        }
-    }
-    args.rval().setBoolean(initialized);
+    args.rval().setBoolean(result);
     return true;
 }
 
-static bool
-DebuggerObject_executeInGlobal(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::executeInGlobalMethod(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "executeInGlobal", args, dbg, referent);
+    THIS_DEBUGOBJECT(cx, argc, vp, "executeInGlobal", args, object);
     if (!args.requireAtLeast(cx, "Debugger.Object.prototype.executeInGlobal", 1))
         return false;
-    if (!RequireGlobalObject(cx, args.thisv(), referent))
+
+    if (!DebuggerObject::requireGlobal(cx, object))
         return false;
 
     AutoStableStringChars stableChars(cx);
@@ -8723,19 +8649,17 @@ DebuggerObject_executeInGlobal(JSContext* cx, unsigned argc, Value* vp)
     if (!ParseEvalOptions(cx, args.get(1), options))
         return false;
 
-    RootedObject globalLexical(cx, &referent->as<GlobalObject>().lexicalScope());
-    return DebuggerGenericEval(cx, chars, nullptr, options, args.rval(), dbg, globalLexical,
-                               nullptr);
+    return DebuggerObject::executeInGlobal(cx, object, chars, nullptr, options, args.rval());
 }
 
-static bool
-DebuggerObject_executeInGlobalWithBindings(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::executeInGlobalWithBindingsMethod(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "executeInGlobalWithBindings", args, dbg,
-                                    referent);
+    THIS_DEBUGOBJECT(cx, argc, vp, "executeInGlobalWithBindings", args, object);
     if (!args.requireAtLeast(cx, "Debugger.Object.prototype.executeInGlobalWithBindings", 2))
         return false;
-    if (!RequireGlobalObject(cx, args.thisv(), referent))
+
+    if (!DebuggerObject::requireGlobal(cx, object))
         return false;
 
     AutoStableStringChars stableChars(cx);
@@ -8754,86 +8678,62 @@ DebuggerObject_executeInGlobalWithBindings(JSContext* cx, unsigned argc, Value* 
     if (!ParseEvalOptions(cx, args.get(2), options))
         return false;
 
-    RootedObject globalLexical(cx, &referent->as<GlobalObject>().lexicalScope());
-    return DebuggerGenericEval(cx, chars, bindings, options, args.rval(), dbg, globalLexical,
-                               nullptr);
+    return DebuggerObject::executeInGlobal(cx, object, chars, bindings, options, args.rval());
 }
 
-static bool
-DebuggerObject_asEnvironment(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::makeDebuggeeValueMethod(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "asEnvironment", args, dbg, referent);
-    if (!RequireGlobalObject(cx, args.thisv(), referent))
+    THIS_DEBUGOBJECT(cx, argc, vp, "makeDebuggeeValue", args, object);
+    if (!args.requireAtLeast(cx, "Debugger.Object.prototype.makeDebuggeeValue", 1))
         return false;
 
-    Rooted<Env*> env(cx);
-    {
-        AutoCompartment ac(cx, referent);
-        env = GetDebugScopeForGlobalLexicalScope(cx);
-        if (!env)
-            return false;
-    }
-
-    return dbg->wrapEnvironment(cx, env, args.rval());
+    return DebuggerObject::makeDebuggeeValue(cx, object, args[0], args.rval());
 }
 
-static bool
-DebuggerObject_unwrap(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::unsafeDereferenceMethod(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_OWNER_REFERENT(cx, argc, vp, "unwrap", args, dbg, referent);
-    JSObject* unwrapped = UnwrapOneChecked(referent);
-    if (!unwrapped) {
-        args.rval().setNull();
-        return true;
-    }
+    THIS_DEBUGOBJECT(cx, argc, vp, "unsafeDereference", args, object);
 
-    // Don't allow unwrapping to create a D.O whose referent is in an
-    // invisible-to-Debugger global. (If our referent is a *wrapper* to such,
-    // and the wrapper is in a visible compartment, that's fine.)
-    JSCompartment* unwrappedCompartment = unwrapped->compartment();
-    if (unwrappedCompartment->creationOptions().invisibleToDebugger()) {
-        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr,
-                             JSMSG_DEBUG_INVISIBLE_COMPARTMENT);
-        return false;
-    }
+    RootedObject result(cx);
+    if (!DebuggerObject::unsafeDereference(cx, object, &result))
+       return false;
 
-    args.rval().setObject(*unwrapped);
-    if (!dbg->wrapDebuggeeValue(cx, args.rval()))
-        return false;
+    args.rval().setObject(*result);
     return true;
 }
 
-static bool
-DebuggerObject_unsafeDereference(JSContext* cx, unsigned argc, Value* vp)
+/* static */ bool
+DebuggerObject::unwrapMethod(JSContext* cx, unsigned argc, Value* vp)
 {
-    THIS_DEBUGOBJECT_REFERENT(cx, argc, vp, "unsafeDereference", args, referent);
-    args.rval().setObject(*referent);
-    if (!cx->compartment()->wrap(cx, args.rval()))
+    THIS_DEBUGOBJECT(cx, argc, vp, "unwrap", args, object);
+
+    Rooted<DebuggerObject*> result(cx);
+    if (!DebuggerObject::unwrap(cx, object, &result))
         return false;
 
-    // Wrapping should return the WindowProxy.
-    MOZ_ASSERT(!IsWindow(&args.rval().toObject()));
-
+    args.rval().setObjectOrNull(result);
     return true;
 }
 
 const JSPropertySpec DebuggerObject::properties_[] = {
-    JS_PSG("proto", DebuggerObject_getProto, 0),
-    JS_PSG("class", DebuggerObject_getClass, 0),
-    JS_PSG("callable", DebuggerObject_getCallable, 0),
-    JS_PSG("name", DebuggerObject_getName, 0),
-    JS_PSG("displayName", DebuggerObject_getDisplayName, 0),
-    JS_PSG("parameterNames", DebuggerObject_getParameterNames, 0),
-    JS_PSG("script", DebuggerObject_getScript, 0),
-    JS_PSG("environment", DebuggerObject_getEnvironment, 0),
-    JS_PSG("isArrowFunction", DebuggerObject_getIsArrowFunction, 0),
-    JS_PSG("isBoundFunction", DebuggerObject_getIsBoundFunction, 0),
-    JS_PSG("boundTargetFunction", DebuggerObject_getBoundTargetFunction, 0),
-    JS_PSG("boundThis", DebuggerObject_getBoundThis, 0),
-    JS_PSG("boundArguments", DebuggerObject_getBoundArguments, 0),
-    JS_PSG("global", DebuggerObject_getGlobal, 0),
-    JS_PSG("allocationSite", DebuggerObject_getAllocationSite, 0),
-    JS_PSG("errorMessageName", DebuggerObject_getErrorMessageName, 0),
+    JS_PSG("callable", DebuggerObject::callableGetter, 0),
+    JS_PSG("isBoundFunction", DebuggerObject::isBoundFunctionGetter, 0),
+    JS_PSG("isArrowFunction", DebuggerObject::isArrowFunctionGetter, 0),
+    JS_PSG("proto", DebuggerObject::protoGetter, 0),
+    JS_PSG("class", DebuggerObject::classGetter, 0),
+    JS_PSG("name", DebuggerObject::nameGetter, 0),
+    JS_PSG("displayName", DebuggerObject::displayNameGetter, 0),
+    JS_PSG("parameterNames", DebuggerObject::parameterNamesGetter, 0),
+    JS_PSG("script", DebuggerObject::scriptGetter, 0),
+    JS_PSG("environment", DebuggerObject::environmentGetter, 0),
+    JS_PSG("boundTargetFunction", DebuggerObject::boundTargetFunctionGetter, 0),
+    JS_PSG("boundThis", DebuggerObject::boundThisGetter, 0),
+    JS_PSG("boundArguments", DebuggerObject::boundArgumentsGetter, 0),
+    JS_PSG("global", DebuggerObject::globalGetter, 0),
+    JS_PSG("allocationSite", DebuggerObject::allocationSiteGetter, 0),
+    JS_PSG("errorMessageName", DebuggerObject::errorMessageNameGetter, 0),
     JS_PS_END
 };
 
@@ -8852,27 +8752,27 @@ const JSPropertySpec DebuggerObject::promiseProperties_[] = {
 #endif // SPIDERMONKEY_PROMISE
 
 const JSFunctionSpec DebuggerObject::methods_[] = {
-    JS_FN("forceLexicalInitializationByName", DebuggerObject_forceLexicalInitializationByName, 1, 0),
-    JS_FN("isExtensible", DebuggerObject_isExtensible, 0, 0),
-    JS_FN("isSealed", DebuggerObject_isSealed, 0, 0),
-    JS_FN("isFrozen", DebuggerObject_isFrozen, 0, 0),
-    JS_FN("getOwnPropertyNames", DebuggerObject_getOwnPropertyNames, 0, 0),
-    JS_FN("getOwnPropertySymbols", DebuggerObject_getOwnPropertySymbols, 0, 0),
-    JS_FN("getOwnPropertyDescriptor", DebuggerObject_getOwnPropertyDescriptor, 1, 0),
-    JS_FN("preventExtensions", DebuggerObject_preventExtensions, 0, 0),
-    JS_FN("seal", DebuggerObject_seal, 0, 0),
-    JS_FN("freeze", DebuggerObject_freeze, 0, 0),
-    JS_FN("defineProperty", DebuggerObject_defineProperty, 2, 0),
-    JS_FN("defineProperties", DebuggerObject_defineProperties, 1, 0),
-    JS_FN("deleteProperty", DebuggerObject_deleteProperty, 1, 0),
-    JS_FN("call", DebuggerObject_call, 0, 0),
-    JS_FN("apply", DebuggerObject_apply, 0, 0),
-    JS_FN("makeDebuggeeValue", DebuggerObject_makeDebuggeeValue, 1, 0),
-    JS_FN("executeInGlobal", DebuggerObject_executeInGlobal, 1, 0),
-    JS_FN("executeInGlobalWithBindings", DebuggerObject_executeInGlobalWithBindings, 2, 0),
-    JS_FN("asEnvironment", DebuggerObject_asEnvironment, 0, 0),
-    JS_FN("unwrap", DebuggerObject_unwrap, 0, 0),
-    JS_FN("unsafeDereference", DebuggerObject_unsafeDereference, 0, 0),
+    JS_FN("isExtensible", DebuggerObject::isExtensibleMethod, 0, 0),
+    JS_FN("isSealed", DebuggerObject::isSealedMethod, 0, 0),
+    JS_FN("isFrozen", DebuggerObject::isFrozenMethod, 0, 0),
+    JS_FN("getOwnPropertyNames", DebuggerObject::getOwnPropertyNamesMethod, 0, 0),
+    JS_FN("getOwnPropertySymbols", DebuggerObject::getOwnPropertySymbolsMethod, 0, 0),
+    JS_FN("getOwnPropertyDescriptor", DebuggerObject::getOwnPropertyDescriptorMethod, 1, 0),
+    JS_FN("preventExtensions", DebuggerObject::preventExtensionsMethod, 0, 0),
+    JS_FN("seal", DebuggerObject::sealMethod, 0, 0),
+    JS_FN("freeze", DebuggerObject::freezeMethod, 0, 0),
+    JS_FN("defineProperty", DebuggerObject::definePropertyMethod, 2, 0),
+    JS_FN("defineProperties", DebuggerObject::definePropertiesMethod, 1, 0),
+    JS_FN("deleteProperty", DebuggerObject::deletePropertyMethod, 1, 0),
+    JS_FN("call", DebuggerObject::callMethod, 0, 0),
+    JS_FN("apply", DebuggerObject::applyMethod, 0, 0),
+    JS_FN("asEnvironment", DebuggerObject::asEnvironmentMethod, 0, 0),
+    JS_FN("forceLexicalInitializationByName", DebuggerObject::forceLexicalInitializationByNameMethod, 1, 0),
+    JS_FN("executeInGlobal", DebuggerObject::executeInGlobalMethod, 1, 0),
+    JS_FN("executeInGlobalWithBindings", DebuggerObject::executeInGlobalWithBindingsMethod, 2, 0),
+    JS_FN("makeDebuggeeValue", DebuggerObject::makeDebuggeeValueMethod, 1, 0),
+    JS_FN("unsafeDereference", DebuggerObject::unsafeDereferenceMethod, 0, 0),
+    JS_FN("unwrap", DebuggerObject::unwrapMethod, 0, 0),
     JS_FS_END
 };
 
@@ -8913,6 +8813,255 @@ DebuggerObject::create(JSContext* cx, HandleObject proto, HandleObject referent,
 }
 
 /* static */ bool
+DebuggerObject::isCallable(JSContext* cx, Handle<DebuggerObject*> object)
+{
+    RootedObject referent(cx, object->referent());
+
+    return referent->isCallable();
+}
+
+/* static */ bool
+DebuggerObject::isFunction(JSContext* cx, Handle<DebuggerObject*> object)
+{
+    RootedObject referent(cx, object->referent());
+
+    return referent->is<JSFunction>();
+}
+
+/* static */ bool
+DebuggerObject::isDebuggeeFunction(JSContext* cx, Handle<DebuggerObject*> object)
+{
+    RootedObject referent(cx, object->referent());
+    Debugger* dbg = object->owner();
+
+    return referent->is<JSFunction>() &&
+           dbg->observesGlobal(&referent->as<JSFunction>().global());
+}
+
+/* static */ bool
+DebuggerObject::isBoundFunction(JSContext* cx, Handle<DebuggerObject*> object)
+{
+    MOZ_ASSERT(isDebuggeeFunction(cx, object));
+
+    RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+
+    return referent->isBoundFunction();
+}
+
+/* static */ bool
+DebuggerObject::isArrowFunction(JSContext* cx, Handle<DebuggerObject*> object)
+{
+    MOZ_ASSERT(isDebuggeeFunction(cx, object));
+
+    RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+
+    return referent->isArrow();
+}
+
+/* static */ bool
+DebuggerObject::isGlobal(JSContext* cx, Handle<DebuggerObject*> object)
+{
+    RootedObject referent(cx, object->referent());
+
+    return referent->is<GlobalObject>();
+}
+
+/* static */ bool
+DebuggerObject::className(JSContext* cx, Handle<DebuggerObject*> object,
+                          MutableHandleString result)
+{
+    RootedObject referent(cx, object->referent());
+
+    const char* className;
+    {
+        AutoCompartment ac(cx, referent);
+        className = GetObjectClassName(cx, referent);
+    }
+
+    JSAtom* str = Atomize(cx, className, strlen(className));
+    if (!str)
+        return false;
+
+    result.set(str);
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::global(JSContext* cx, Handle<DebuggerObject*> object, MutableHandleObject result)
+{
+    RootedObject referent(cx, object->referent());
+    Debugger* dbg = object->owner();
+
+    result.set(&referent->global());
+    return dbg->wrapDebuggeeObject(cx, result);
+}
+
+/* static */ bool
+DebuggerObject::name(JSContext* cx, Handle<DebuggerObject*> object, MutableHandleString result)
+{
+    MOZ_ASSERT(isFunction(cx, object));
+
+    RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+
+    result.set(referent->name());
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::displayName(JSContext* cx, Handle<DebuggerObject*> object,
+                            MutableHandleString result)
+{
+    MOZ_ASSERT(isFunction(cx, object));
+
+    RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+
+    result.set(referent->displayAtom());
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::parameterNames(JSContext* cx, Handle<DebuggerObject*> object,
+                               MutableHandle<StringVector> result)
+{
+    MOZ_ASSERT(isDebuggeeFunction(cx, object));
+
+    RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+
+    if (!result.growBy(referent->nargs()))
+        return false;
+    if (referent->isInterpreted()) {
+        RootedScript script(cx, GetOrCreateFunctionScript(cx, referent));
+        if (!script)
+            return false;
+
+        MOZ_ASSERT(referent->nargs() == script->bindings.numArgs());
+
+        if (referent->nargs() > 0) {
+            BindingIter bi(script);
+            for (size_t i = 0; i < referent->nargs(); i++, bi++) {
+                MOZ_ASSERT(bi.argIndex() == i);
+                if (bi->name()->length() == 0)
+                    result[i].set(nullptr);
+                else
+                    result[i].set(bi->name());
+            }
+        }
+    } else {
+        for (size_t i = 0; i < referent->nargs(); i++)
+            result[i].set(nullptr);
+    }
+
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::boundTargetFunction(JSContext* cx, Handle<DebuggerObject*> object,
+                                    MutableHandleObject result)
+{
+    MOZ_ASSERT(isBoundFunction(cx, object));
+
+    RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+    Debugger* dbg = object->owner();
+
+    result.set(referent->getBoundFunctionTarget());
+    return dbg->wrapDebuggeeObject(cx, result);
+}
+
+/* static */ bool
+DebuggerObject::boundThis(JSContext* cx, Handle<DebuggerObject*> object,
+                          MutableHandleValue result)
+{
+    MOZ_ASSERT(isBoundFunction(cx, object));
+
+    RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+    Debugger* dbg = object->owner();
+
+    result.set(referent->getBoundFunctionThis());
+    return dbg->wrapDebuggeeValue(cx, result);
+}
+
+/* static */ bool
+DebuggerObject::boundArguments(JSContext* cx, Handle<DebuggerObject*> object,
+                               MutableHandle<ValueVector> result)
+{
+    MOZ_ASSERT(isBoundFunction(cx, object));
+
+    RootedFunction referent(cx, &object->referent()->as<JSFunction>());
+    Debugger* dbg = object->owner();
+
+    size_t length = referent->getBoundFunctionArgumentCount();
+    if (!result.resize(length))
+        return false;
+    for (size_t i = 0; i < length; i++) {
+        result[i].set(referent->getBoundFunctionArgument(cx, i));
+        if (!dbg->wrapDebuggeeValue(cx, result[i]))
+            return false;
+    }
+    return true;
+}
+
+/* static */ SavedFrame*
+Debugger::getObjectAllocationSite(JSObject& obj)
+{
+    JSObject* metadata = GetAllocationMetadata(&obj);
+    if (!metadata)
+        return nullptr;
+
+    MOZ_ASSERT(!metadata->is<WrapperObject>());
+    return SavedFrame::isSavedFrameAndNotProto(*metadata)
+        ? &metadata->as<SavedFrame>()
+        : nullptr;
+}
+
+/* static */ bool
+DebuggerObject::allocationSite(JSContext* cx, Handle<DebuggerObject*> object,
+                               MutableHandleObject result)
+{
+    RootedObject referent(cx, object->referent());
+
+    RootedObject allocSite(cx, Debugger::getObjectAllocationSite(*referent));
+    if (!cx->compartment()->wrap(cx, &allocSite))
+        return false;
+
+    result.set(allocSite);
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::errorMessageName(JSContext* cx, Handle<DebuggerObject*> object,
+                                 MutableHandleString result)
+{
+    RootedObject referent(cx, object->referent());
+
+    JSObject* obj = referent;
+    if (IsCrossCompartmentWrapper(obj))
+        obj = CheckedUnwrap(obj);
+
+    if (!obj) {
+        JS_ReportError(cx, "Permission denied to access object");
+        return false;
+    }
+
+    if (obj->is<ErrorObject>()) {
+        JSErrorReport* report = obj->as<ErrorObject>().getErrorReport();
+        if (report) {
+            const JSErrorFormatString* efs = GetErrorMessage(nullptr, report->errorNumber);
+            if (efs) {
+                RootedString str(cx, JS_NewStringCopyZ(cx, efs->name));
+                if (!cx->compartment()->wrap(cx, &str))
+                    return false;
+
+                result.set(str);
+                return true;
+            }
+        }
+    }
+
+    result.set(nullptr);
+    return true;
+}
+
+/* static */ bool
 DebuggerObject::isExtensible(JSContext* cx, Handle<DebuggerObject*> object, bool& result)
 {
     RootedObject referent(cx, object->referent());
@@ -8945,6 +9094,24 @@ DebuggerObject::isFrozen(JSContext* cx, Handle<DebuggerObject*> object, bool& re
 
     ErrorCopier ec(ac);
     return TestIntegrityLevel(cx, referent, IntegrityLevel::Frozen, &result);
+}
+
+/* static */ bool
+DebuggerObject::getPrototypeOf(JSContext* cx, Handle<DebuggerObject*> object,
+                               MutableHandleObject result)
+{
+    RootedObject referent(cx, object->referent());
+    Debugger* dbg = object->owner();
+
+    RootedObject proto(cx);
+    {
+        AutoCompartment ac(cx, referent);
+        if (!GetPrototype(cx, referent, &proto))
+            return false;
+    }
+
+    result.set(proto);
+    return !result || dbg->wrapDebuggeeObject(cx, result);
 }
 
 /* static */ bool
@@ -9200,6 +9367,166 @@ DebuggerObject::call(JSContext* cx, Handle<DebuggerObject*> object, HandleValue 
     }
 
     return dbg->receiveCompletionValue(ac, ok, result, result);
+}
+
+/* static */ bool
+DebuggerObject::forceLexicalInitializationByName(JSContext* cx, Handle<DebuggerObject*> object,
+                                                 HandleId id, bool& result)
+{
+    if (!JSID_IS_STRING(id)) {
+        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr,
+                             JSMSG_NOT_EXPECTED_TYPE, "Debugger.Object.prototype.forceLexicalInitializationByName",
+                             "string", InformalValueTypeName(IdToValue(id)));
+        return false;
+    }
+
+    MOZ_ASSERT(isGlobal(cx, object));
+
+    Rooted<GlobalObject*> referent(cx, &object->referent()->as<GlobalObject>());
+
+    RootedObject globalLexical(cx, &referent->lexicalScope());
+    RootedObject pobj(cx);
+    RootedShape shape(cx);
+    if (!LookupProperty(cx, globalLexical, id, &pobj, &shape))
+        return false;
+
+    result = false;
+    if (shape) {
+        Value v = globalLexical->as<NativeObject>().getSlot(shape->slot());
+        if (shape->hasSlot() && v.isMagic() && v.whyMagic() == JS_UNINITIALIZED_LEXICAL) {
+            globalLexical->as<NativeObject>().setSlot(shape->slot(), UndefinedValue());
+            result = true;
+        }
+    }
+
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::executeInGlobal(JSContext* cx, Handle<DebuggerObject*> object,
+                                mozilla::Range<const char16_t> chars, HandleObject bindings,
+                                const EvalOptions& options, MutableHandleValue result)
+{
+    MOZ_ASSERT(isGlobal(cx, object));
+
+    Rooted<GlobalObject*> referent(cx, &object->referent()->as<GlobalObject>());
+    Debugger* dbg = object->owner();
+
+    RootedObject globalLexical(cx, &referent->lexicalScope());
+    return DebuggerGenericEval(cx, chars, bindings, options, result, dbg, globalLexical,
+                               nullptr);
+}
+
+/* static */ bool
+DebuggerObject::makeDebuggeeValue(JSContext* cx, Handle<DebuggerObject*> object,
+                                  HandleValue value_, MutableHandleValue result)
+{
+    RootedObject referent(cx, object->referent());
+    Debugger* dbg = object->owner();
+
+    RootedValue value(cx, value_);
+
+    /* Non-objects are already debuggee values. */
+    if (value.isObject()) {
+        // Enter this Debugger.Object's referent's compartment, and wrap the
+        // argument as appropriate for references from there.
+        {
+            AutoCompartment ac(cx, referent);
+            if (!cx->compartment()->wrap(cx, &value))
+                return false;
+        }
+
+        // Back in the debugger's compartment, produce a new Debugger.Object
+        // instance referring to the wrapped argument.
+        if (!dbg->wrapDebuggeeValue(cx, &value))
+            return false;
+    }
+
+    result.set(value);
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::unsafeDereference(JSContext* cx, Handle<DebuggerObject*> object,
+                                  MutableHandleObject result)
+{
+    RootedObject referent(cx, object->referent());
+
+    if (!cx->compartment()->wrap(cx, &referent))
+        return false;
+
+    // Wrapping should return the WindowProxy.
+    MOZ_ASSERT(!IsWindow(referent));
+
+    result.set(referent);
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::unwrap(JSContext* cx, Handle<DebuggerObject*> object,
+                       MutableHandle<DebuggerObject*> result)
+{
+    RootedObject referent(cx, object->referent());
+    Debugger* dbg = object->owner();
+
+    RootedObject unwrapped(cx, UnwrapOneChecked(referent));
+    if (!unwrapped) {
+        result.set(nullptr);
+        return true;
+    }
+
+    // Don't allow unwrapping to create a D.O whose referent is in an
+    // invisible-to-Debugger global. (If our referent is a *wrapper* to such,
+    // and the wrapper is in a visible compartment, that's fine.)
+    JSCompartment* unwrappedCompartment = unwrapped->compartment();
+    if (unwrappedCompartment->creationOptions().invisibleToDebugger()) {
+        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr,
+                             JSMSG_DEBUG_INVISIBLE_COMPARTMENT);
+        return false;
+    }
+
+    if (!dbg->wrapDebuggeeObject(cx, &unwrapped))
+        return false;
+
+    result.set(&unwrapped->as<DebuggerObject>());
+    return true;
+}
+
+/* static */ bool
+DebuggerObject::requireGlobal(JSContext* cx, Handle<DebuggerObject*> object)
+{
+    if (!DebuggerObject::isGlobal(cx, object)) {
+        RootedObject referent(cx, object->referent());
+
+        const char* isWrapper = "";
+        const char* isWindowProxy = "";
+
+        /* Help the poor programmer by pointing out wrappers around globals... */
+        if (referent->is<WrapperObject>()) {
+            referent = js::UncheckedUnwrap(referent);
+            isWrapper = "a wrapper around ";
+        }
+
+        /* ... and WindowProxies around Windows. */
+        if (IsWindowProxy(referent)) {
+            referent = ToWindowIfWindowProxy(referent);
+            isWindowProxy = "a WindowProxy referring to ";
+        }
+
+        RootedValue dbgobj(cx, ObjectValue(*object));
+        if (referent->is<GlobalObject>()) {
+            ReportValueErrorFlags(cx, JSREPORT_ERROR, JSMSG_DEBUG_WRAPPER_IN_WAY,
+                                  JSDVG_SEARCH_STACK, dbgobj, nullptr,
+                                  isWrapper, isWindowProxy);
+        } else {
+            ReportValueErrorFlags(cx, JSREPORT_ERROR, JSMSG_DEBUG_BAD_REFERENT,
+                                  JSDVG_SEARCH_STACK, dbgobj, nullptr,
+                                  "a global object", nullptr);
+        }
+        return false;
+    }
+
+    return true;
 }
 
 

@@ -74,6 +74,12 @@
 <script type="application/javascript" src="chrome://browser/content/downloads/indicator.js"/>
 <script type="application/javascript" src="chrome://browser/content/places/editBookmarkOverlay.js"/>
 
+<script type="application/javascript" src="chrome://global/content/l20n-chrome-observer.js"/>
+
+<localization>
+  <source src="/browser/browser.ftl"/>
+</localization>
+
 # All sets except for popupsets (commands, keys, stringbundles and broadcasters) *must* go into the
 # browser-sets.inc file for sharing with hiddenWindow.xul.
 #define FULL_BROWSER_WINDOW
@@ -421,21 +427,6 @@
       </hbox>
     </panel>
 
-    <!-- Sync Panel -->
-    <panel id="sync-start-panel" class="sync-panel" type="arrow" hidden="true"
-           noautofocus="true" onclick="this.hidePopup();"
-           flip="slide">
-      <hbox class="sync-panel-outer">
-        <image class="sync-panel-icon"/>
-        <vbox class="sync-panel-inner">
-          <description id="sync-start-panel-title"
-                       value="&syncStartPanel2.heading;"/>
-          <description id="sync-start-panel-subtitle"
-                       value="&syncStartPanel2.subTitle;"/>
-        </vbox>
-      </hbox>
-    </panel>
-
     <!-- Bookmarks and history tooltip -->
     <tooltip id="bhTooltip"/>
 
@@ -719,7 +710,7 @@
                            tooltip="forward-button-tooltip"
                            context="backForwardMenu"/>
             <textbox id="urlbar" flex="1"
-                     placeholder="&urlbar.placeholder2;"
+                     data-l10n-id="urlbar"
                      type="autocomplete"
                      autocompletesearch="unifiedcomplete"
                      autocompletesearchparam="enable-actions"

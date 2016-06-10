@@ -16,6 +16,9 @@
 
     <content>
       <xul:stringbundle anonid="tbstringbundle" src="chrome://browser/locale/tabbrowser.properties"/>
+      <xul:localization name="tabbrowser-l10n">
+        <xul:source src="/browser/tabbrowser.ftl"/>
+      </xul:localization>
       <xul:tabbox anonid="tabbox" class="tabbrowser-tabbox"
                   flex="1" eventnode="document" xbl:inherits="handleCtrlPageUpDown"
                   onselect="if (event.target.localName == 'tabpanels') this.parentNode.updateCurrentBrowser();">
@@ -1414,14 +1417,15 @@
                 title = gNavigatorBundle.getFormattedString("customizeMode.tabTitle",
                                                             [ brandShortName ]);
               } else // Still no title?  Fall back to our untitled string.
-                title = this.mStringBundle.getString("tabs.emptyTabTitle");
+                aTab.setAttribute('data-l10n-bundle', 'tabbrowser-l10n');
+                aTab.setAttribute('data-l10n-id', 'tabs-empty-tab-title');
             }
 
             if (aTab.label == title &&
                 aTab.crop == crop)
               return false;
 
-            aTab.label = title;
+            // aTab.label = title;
             aTab.crop = crop;
             this._tabAttrModified(aTab, ["label", "crop"]);
 
@@ -1961,14 +1965,18 @@
             var uriIsAboutBlank = !aURI || aURI == "about:blank";
 
             if (!aURI || isBlankPageURL(aURI)) {
-              t.setAttribute("label", this.mStringBundle.getString("tabs.emptyTabTitle"));
+              t.setAttribute('data-l10n-bundle', 'tabbrowser-l10n');
+              t.setAttribute('data-l10n-id', 'tabs-empty-tab-title');
             } else if (aURI.toLowerCase().startsWith("javascript:")) {
               // This can go away when bug 672618 or bug 55696 are fixed.
               t.setAttribute("label", aURI);
             }
 
-            if (aUserContextId)
+            if (aUserContextId) {
               t.setAttribute("usercontextid", aUserContextId);
+              ContextualIdentityService.setTabStyle(t);
+            }
+
             t.setAttribute("crop", "end");
             t.setAttribute("onerror", "this.removeAttribute('image');");
             t.className = "tabbrowser-tab";
@@ -2615,6 +2623,7 @@
             }
             if (aOtherTab.hasAttribute("usercontextid")) {
               aOurTab.setAttribute("usercontextid", aOtherTab.getAttribute("usercontextid"));
+              ContextualIdentityService.setTabStyle(aOurTab);
               modifiedAttrs.push("usercontextid");
             }
 
@@ -2891,11 +2900,17 @@
           let tabs = this.visibleTabs;
 
           // count backwards for aIndex < 0
-          if (aIndex < 0)
+          if (aIndex < 0) {
             aIndex += tabs.length;
+            // clamp at index 0 if still negative.
+            if (aIndex < 0)
+              aIndex = 0;
+          } else if (aIndex >= tabs.length) {
+            // clamp at right-most tab if out of range.
+            aIndex = tabs.length - 1;
+          }
 
-          if (aIndex >= 0 && aIndex < tabs.length)
-            this.selectedTab = tabs[aIndex];
+          this.selectedTab = tabs[aIndex];
 
           if (aEvent) {
             aEvent.preventDefault();
@@ -4899,7 +4914,8 @@
           this.mTabClipWidth = Services.prefs.getIntPref("browser.tabs.tabClipWidth");
 
           var tab = this.firstChild;
-          tab.label = this.tabbrowser.mStringBundle.getString("tabs.emptyTabTitle");
+          tab.setAttribute('data-l10n-bundle', 'tabbrowser-l10n');
+          tab.setAttribute('data-l10n-id', 'tabs-empty-tab-title');
           tab.setAttribute("crop", "end");
           tab.setAttribute("onerror", "this.removeAttribute('image');");
 

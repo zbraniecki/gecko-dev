@@ -1837,6 +1837,7 @@ fuzzy-if(d2d,1,125200) fuzzy-if(skiaContent,1,126000) == 1022612-1.html 1022612-
 == 1024473-1.html 1024473-1-ref.html
 fuzzy-if(skiaContent,1,24000) == 1025914-1.html 1025914-1-ref.html
 == 1042104-1.html 1042104-1-ref.html
+== 1043537-1.html 1043537-1-ref.html
 == 1044198-1.html 1044198-1-ref.html
 == 1049499-1.html 1049499-1-ref.html
 == 1050493-1.html 1050493-1-ref.html
@@ -1956,3 +1957,4 @@ fuzzy(100,2000) == 1239564.html 1239564-ref.html
 random-if(!winWidget) == 1273154-1.html 1273154-1-ref.html # depends on Windows font
 random-if(!winWidget) == 1273154-2.html 1273154-2-ref.html # depends on Windows font
 == 1274368-1.html 1274368-1-ref.html
+== 1275411-1.html 1275411-1-ref.html

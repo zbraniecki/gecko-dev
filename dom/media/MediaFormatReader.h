@@ -62,7 +62,7 @@ public:
   // For Media Resource Management
   void ReleaseMediaResources() override;
 
-  nsresult ResetDecode(TargetQueues aQueues) override;
+  nsresult ResetDecode(TrackSet aTracks) override;
 
   RefPtr<ShutdownPromise> Shutdown() override;
 
@@ -101,6 +101,7 @@ public:
   void GetMozDebugReaderData(nsAString& aString);
 
 private:
+
   bool HasVideo() { return mVideo.mTrackDemuxer; }
   bool HasAudio() { return mAudio.mTrackDemuxer; }
 
@@ -182,6 +183,8 @@ private:
   void DropDecodedSamples(TrackType aTrack);
 
   bool ShouldSkip(bool aSkipToNextKeyframe, media::TimeUnit aTimeThreshold);
+
+  void SetVideoDecodeThreshold();
 
   size_t SizeOfQueue(TrackType aTrack);
 
@@ -310,6 +313,11 @@ private:
     bool mNeedDraining;
     bool mDraining;
     bool mDrainComplete;
+
+    bool HasPendingDrain() const
+    {
+      return mDraining || mDrainComplete;
+    }
 
     uint32_t mNumOfConsecutiveError;
     uint32_t mMaxConsecutiveError;
@@ -561,10 +569,6 @@ private:
 
 #ifdef MOZ_EME
   RefPtr<CDMProxy> mCDMProxy;
-#endif
-
-#if defined(READER_DORMANT_HEURISTIC)
-  const bool mDormantEnabled;
 #endif
 };
 

@@ -909,14 +909,17 @@ function* mapValues(arr) {
 }
 
 // Helper for choosing entity value
-function* DefaultMember(members) {
+function* DefaultMember(members, allowNoDefault = false) {
   for (let member of members) {
     if (member.def) {
       return member;
     }
   }
 
-  yield tell(new RangeError('No default'));
+  if (!allowNoDefault) {
+    yield tell(new RangeError('No default'));
+  }
+
   return { val: new FTLNone() };
 }
 
@@ -1130,7 +1133,7 @@ function* Pattern(ptn) {
   return result;
 }
 
-function* Entity(entity) {
+function* Entity(entity, allowNoDefault = false) {
   if (entity.val !== undefined) {
     return yield* Value(entity.val);
   }
@@ -1139,30 +1142,36 @@ function* Entity(entity) {
     return yield* Value(entity);
   }
 
-  const def = yield* DefaultMember(entity.traits);
+  const def = yield* DefaultMember(entity.traits, allowNoDefault);
   return yield* Value(def);
 }
 
 // evaluate `entity` to an FTL Value type: string or FTLNone
-function* toFTLType(entity) {
+function* toFTLType(entity, opts) {
   if (entity === undefined) {
     return new FTLNone();
   }
 
-  return yield* Entity(entity);
+  return yield* Entity(entity, opts.allowNoDefault);
 }
 
-function format(ctx, args, entity) {
+const _opts = {
+  allowNoDefault: false
+};
+
+function format(ctx, args, entity, opts = _opts) {
   // optimization: many translations are simple strings and we can very easily 
   // avoid the cost of a proper resolution by having this shortcut here
   if (typeof entity === 'string') {
     return [entity, []];
   }
 
-  return resolve(toFTLType(entity)).run({
+  return resolve(toFTLType(entity, opts)).run({
     ctx, args, dirty: new WeakSet()
   });
 }
+
+const optsPrimitive = { allowNoDefault: true };
 
 class MessageContext {
   constructor(lang, { functions } = {}) {
@@ -1183,7 +1192,7 @@ class MessageContext {
 
   // format `entity` to a string or null
   formatToPrimitive(entity, args) {
-    const result = format(this, args, entity);
+    const result = format(this, args, entity, optsPrimitive);
     return (result[0] instanceof FTLNone) ?
       [null, result[1]] : result;
   }
@@ -1217,6 +1226,5 @@ Components.utils.import('resource://gre/modules/IntlRelativeTimeFormat.jsm');
 Intl.PluralRules = PluralRules;
 Intl.ListFormat = ListFormat;
 Intl.RelativeTimeFormat = RelativeTimeFormat;
-
 
 this.MessageContext = MessageContext;

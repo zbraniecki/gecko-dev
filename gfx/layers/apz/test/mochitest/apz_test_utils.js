@@ -148,6 +148,10 @@ function runSubtestsSeriallyInFreshWindows(aSubtests) {
     var testIndex = -1;
     var w = null;
 
+    // Some state that persists across subtests. This is made available to
+    // subtests to put things into / read things out of.
+    var statePersistentAcrossSubtests = {};
+
     function advanceSubtestExecution() {
       var test = aSubtests[testIndex];
       if (w) {
@@ -189,6 +193,7 @@ function runSubtestsSeriallyInFreshWindows(aSubtests) {
         w = window.open('', "_blank");
         w.subtestDone = advanceSubtestExecution;
         w.SimpleTest = SimpleTest;
+        w.statePersistentAcrossSubtests = statePersistentAcrossSubtests;
         w.is = function(a, b, msg) { return is(a, b, aFile + " | " + msg); };
         w.ok = function(cond, name, diag) { return ok(cond, aFile + " | " + name, diag); };
         w.location = location.href.substring(0, location.href.lastIndexOf('/') + 1) + aFile;
@@ -266,4 +271,70 @@ function runContinuation(testFunction) {
       driveTest();
     });
   };
+}
+
+// Take a snapshot of the given rect, *including compositor transforms* (i.e.
+// includes async scroll transforms applied by APZ). If you don't need the
+// compositor transforms, you can probably get away with using
+// SpecialPowers.snapshotWindowWithOptions or one of the friendlier wrappers.
+// The rect provided is expected to be relative to the screen, for example as
+// returned by rectRelativeToScreen in apz_test_native_event_utils.js.
+// Example usage:
+//   var snapshot = getSnapshot(rectRelativeToScreen(myDiv));
+// which will take a snapshot of the 'myDiv' element. Note that if part of the
+// element is obscured by other things on top, the snapshot will include those
+// things. If it is clipped by a scroll container, the snapshot will include
+// that area anyway, so you will probably get parts of the scroll container in
+// the snapshot. If the rect extends outside the browser window then the
+// results are undefined.
+// The snapshot is returned in the form of a data URL.
+function getSnapshot(rect) {
+  function parentProcessSnapshot() {
+    addMessageListener('snapshot', function(rect) {
+      Components.utils.import('resource://gre/modules/Services.jsm');
+      var topWin = Services.wm.getMostRecentWindow('navigator:browser');
+
+      // reposition the rect relative to the top-level browser window
+      rect = JSON.parse(rect);
+      rect.x -= topWin.mozInnerScreenX;
+      rect.y -= topWin.mozInnerScreenY;
+
+      // take the snapshot
+      var canvas = topWin.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+      canvas.width = rect.w;
+      canvas.height = rect.h;
+      var ctx = canvas.getContext("2d");
+      ctx.drawWindow(topWin, rect.x, rect.y, rect.w, rect.h, 'rgb(255,255,255)', ctx.DRAWWINDOW_DRAW_VIEW | ctx.DRAWWINDOW_USE_WIDGET_LAYERS | ctx.DRAWWINDOW_DRAW_CARET);
+      return canvas.toDataURL();
+    });
+  }
+
+  if (typeof getSnapshot.chromeHelper == 'undefined') {
+    // This is the first time getSnapshot is being called; do initialization
+    getSnapshot.chromeHelper = SpecialPowers.loadChromeScript(parentProcessSnapshot);
+    SimpleTest.registerCleanupFunction(function() { getSnapshot.chromeHelper.destroy() });
+  }
+
+  return getSnapshot.chromeHelper.sendSyncMessage('snapshot', JSON.stringify(rect)).toString();
+}
+
+// Takes the document's query string and parses it, assuming the query string
+// is composed of key-value pairs where the value is in JSON format. The object
+// returned contains the various values indexed by their respective keys. In
+// case of duplicate keys, the last value be used.
+// Examples:
+//   ?key="value"&key2=false&key3=500
+//     produces { "key": "value", "key2": false, "key3": 500 }
+//   ?key={"x":0,"y":50}&key2=[1,2,true]
+//     produces { "key": { "x": 0, "y": 0 }, "key2": [1, 2, true] }
+function getQueryArgs() {
+  var args = {};
+  if (location.search.length > 0) {
+    var params = location.search.substr(1).split('&');
+    for (var p of params) {
+      var [k, v] = p.split('=');
+      args[k] = JSON.parse(v);
+    }
+  }
+  return args;
 }

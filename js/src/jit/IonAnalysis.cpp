@@ -1133,7 +1133,8 @@ jit::EliminatePhis(MIRGenerator* mir, MIRGraph& graph,
         while (iter != block->phisEnd()) {
             MPhi* phi = *iter++;
             if (phi->isUnused()) {
-                phi->optimizeOutAllUses(graph.alloc());
+                if (!phi->optimizeOutAllUses(graph.alloc()))
+                    return false;
                 block->discardPhi(phi);
             }
         }
@@ -2049,13 +2050,13 @@ jit::MakeMRegExpHoistable(MIRGraph& graph)
 
             // Make MRegExp hoistable
             regexp->setMovable();
+            regexp->setDoNotClone();
 
             // That would be incorrect for global/sticky, because lastIndex
             // could be wrong.  Therefore setting the lastIndex to 0. That is
             // faster than a not movable regexp.
             RegExpObject* source = regexp->source();
             if (source->sticky() || source->global()) {
-                MOZ_ASSERT(regexp->mustClone());
                 MConstant* zero = MConstant::New(graph.alloc(), Int32Value(0));
                 regexp->block()->insertAfter(regexp, zero);
 

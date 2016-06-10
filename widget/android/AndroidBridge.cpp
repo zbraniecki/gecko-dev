@@ -1651,6 +1651,12 @@ nsAndroidBridge::Observe(nsISupports* aSubject, const char* aTopic,
     MOZ_ASSERT(window);
 
     nsAutoString activeStr(aData);
+    if (activeStr.EqualsLiteral("inactive-nonaudible")) {
+      // This state means the audio becomes silent, but it's still playing, so
+      // we don't need to notify the AudioFocusAgent.
+      return NS_OK;
+    }
+
     bool isPlaying = activeStr.EqualsLiteral("active");
 
     UpdateAudioPlayingWindows(window, isPlaying);
@@ -1897,7 +1903,7 @@ AndroidBridge::CaptureZoomedView(mozIDOMWindowProxy *window, nsIntRect zoomedVie
         ALOG_BRIDGE("Error creating DrawTarget");
         return NS_ERROR_FAILURE;
     }
-    RefPtr<gfxContext> context = gfxContext::ForDrawTarget(dt);
+    RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
     MOZ_ASSERT(context); // already checked the draw target above
     context->SetMatrix(context->CurrentMatrix().Scale(zoomFactor, zoomFactor));
 
@@ -2003,7 +2009,7 @@ nsresult AndroidBridge::CaptureThumbnail(mozIDOMWindowProxy *window, int32_t buf
         ALOG_BRIDGE("Error creating DrawTarget");
         return NS_ERROR_FAILURE;
     }
-    RefPtr<gfxContext> context = gfxContext::ForDrawTarget(dt);
+    RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
     MOZ_ASSERT(context); // checked the draw target above
 
     context->SetMatrix(

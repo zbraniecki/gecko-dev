@@ -30,14 +30,16 @@ class TestDecision(unittest.TestCase):
 
         self.assertEqual(res, {
             'a': {
+                'label': 'a',
                 'attributes': {'attr': 'a-task'},
                 'task': {},
-                'dependencies': [('edgelabel', 'b')],
+                'dependencies': {'edgelabel': 'b'},
             },
             'b': {
+                'label': 'b',
                 'attributes': {},
                 'task': {'task': 'def'},
-                'dependencies': [],
+                'dependencies': {},
             }
         })
 

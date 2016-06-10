@@ -124,14 +124,14 @@ class MOZ_RAII AutoVectorRooterBase : protected AutoGCRooter
     size_t length() const { return vector.length(); }
     bool empty() const { return vector.empty(); }
 
-    bool append(const T& v) { return vector.append(v); }
-    bool appendN(const T& v, size_t len) { return vector.appendN(v, len); }
-    bool append(const T* ptr, size_t len) { return vector.append(ptr, len); }
-    bool appendAll(const AutoVectorRooterBase<T>& other) {
+    MOZ_MUST_USE bool append(const T& v) { return vector.append(v); }
+    MOZ_MUST_USE bool appendN(const T& v, size_t len) { return vector.appendN(v, len); }
+    MOZ_MUST_USE bool append(const T* ptr, size_t len) { return vector.append(ptr, len); }
+    MOZ_MUST_USE bool appendAll(const AutoVectorRooterBase<T>& other) {
         return vector.appendAll(other.vector);
     }
 
-    bool insert(T* p, const T& val) { return vector.insert(p, val); }
+    MOZ_MUST_USE bool insert(T* p, const T& val) { return vector.insert(p, val); }
 
     /* For use when space has already been reserved. */
     void infallibleAppend(const T& v) { vector.infallibleAppend(v); }
@@ -139,7 +139,7 @@ class MOZ_RAII AutoVectorRooterBase : protected AutoGCRooter
     void popBack() { vector.popBack(); }
     T popCopy() { return vector.popCopy(); }
 
-    bool growBy(size_t inc) {
+    MOZ_MUST_USE bool growBy(size_t inc) {
         size_t oldLength = vector.length();
         if (!vector.growByUninitialized(inc))
             return false;
@@ -147,7 +147,7 @@ class MOZ_RAII AutoVectorRooterBase : protected AutoGCRooter
         return true;
     }
 
-    bool resize(size_t newLength) {
+    MOZ_MUST_USE bool resize(size_t newLength) {
         size_t oldLength = vector.length();
         if (newLength <= oldLength) {
             vector.shrinkBy(oldLength - newLength);
@@ -161,7 +161,7 @@ class MOZ_RAII AutoVectorRooterBase : protected AutoGCRooter
 
     void clear() { vector.clear(); }
 
-    bool reserve(size_t newLength) {
+    MOZ_MUST_USE bool reserve(size_t newLength) {
         return vector.reserve(newLength);
     }
 
@@ -222,6 +222,7 @@ typedef AutoVectorRooter<JSObject*> AutoObjectVector;
 using ValueVector = JS::GCVector<JS::Value>;
 using IdVector = JS::GCVector<jsid>;
 using ScriptVector = JS::GCVector<JSScript*>;
+using StringVector = JS::GCVector<JSString*>;
 
 template<class Key, class Value>
 class MOZ_RAII AutoHashMapRooter : protected AutoGCRooter
@@ -617,9 +618,6 @@ typedef void
 
 typedef void
 (* JSProcessPromiseCallback)(JSContext* cx, JS::HandleObject promise);
-
-typedef void
-(* JSErrorReporter)(JSContext* cx, const char* message, JSErrorReport* report);
 
 /**
  * Possible exception types. These types are part of a JSErrorFormatString
@@ -1266,80 +1264,6 @@ RuntimeOptionsRef(JSRuntime* rt);
 
 JS_PUBLIC_API(RuntimeOptions&)
 RuntimeOptionsRef(JSContext* cx);
-
-class JS_PUBLIC_API(ContextOptions) {
-  public:
-    ContextOptions()
-      : privateIsNSISupports_(false),
-        dontReportUncaught_(false),
-        autoJSAPIOwnsErrorReporting_(false)
-    {
-    }
-
-    bool privateIsNSISupports() const { return privateIsNSISupports_; }
-    ContextOptions& setPrivateIsNSISupports(bool flag) {
-        privateIsNSISupports_ = flag;
-        return *this;
-    }
-    ContextOptions& togglePrivateIsNSISupports() {
-        privateIsNSISupports_ = !privateIsNSISupports_;
-        return *this;
-    }
-
-    bool dontReportUncaught() const { return dontReportUncaught_; }
-    ContextOptions& setDontReportUncaught(bool flag) {
-        dontReportUncaught_ = flag;
-        return *this;
-    }
-    ContextOptions& toggleDontReportUncaught() {
-        dontReportUncaught_ = !dontReportUncaught_;
-        return *this;
-    }
-
-    bool autoJSAPIOwnsErrorReporting() const { return autoJSAPIOwnsErrorReporting_; }
-    ContextOptions& setAutoJSAPIOwnsErrorReporting(bool flag) {
-        autoJSAPIOwnsErrorReporting_ = flag;
-        return *this;
-    }
-    ContextOptions& toggleAutoJSAPIOwnsErrorReporting() {
-        autoJSAPIOwnsErrorReporting_ = !autoJSAPIOwnsErrorReporting_;
-        return *this;
-    }
-
-
-  private:
-    bool privateIsNSISupports_ : 1;
-    bool dontReportUncaught_ : 1;
-    // dontReportUncaught isn't respected by all JSAPI codepaths, particularly the
-    // JS_ReportError* functions that eventually report the error even when dontReportUncaught is
-    // set, if script is not running. We want a way to indicate that the embedder will always
-    // handle any exceptions, and that SpiderMonkey should just leave them on the context. This is
-    // the way we want to do all future error handling in Gecko - stealing the exception explicitly
-    // from the context and handling it as per the situation. This will eventually become the
-    // default and these 2 flags should go away.
-    bool autoJSAPIOwnsErrorReporting_ : 1;
-};
-
-JS_PUBLIC_API(ContextOptions&)
-ContextOptionsRef(JSContext* cx);
-
-class JS_PUBLIC_API(AutoSaveContextOptions) {
-  public:
-    explicit AutoSaveContextOptions(JSContext* cx)
-      : cx_(cx),
-        oldOptions_(ContextOptionsRef(cx_))
-    {
-    }
-
-    ~AutoSaveContextOptions()
-    {
-        ContextOptionsRef(cx_) = oldOptions_;
-    }
-
-  private:
-    JSContext* cx_;
-    JS::ContextOptions oldOptions_;
-};
 
 } /* namespace JS */
 
@@ -4997,6 +4921,7 @@ GetSymbolDescription(HandleSymbol symbol);
     macro(replace) \
     macro(search) \
     macro(species) \
+    macro(hasInstance) \
     macro(split) \
     macro(toPrimitive) \
     macro(unscopables)
@@ -5167,8 +5092,7 @@ const uint16_t MaxNumErrorArguments = 10;
 
 /**
  * Report an exception represented by the sprintf-like conversion of format
- * and its arguments.  This exception message string is passed to a pre-set
- * JSErrorReporter function (set by JS_SetErrorReporter).
+ * and its arguments.
  */
 extern JS_PUBLIC_API(void)
 JS_ReportError(JSContext* cx, const char* format, ...);
@@ -5299,13 +5223,16 @@ class JSErrorReport
 #define JSREPORT_IS_STRICT(flags)       (((flags) & JSREPORT_STRICT) != 0)
 #define JSREPORT_IS_STRICT_MODE_ERROR(flags) (((flags) &                      \
                                               JSREPORT_STRICT_MODE_ERROR) != 0)
-extern JS_PUBLIC_API(JSErrorReporter)
-JS_GetErrorReporter(JSRuntime* rt);
-
-extern JS_PUBLIC_API(JSErrorReporter)
-JS_SetErrorReporter(JSRuntime* rt, JSErrorReporter er);
-
 namespace JS {
+
+typedef void
+(* WarningReporter)(JSContext* cx, const char* message, JSErrorReport* report);
+
+extern JS_PUBLIC_API(WarningReporter)
+SetWarningReporter(JSRuntime* rt, WarningReporter reporter);
+
+extern JS_PUBLIC_API(WarningReporter)
+GetWarningReporter(JSRuntime* rt);
 
 extern JS_PUBLIC_API(bool)
 CreateError(JSContext* cx, JSExnType type, HandleObject stack,
@@ -5485,9 +5412,6 @@ JS_SetPendingException(JSContext* cx, JS::HandleValue v);
 extern JS_PUBLIC_API(void)
 JS_ClearPendingException(JSContext* cx);
 
-extern JS_PUBLIC_API(bool)
-JS_ReportPendingException(JSContext* cx);
-
 namespace JS {
 
 /**
@@ -5619,7 +5543,7 @@ extern JS_PUBLIC_API(void)
 JS_GetGCZealBits(JSContext* cx, uint32_t* zealBits, uint32_t* frequency, uint32_t* nextScheduled);
 
 extern JS_PUBLIC_API(void)
-JS_SetGCZeal(JSContext* cx, uint8_t zeal, uint32_t frequency);
+JS_SetGCZeal(JSRuntime* rt, uint8_t zeal, uint32_t frequency);
 
 extern JS_PUBLIC_API(void)
 JS_ScheduleGC(JSContext* cx, uint32_t count);

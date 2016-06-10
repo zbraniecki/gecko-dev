@@ -93,6 +93,7 @@ EXTRA_JS_MODULES += [
     'UpdateUtils.jsm',
     'WebChannel.jsm',
     'WindowDraggingUtils.jsm',
+    'XULLocalization.jsm',
     'ZipUtils.jsm',
 ]
 EXTRA_JS_MODULES.third_party.jsesc += ['third_party/jsesc/jsesc.js']

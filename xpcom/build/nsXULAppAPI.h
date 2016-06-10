@@ -108,6 +108,16 @@
  */
 #define XRE_SYS_SHARE_EXTENSION_PARENT_DIR "XRESysSExtPD"
 
+#if defined(XP_UNIX) || defined(XP_MACOSX)
+/**
+ * Directory service keys for the system-wide and user-specific
+ * directories where host manifests used by the WebExtensions
+ * native messaging feature are found.
+ */
+#define XRE_SYS_NATIVE_MESSAGING_MANIFESTS "XRESysNativeMessaging"
+#define XRE_USER_NATIVE_MESSAGING_MANIFESTS "XREUserNativeMessaging"
+#endif
+
 /**
  * A directory service key which specifies the user system extension
  * parent directory.
@@ -506,6 +516,9 @@ XRE_API(void,
         XRE_ProcLoaderPreload, (const char* aProgramDir,
                                 const nsXREAppData* aAppData));
 #endif // MOZ_B2G_LOADER
+
+XRE_API(void,
+        XRE_EnableSameExecutableForContentProc, ())
 
 XRE_API(int,
         XRE_XPCShellMain, (int argc, char** argv, char** envp,

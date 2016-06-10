@@ -482,7 +482,7 @@ CycleCollectedJSRuntime::~CycleCollectedJSRuntime()
 }
 
 static void
-MozCrashErrorReporter(JSContext*, const char*, JSErrorReport*)
+MozCrashWarningReporter(JSContext*, const char*, JSErrorReport*)
 {
   MOZ_CRASH("Why is someone touching JSAPI without an AutoJSAPI?");
 }
@@ -505,7 +505,7 @@ CycleCollectedJSRuntime::Initialize(JSRuntime* aParentRuntime,
   }
 
   if (!JS_AddExtraGCRootsTracer(mJSRuntime, TraceBlackJS, this)) {
-    MOZ_CRASH();
+    MOZ_CRASH("JS_AddExtraGCRootsTracer failed");
   }
   JS_SetGrayGCRootsTracer(mJSRuntime, TraceGrayJS, this);
   JS_SetGCCallback(mJSRuntime, GCCallback, this);
@@ -531,7 +531,7 @@ CycleCollectedJSRuntime::Initialize(JSRuntime* aParentRuntime,
   JS_SetDestroyZoneCallback(mJSRuntime, XPCStringConvert::FreeZoneCache);
   JS_SetSweepZoneCallback(mJSRuntime, XPCStringConvert::ClearZoneCache);
   JS::SetBuildIdOp(mJSRuntime, GetBuildId);
-  JS_SetErrorReporter(mJSRuntime, MozCrashErrorReporter);
+  JS::SetWarningReporter(mJSRuntime, MozCrashWarningReporter);
 
   static js::DOMCallbacks DOMcallbacks = {
     InstanceClassHasProtoAtDepth

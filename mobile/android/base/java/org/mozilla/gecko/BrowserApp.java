@@ -8,9 +8,9 @@ package org.mozilla.gecko;
 import android.Manifest;
 import android.app.DownloadManager;
 import android.os.Environment;
+import android.support.annotation.CheckResult;
 import android.support.annotation.NonNull;
-import android.support.annotation.Nullable;
-import android.support.annotation.WorkerThread;
+
 import org.json.JSONArray;
 import org.mozilla.gecko.adjust.AdjustHelperInterface;
 import org.mozilla.gecko.annotation.RobocopTarget;
@@ -53,8 +53,7 @@ import org.mozilla.gecko.javaaddons.JavaAddonManager;
 import org.mozilla.gecko.media.AudioFocusAgent;
 import org.mozilla.gecko.menu.GeckoMenu;
 import org.mozilla.gecko.menu.GeckoMenuItem;
-import org.mozilla.gecko.mozglue.SafeIntentUtils;
-import org.mozilla.gecko.mozglue.SafeIntentUtils.SafeIntent;
+import org.mozilla.gecko.mozglue.SafeIntent;
 import org.mozilla.gecko.overlays.ui.ShareDialog;
 import org.mozilla.gecko.permissions.Permissions;
 import org.mozilla.gecko.preferences.ClearOnShutdownPref;
@@ -79,15 +78,14 @@ import org.mozilla.gecko.tabs.TabHistoryFragment;
 import org.mozilla.gecko.tabs.TabHistoryPage;
 import org.mozilla.gecko.tabs.TabsPanel;
 import org.mozilla.gecko.telemetry.TelemetryUploadService;
+import org.mozilla.gecko.telemetry.TelemetryCorePingDelegate;
 import org.mozilla.gecko.telemetry.measurements.SearchCountMeasurements;
-import org.mozilla.gecko.telemetry.TelemetryDispatcher;
-import org.mozilla.gecko.telemetry.UploadTelemetryCorePingCallback;
-import org.mozilla.gecko.telemetry.measurements.SessionMeasurements;
 import org.mozilla.gecko.toolbar.AutocompleteHandler;
 import org.mozilla.gecko.toolbar.BrowserToolbar;
 import org.mozilla.gecko.toolbar.BrowserToolbar.TabEditingState;
 import org.mozilla.gecko.toolbar.ToolbarProgressView;
 import org.mozilla.gecko.trackingprotection.TrackingProtectionPrompt;
+import org.mozilla.gecko.updater.PostUpdateHandler;
 import org.mozilla.gecko.updater.UpdateServiceHelper;
 import org.mozilla.gecko.util.ActivityUtils;
 import org.mozilla.gecko.util.Clipboard;
@@ -312,14 +310,13 @@ public class BrowserApp extends GeckoApp
             (BrowserAppDelegate) new ScreenshotDelegate(),
             (BrowserAppDelegate) new BookmarkStateChangeDelegate(),
             (BrowserAppDelegate) new ReaderViewBookmarkPromotion(),
-            (BrowserAppDelegate) new ContentNotificationsDelegate()
+            (BrowserAppDelegate) new ContentNotificationsDelegate(),
+            (BrowserAppDelegate) new PostUpdateHandler(),
+            new TelemetryCorePingDelegate()
     ));
 
     @NonNull
     private SearchEngineManager mSearchEngineManager; // Contains reference to Context - DO NOT LEAK!
-
-    private TelemetryDispatcher mTelemetryDispatcher; // lazy.
-    private final SessionMeasurements mSessionMeasurements = new SessionMeasurements();
 
     private boolean mHasResumed;
 
@@ -548,7 +545,7 @@ public class BrowserApp extends GeckoApp
         }
 
         final Intent intent = getIntent();
-        configureForTestsBasedOnEnvironment(intent);
+        final boolean isInAutomation = getIsInAutomationFromEnvironment(intent);
 
         // This has to be prepared prior to calling GeckoApp.onCreate, because
         // widget code and BrowserToolbar need it, and they're created by the
@@ -558,7 +555,8 @@ public class BrowserApp extends GeckoApp
 
         final Context appContext = getApplicationContext();
 
-        initSwitchboard(intent);
+        initSwitchboard(this, intent, isInAutomation);
+        initTelemetryUploader(isInAutomation);
 
         mBrowserChrome = (ViewGroup) findViewById(R.id.browser_chrome);
         mActionBarFlipper = (ViewFlipper) findViewById(R.id.browser_actionbar);
@@ -701,14 +699,7 @@ public class BrowserApp extends GeckoApp
         mReadingListHelper = new ReadingListHelper(appContext, profile);
         mAccountsHelper = new AccountsHelper(appContext, profile);
 
-        final AdjustHelperInterface adjustHelper = AdjustConstants.getAdjustHelper();
-        adjustHelper.onCreate(this, AdjustConstants.MOZ_INSTALL_TRACKING_ADJUST_SDK_APP_TOKEN);
-
-        // Adjust stores enabled state so this is only necessary because users may have set
-        // their data preferences before this feature was implemented and we need to respect
-        // those before upload can occur in Adjust.onResume.
-        final SharedPreferences prefs = GeckoSharedPrefs.forApp(this);
-        adjustHelper.setEnabled(prefs.getBoolean(GeckoPreferences.PREFS_HEALTHREPORT_UPLOAD_ENABLED, true));
+        initAdjustSDK(this, isInAutomation);
 
         if (AppConstants.MOZ_ANDROID_BEAM) {
             NfcAdapter nfc = NfcAdapter.getDefaultAdapter(this);
@@ -765,31 +756,35 @@ public class BrowserApp extends GeckoApp
     }
 
     /**
-     * Sets up the testing configuration if the environment is configured as such.
+     * Gets whether or not we're in automation from the passed in environment variables.
      *
      * We need to read environment variables from the intent string
      * extra because environment variables from our test harness aren't set
      * until Gecko is loaded, and we need to know this before then.
      *
-     * This method should be called early since other initialization
-     * may depend on its results.
+     * The return value of this method should be used early since other
+     * initialization may depend on its results.
      */
-    private void configureForTestsBasedOnEnvironment(final Intent intent) {
+    @CheckResult
+    private boolean getIsInAutomationFromEnvironment(final Intent intent) {
         final HashMap<String, String> envVars = IntentUtils.getEnvVarMap(intent);
-        Experiments.setDisabledFromEnvVar(envVars);
-        TelemetryUploadService.setDisabledFromEnvVar(envVars);
+        return !TextUtils.isEmpty(envVars.get(IntentUtils.ENV_VAR_IN_AUTOMATION));
     }
 
     /**
      * Initializes the default Switchboard URLs the first time.
      * @param intent
      */
-    private void initSwitchboard(final Intent intent) {
-        if (Experiments.isDisabled() || !AppConstants.MOZ_SWITCHBOARD) {
+    private static void initSwitchboard(final Context context, final Intent intent, final boolean isInAutomation) {
+        if (isInAutomation) {
+            Log.d(LOGTAG, "Switchboard disabled - in automation");
+            return;
+        } else if (!AppConstants.MOZ_SWITCHBOARD) {
+            Log.d(LOGTAG, "Switchboard compile-time disabled");
             return;
         }
 
-        final String hostExtra = SafeIntentUtils.getStringExtra(intent, INTENT_KEY_SWITCHBOARD_HOST);
+        final String hostExtra = IntentUtils.getStringExtraSafe(intent, INTENT_KEY_SWITCHBOARD_HOST);
         final String host = TextUtils.isEmpty(hostExtra) ? DEFAULT_SWITCHBOARD_HOST : hostExtra;
 
         final String serverUrl;
@@ -804,7 +799,24 @@ public class BrowserApp extends GeckoApp
         // should use the endpoint returned by the server URL, to support migrating
         // to a new endpoint. However, if we want to do that, we'll need to find a different
         // solution for dynamically changing the server URL from the intent.
-        new AsyncConfigLoader(this, serverUrl).execute();
+        new AsyncConfigLoader(context, serverUrl).execute();
+    }
+
+    private static void initTelemetryUploader(final boolean isInAutomation) {
+        TelemetryUploadService.setDisabled(isInAutomation);
+    }
+
+    private static void initAdjustSDK(final Context context, final boolean isInAutomation) {
+        final AdjustHelperInterface adjustHelper = AdjustConstants.getAdjustHelper();
+        adjustHelper.onCreate(context, AdjustConstants.MOZ_INSTALL_TRACKING_ADJUST_SDK_APP_TOKEN);
+
+        // Adjust stores enabled state so this is only necessary because users may have set
+        // their data preferences before this feature was implemented and we need to respect
+        // those before upload can occur in Adjust.onResume.
+        final SharedPreferences prefs = GeckoSharedPrefs.forApp(context);
+        final boolean enabled = !isInAutomation &&
+                prefs.getBoolean(GeckoPreferences.PREFS_HEALTHREPORT_UPLOAD_ENABLED, true);
+        adjustHelper.setEnabled(enabled);
     }
 
     private void showUpdaterPermissionSnackbar() {
@@ -1004,7 +1016,6 @@ public class BrowserApp extends GeckoApp
 
         // Needed for Adjust to get accurate session measurements
         AdjustConstants.getAdjustHelper().onResume();
-        mSessionMeasurements.recordSessionStart();
 
         if (!mHasResumed) {
             EventDispatcher.getInstance().unregisterGeckoThreadListener((GeckoEventListener) this,
@@ -1028,10 +1039,6 @@ public class BrowserApp extends GeckoApp
 
         // Needed for Adjust to get accurate session measurements
         AdjustConstants.getAdjustHelper().onPause();
-
-        // onStart/onStop is ideal over onResume/onPause. However, onStop is not guaranteed to be called and
-        // dealing with that possibility adds a lot of complexity that we don't want to handle at this point.
-        mSessionMeasurements.recordSessionEnd(this);
 
         if (mHasResumed) {
             // Register for Prompt:ShowTop so we can foreground this activity even if it's hidden.
@@ -1085,15 +1092,6 @@ public class BrowserApp extends GeckoApp
                 FileCleanupController.startIfReady(BrowserApp.this, sharedPrefs, profile.getDir().getAbsolutePath());
             }
         });
-
-        // We don't upload in onCreate because that's only called when the Activity needs to be instantiated
-        // and it's possible the system will never free the Activity from memory.
-        //
-        // We don't upload in onResume/onPause because that will be called each time the Activity is obscured,
-        // including by our own Activities/dialogs, and there is no reason to upload each time we're unobscured.
-        //
-        // So we're left with onStart/onStop.
-        mSearchEngineManager.getEngine(new UploadTelemetryCorePingCallback(BrowserApp.this));
 
         for (final BrowserAppDelegate delegate : delegates) {
             delegate.onStart(this);
@@ -2333,8 +2331,6 @@ public class BrowserApp extends GeckoApp
 
         mBrowserToolbar.startEditing(url, animator);
 
-        final boolean isUserSearchTerm = selectedTab != null &&
-                !TextUtils.isEmpty(selectedTab.getUserRequested());
         showHomePagerWithAnimator(panelId, null, animator);
 
         animator.start();
@@ -2535,6 +2531,12 @@ public class BrowserApp extends GeckoApp
                 // history, and loading new pages, see Bug 1268887
                 panelId = tab.getMostRecentHomePanel();
                 panelRestoreData = tab.getMostRecentHomePanelData();
+            } else if (panelId.equals(HomeConfig.getIdForBuiltinPanelType(PanelType.DEPRECATED_RECENT_TABS))) {
+                // Redirect to the Combined History panel.
+                panelId = HomeConfig.getIdForBuiltinPanelType(PanelType.COMBINED_HISTORY);
+                panelRestoreData = new Bundle();
+                // Jump directly to the Recent Tabs subview of the Combined History panel.
+                panelRestoreData.putBoolean("goToRecentTabs", true);
             }
             showHomePager(panelId, panelRestoreData);
 
@@ -3323,7 +3325,14 @@ public class BrowserApp extends GeckoApp
                 if (shareIntent == null) {
                     shareIntent = new Intent(Intent.ACTION_SEND);
                     shareIntent.setType("text/plain");
-                    provider.setIntent(shareIntent);
+
+                    final Intent intentToSet = shareIntent;
+                    ThreadUtils.postToBackgroundThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            provider.setIntent(intentToSet);
+                        }
+                    });
                 }
 
                 // Replace the existing intent's extras
@@ -3923,16 +3932,8 @@ public class BrowserApp extends GeckoApp
     @Override
     public int getLayout() { return R.layout.gecko_app; }
 
-    @WorkerThread // via constructor
-    public TelemetryDispatcher getTelemetryDispatcher() {
-        if (mTelemetryDispatcher == null) {
-            mTelemetryDispatcher = new TelemetryDispatcher(getProfile().getDir().getAbsolutePath());
-        }
-        return mTelemetryDispatcher;
-    }
-
-    public SessionMeasurements getSessionMeasurementDelegate() {
-        return mSessionMeasurements;
+    public SearchEngineManager getSearchEngineManager() {
+        return mSearchEngineManager;
     }
 
     // For use from tests only.

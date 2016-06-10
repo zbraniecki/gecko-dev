@@ -203,10 +203,10 @@ imgFrame::InitForDecoder(const nsIntSize& aImageSize,
 
     // Use the fallible allocator here. Paletted images always use 1 byte per
     // pixel, so calculating the amount of memory we need is straightforward.
-    mPalettedImageData =
-      static_cast<uint8_t*>(malloc(PaletteDataLength() + mFrameRect.Area()));
+    size_t dataSize = PaletteDataLength() + mFrameRect.Area();
+    mPalettedImageData = static_cast<uint8_t*>(calloc(dataSize, sizeof(uint8_t)));
     if (!mPalettedImageData) {
-      NS_WARNING("malloc for paletted image data should succeed");
+      NS_WARNING("Call to calloc for paletted image data should succeed");
     }
     NS_ENSURE_TRUE(mPalettedImageData, NS_ERROR_OUT_OF_MEMORY);
   } else {
@@ -238,7 +238,7 @@ nsresult
 imgFrame::InitWithDrawable(gfxDrawable* aDrawable,
                            const nsIntSize& aSize,
                            const SurfaceFormat aFormat,
-                           Filter aFilter,
+                           SamplingFilter aSamplingFilter,
                            uint32_t aImageFlags)
 {
   // Assert for properties that should be verified by decoders,
@@ -301,11 +301,11 @@ imgFrame::InitWithDrawable(gfxDrawable* aDrawable,
   }
 
   // Draw using the drawable the caller provided.
-  RefPtr<gfxContext> ctx = gfxContext::ForDrawTarget(target);
+  RefPtr<gfxContext> ctx = gfxContext::CreateOrNull(target);
   MOZ_ASSERT(ctx);  // Already checked the draw target above.
   gfxUtils::DrawPixelSnapped(ctx, aDrawable, mFrameRect.Size(),
                              ImageRegion::Create(ThebesRect(mFrameRect)),
-                             mFormat, aFilter, aImageFlags);
+                             mFormat, aSamplingFilter, aImageFlags);
 
   if (canUseDataSurface && !mImageSurface) {
     NS_WARNING("Failed to create VolatileDataSourceSurface");
@@ -550,7 +550,7 @@ imgFrame::SurfaceForDrawing(bool               aDoPadding,
 }
 
 bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
-                    Filter aFilter, uint32_t aImageFlags)
+                    SamplingFilter aSamplingFilter, uint32_t aImageFlags)
 {
   PROFILER_LABEL("imgFrame", "Draw",
     js::ProfileEntry::Category::GRAPHICS);
@@ -607,7 +607,7 @@ bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
   if (surfaceResult.IsValid()) {
     gfxUtils::DrawPixelSnapped(aContext, surfaceResult.mDrawable,
                                imageRect.Size(), region, surfaceResult.mFormat,
-                               aFilter, aImageFlags);
+                               aSamplingFilter, aImageFlags);
   }
   return true;
 }

@@ -707,6 +707,7 @@ private:
   RecvGetXPCOMProcessAttributes(bool* aIsOffline,
                                 bool* aIsConnected,
                                 bool* aIsLangRTL,
+                                bool* aHaveBidiKeyboards,
                                 InfallibleTArray<nsString>* dictionaries,
                                 ClipboardCapabilities* clipboardCaps,
                                 DomainPolicyClone* domainPolicy,
@@ -867,6 +868,12 @@ private:
   virtual bool DeallocPPresentationParent(PPresentationParent* aActor) override;
 
   virtual bool RecvPPresentationConstructor(PPresentationParent* aActor) override;
+
+  virtual PFlyWebPublishedServerParent*
+    AllocPFlyWebPublishedServerParent(const nsString& name,
+                                      const FlyWebPublishOptions& params) override;
+
+  virtual bool DeallocPFlyWebPublishedServerParent(PFlyWebPublishedServerParent* aActor) override;
 
   virtual PSpeechSynthesisParent* AllocPSpeechSynthesisParent() override;
 

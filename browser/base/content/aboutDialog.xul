@@ -1,3 +1,4 @@
+<?xml version="1.0"?> <!-- -*- Mode: HTML -*- -->
 
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -16,8 +17,6 @@
         id="aboutDialog"
         windowtype="Browser:About"
         onload="init(event);"
-        availableLanguages="en-US"
-        defaultLanguage="en-US"
 #ifdef MOZ_UPDATER
         onunload="onUnload(event);"
 #endif
@@ -34,10 +33,13 @@
 #ifdef MOZ_UPDATER
   <script type="application/javascript" src="chrome://browser/content/aboutDialog-appUpdater.js"/>
 #endif
-  <script type="application/javascript" src="chrome://global/content/l20n-xul.js"/>
+  <script type="application/javascript" src="chrome://global/content/l20n-chrome-observer.js"/>
 
-  <messagebundle src="chrome://branding/locale/brand.{locale}.ftl"/>
-  <messagebundle src="chrome://browser/locale/aboutDialog.{locale}.ftl"/>
+  <localization>
+    <source src="/branding/brand.ftl"/>
+    <source src="/browser/aboutDialog.ftl"/>
+  </localization>
+
   <vbox id="aboutDialogContainer">
     <hbox id="clientBox">
       <vbox id="leftBox" flex="1"/>
@@ -102,6 +104,9 @@
               </hbox>
               <hbox id="unsupportedSystem" align="center" data-l10n-id="aboutDialog-update-unsupported">
                 <label id="unsupportedLink" class="text-link"></label>
+              </hbox>
+              <hbox id="restarting" align="center">
+                <label data-l10n-id="aboutDialog-update-restarting"></label>
               </hbox>
             </deck>
 #endif

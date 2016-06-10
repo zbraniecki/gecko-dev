@@ -31,14 +31,6 @@ LazyLogModule gAudioStreamLog("AudioStream");
 #define LOGW(x, ...) MOZ_LOG(gAudioStreamLog, mozilla::LogLevel::Warning, ("%p " x, this, ##__VA_ARGS__))
 
 /**
- * When MOZ_DUMP_AUDIO is set in the environment (to anything),
- * we'll drop a series of files in the current working directory named
- * dumped-audio-<nnn>.wav, one per AudioStream created, containing
- * the audio for the stream including any skips due to underruns.
- */
-static int gDumpedAudioCount = 0;
-
-/**
  * Keep a list of frames sent to the audio engine in each DataCallback along
  * with the playback rate at the moment. Since the playback rate and number of
  * underrun frames can vary in each callback. We need to keep the whole history
@@ -121,11 +113,8 @@ private:
 
 AudioStream::AudioStream(DataSource& aSource)
   : mMonitor("AudioStream")
-  , mInRate(0)
-  , mOutRate(0)
   , mChannels(0)
   , mOutChannels(0)
-  , mAudioClock(this)
   , mTimeStretcher(nullptr)
   , mDumpFile(nullptr)
   , mState(INITIALIZED)
@@ -163,7 +152,7 @@ nsresult AudioStream::EnsureTimeStretcherInitializedUnlocked()
   mMonitor.AssertCurrentThreadOwns();
   if (!mTimeStretcher) {
     mTimeStretcher = soundtouch::createSoundTouchObj();
-    mTimeStretcher->setSampleRate(mInRate);
+    mTimeStretcher->setSampleRate(mAudioClock.GetInputRate());
     mTimeStretcher->setChannels(mOutChannels);
     mTimeStretcher->setPitch(1.0);
   }
@@ -188,8 +177,7 @@ nsresult AudioStream::SetPlaybackRate(double aPlaybackRate)
     return NS_ERROR_FAILURE;
   }
 
-  mAudioClock.SetPlaybackRateUnlocked(aPlaybackRate);
-  mOutRate = mInRate / aPlaybackRate;
+  mAudioClock.SetPlaybackRate(aPlaybackRate);
 
   if (mAudioClock.GetPreservesPitch()) {
     mTimeStretcher->setTempo(aPlaybackRate);
@@ -242,16 +230,23 @@ static void SetUint32LE(uint8_t* aDest, uint32_t aValue)
 }
 
 static FILE*
-OpenDumpFile(AudioStream* aStream)
+OpenDumpFile(uint32_t aChannels, uint32_t aRate)
 {
+  /**
+   * When MOZ_DUMP_AUDIO is set in the environment (to anything),
+   * we'll drop a series of files in the current working directory named
+   * dumped-audio-<nnn>.wav, one per AudioStream created, containing
+   * the audio for the stream including any skips due to underruns.
+   */
+  static Atomic<int> gDumpedAudioCount(0);
+
   if (!getenv("MOZ_DUMP_AUDIO"))
     return nullptr;
   char buf[100];
-  snprintf_literal(buf, "dumped-audio-%d.wav", gDumpedAudioCount);
+  snprintf_literal(buf, "dumped-audio-%d.wav", ++gDumpedAudioCount);
   FILE* f = fopen(buf, "wb");
   if (!f)
     return nullptr;
-  ++gDumpedAudioCount;
 
   uint8_t header[] = {
     // RIFF header
@@ -265,9 +260,9 @@ OpenDumpFile(AudioStream* aStream)
   static const int CHANNEL_OFFSET = 22;
   static const int SAMPLE_RATE_OFFSET = 24;
   static const int BLOCK_ALIGN_OFFSET = 32;
-  SetUint16LE(header + CHANNEL_OFFSET, aStream->GetChannels());
-  SetUint32LE(header + SAMPLE_RATE_OFFSET, aStream->GetRate());
-  SetUint16LE(header + BLOCK_ALIGN_OFFSET, aStream->GetChannels()*2);
+  SetUint16LE(header + CHANNEL_OFFSET, aChannels);
+  SetUint32LE(header + SAMPLE_RATE_OFFSET, aRate);
+  SetUint16LE(header + BLOCK_ALIGN_OFFSET, aChannels * 2);
   fwrite(header, sizeof(header), 1, f);
 
   return f;
@@ -330,11 +325,10 @@ AudioStream::Init(uint32_t aNumChannels, uint32_t aRate,
   auto isFirst = CubebUtils::GetFirstStream();
 
   LOG("%s channels: %d, rate: %d", __FUNCTION__, aNumChannels, aRate);
-  mInRate = mOutRate = aRate;
   mChannels = aNumChannels;
   mOutChannels = aNumChannels;
 
-  mDumpFile = OpenDumpFile(this);
+  mDumpFile = OpenDumpFile(aNumChannels, aRate);
 
   cubeb_stream_params params;
   params.rate = aRate;
@@ -352,7 +346,7 @@ AudioStream::Init(uint32_t aNumChannels, uint32_t aRate,
 #endif
 
   params.format = ToCubebFormat<AUDIO_OUTPUT_FORMAT>::value;
-  mAudioClock.Init();
+  mAudioClock.Init(aRate);
 
   return OpenCubeb(params, startTime, isFirst);
 }
@@ -411,18 +405,20 @@ void
 AudioStream::Pause()
 {
   MonitorAutoLock mon(mMonitor);
+  MOZ_ASSERT(mState != INITIALIZED, "Must be Start()ed.");
+  MOZ_ASSERT(mState != STOPPED, "Already Pause()ed.");
+  MOZ_ASSERT(mState != SHUTDOWN, "Already Shutdown()ed.");
 
-  if (mState == ERRORED) {
+  // Do nothing if we are already drained or errored.
+  if (mState == DRAINED || mState == ERRORED) {
     return;
   }
 
-  if (mState != STARTED) {
-    mState = STOPPED; // which also tells async OpenCubeb not to start, just init
-    return;
-  }
-
-  int r = InvokeCubeb(cubeb_stream_stop);
-  if (mState != ERRORED && r == CUBEB_OK) {
+  if (InvokeCubeb(cubeb_stream_stop) != CUBEB_OK) {
+    mState = ERRORED;
+  } else if (mState != DRAINED && mState != ERRORED) {
+    // Don't transition to other states if we are already
+    // drained or errored.
     mState = STOPPED;
   }
 }
@@ -431,12 +427,20 @@ void
 AudioStream::Resume()
 {
   MonitorAutoLock mon(mMonitor);
-  if (mState != STOPPED) {
+  MOZ_ASSERT(mState != INITIALIZED, "Must be Start()ed.");
+  MOZ_ASSERT(mState != STARTED, "Already Start()ed.");
+  MOZ_ASSERT(mState != SHUTDOWN, "Already Shutdown()ed.");
+
+  // Do nothing if we are already drained or errored.
+  if (mState == DRAINED || mState == ERRORED) {
     return;
   }
 
-  int r = InvokeCubeb(cubeb_stream_start);
-  if (mState != ERRORED && r == CUBEB_OK) {
+  if (InvokeCubeb(cubeb_stream_start) != CUBEB_OK) {
+    mState = ERRORED;
+  } else if (mState != DRAINED && mState != ERRORED) {
+    // Don't transition to other states if we are already
+    // drained or errored.
     mState = STARTED;
   }
 }
@@ -463,14 +467,16 @@ int64_t
 AudioStream::GetPosition()
 {
   MonitorAutoLock mon(mMonitor);
-  return mAudioClock.GetPositionUnlocked();
+  int64_t frames = GetPositionInFramesUnlocked();
+  return frames >= 0 ? mAudioClock.GetPosition(frames) : -1;
 }
 
 int64_t
 AudioStream::GetPositionInFrames()
 {
   MonitorAutoLock mon(mMonitor);
-  return mAudioClock.GetPositionInFrames();
+  int64_t frames = GetPositionInFramesUnlocked();
+  return frames >= 0 ? mAudioClock.GetPositionInFrames(frames) : -1;
 }
 
 int64_t
@@ -490,17 +496,10 @@ AudioStream::GetPositionInFramesUnlocked()
 }
 
 bool
-AudioStream::IsPaused()
-{
-  MonitorAutoLock mon(mMonitor);
-  return mState == STOPPED;
-}
-
-bool
 AudioStream::IsValidAudioFormat(Chunk* aChunk)
 {
-  if (aChunk->Rate() != mInRate) {
-    LOGW("mismatched sample %u, mInRate=%u", aChunk->Rate(), mInRate);
+  if (aChunk->Rate() != mAudioClock.GetInputRate()) {
+    LOGW("mismatched sample %u, mInRate=%u", aChunk->Rate(), mAudioClock.GetInputRate());
     return false;
   }
 
@@ -555,8 +554,8 @@ AudioStream::GetTimeStretched(AudioBufferWriter& aWriter)
     return;
   }
 
-  double playbackRate = static_cast<double>(mInRate) / mOutRate;
-  uint32_t toPopFrames = ceil(aWriter.Available() * playbackRate);
+  uint32_t toPopFrames =
+    ceil(aWriter.Available() * mAudioClock.GetPlaybackRate());
 
   while (mTimeStretcher->numSamples() < aWriter.Available()) {
     UniquePtr<Chunk> c = mDataSource.PopFrames(toPopFrames);
@@ -601,7 +600,7 @@ AudioStream::DataCallback(void* aBuffer, long aFrames)
   // NOTE: wasapi (others?) can call us back *after* stop()/Shutdown() (mState == SHUTDOWN)
   // Bug 996162
 
-  if (mInRate == mOutRate) {
+  if (mAudioClock.GetInputRate() == mAudioClock.GetOutputRate()) {
     GetUnprocessed(writer);
   } else {
     GetTimeStretched(writer);
@@ -641,18 +640,17 @@ AudioStream::StateCallback(cubeb_state aState)
   }
 }
 
-AudioClock::AudioClock(AudioStream* aStream)
- :mAudioStream(aStream),
-  mOutRate(0),
+AudioClock::AudioClock()
+: mOutRate(0),
   mInRate(0),
   mPreservesPitch(true),
   mFrameHistory(new FrameHistory())
 {}
 
-void AudioClock::Init()
+void AudioClock::Init(uint32_t aRate)
 {
-  mOutRate = mAudioStream->GetRate();
-  mInRate = mAudioStream->GetRate();
+  mOutRate = aRate;
+  mInRate = aRate;
 }
 
 void AudioClock::UpdateFrameHistory(uint32_t aServiced, uint32_t aUnderrun)
@@ -660,20 +658,18 @@ void AudioClock::UpdateFrameHistory(uint32_t aServiced, uint32_t aUnderrun)
   mFrameHistory->Append(aServiced, aUnderrun, mOutRate);
 }
 
-int64_t AudioClock::GetPositionUnlocked() const
+int64_t AudioClock::GetPositionInFrames(int64_t aFrames) const
 {
-  // GetPositionInFramesUnlocked() asserts it owns the monitor
-  int64_t frames = mAudioStream->GetPositionInFramesUnlocked();
-  NS_ASSERTION(frames < 0 || (mInRate != 0 && mOutRate != 0), "AudioClock not initialized.");
-  return frames >= 0 ? mFrameHistory->GetPosition(frames) : -1;
+  CheckedInt64 v = UsecsToFrames(GetPosition(aFrames), mInRate);
+  return v.isValid() ? v.value() : -1;
 }
 
-int64_t AudioClock::GetPositionInFrames() const
+int64_t AudioClock::GetPosition(int64_t frames) const
 {
-  return (GetPositionUnlocked() * mInRate) / USECS_PER_S;
+  return mFrameHistory->GetPosition(frames);
 }
 
-void AudioClock::SetPlaybackRateUnlocked(double aPlaybackRate)
+void AudioClock::SetPlaybackRate(double aPlaybackRate)
 {
   mOutRate = static_cast<uint32_t>(mInRate / aPlaybackRate);
 }

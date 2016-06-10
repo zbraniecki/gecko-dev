@@ -209,6 +209,19 @@ class AutoSuppressDebuggeeNoExecuteChecks
     }
 };
 
+class MOZ_RAII EvalOptions {
+    const char* filename_;
+    unsigned lineno_;
+
+  public:
+    EvalOptions() : filename_(nullptr), lineno_(1) {}
+    ~EvalOptions();
+    const char* filename() const { return filename_; }
+    unsigned lineno() const { return lineno_; }
+    bool setFilename(JSContext* cx, const char* filename);
+    void setLineno(unsigned lineno) { lineno_ = lineno; }
+};
+
 /*
  * Env is the type of what ES5 calls "lexical environments" (runtime activations
  * of lexical scopes). This is currently just JSObject, and is implemented by
@@ -904,6 +917,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
      * form { uninitialized: true }.
      */
     bool wrapDebuggeeValue(JSContext* cx, MutableHandleValue vp);
+    bool wrapDebuggeeObject(JSContext* cx, MutableHandleObject obj);
 
     /*
      * Unwrap a Debug.Object, without rewrapping it for any particular debuggee
@@ -1037,9 +1051,36 @@ class DebuggerObject : public NativeObject
     static DebuggerObject* create(JSContext* cx, HandleObject proto, HandleObject obj,
                                   HandleNativeObject debugger);
 
+    static bool isCallable(JSContext* cx, Handle<DebuggerObject*> object);
+    static bool isFunction(JSContext* cx, Handle<DebuggerObject*> object);
+    static bool isDebuggeeFunction(JSContext* cx, Handle<DebuggerObject*> object);
+    static bool isBoundFunction(JSContext* cx, Handle<DebuggerObject*> object);
+    static bool isArrowFunction(JSContext* cx, Handle<DebuggerObject*> object);
+    static bool isGlobal(JSContext* cx, Handle<DebuggerObject*> object);
+    static bool className(JSContext* cx, Handle<DebuggerObject*> object,
+                          MutableHandleString result);
+    static bool global(JSContext* cx, Handle<DebuggerObject*> object, MutableHandleObject result);
+    static bool name(JSContext* cx, Handle<DebuggerObject*> object, MutableHandleString result);
+    static bool displayName(JSContext* cx, Handle<DebuggerObject*> object,
+                            MutableHandleString result);
+    static bool parameterNames(JSContext* cx, Handle<DebuggerObject*> object,
+                               MutableHandle<StringVector> result);
+    static bool boundTargetFunction(JSContext* cx, Handle<DebuggerObject*> object,
+                                    MutableHandleObject result);
+    static bool boundThis(JSContext* cx, Handle<DebuggerObject*> object,
+                          MutableHandleValue result);
+    static bool boundArguments(JSContext* cx, Handle<DebuggerObject*> object,
+                               MutableHandle<ValueVector> result);
+    static bool allocationSite(JSContext* cx, Handle<DebuggerObject*> object,
+                               MutableHandleObject result);
+    static bool errorMessageName(JSContext* cx, Handle<DebuggerObject*> object,
+                                 MutableHandleString result);
+
     static bool isExtensible(JSContext* cx, Handle<DebuggerObject*> object, bool& result);
     static bool isSealed(JSContext* cx, Handle<DebuggerObject*> object, bool& result);
     static bool isFrozen(JSContext* cx, Handle<DebuggerObject*> object, bool& result);
+    static bool getPrototypeOf(JSContext* cx, Handle<DebuggerObject*> object,
+                               MutableHandleObject result);
     static bool getOwnPropertyNames(JSContext* cx, Handle<DebuggerObject*> object,
                                     MutableHandle<IdVector> result);
     static bool getOwnPropertySymbols(JSContext* cx, Handle<DebuggerObject*> object,
@@ -1058,6 +1099,19 @@ class DebuggerObject : public NativeObject
                                ObjectOpResult& result);
     static bool call(JSContext* cx, Handle<DebuggerObject*> object, HandleValue thisv,
                      Handle<ValueVector> args, MutableHandleValue result);
+    static bool forceLexicalInitializationByName(JSContext* cx, Handle<DebuggerObject*> object,
+                                                 HandleId id, bool& result);
+    static bool executeInGlobal(JSContext* cx, Handle<DebuggerObject*> object,
+                                mozilla::Range<const char16_t> chars, HandleObject bindings,
+                                const EvalOptions& options, MutableHandleValue result);
+    static bool makeDebuggeeValue(JSContext* cx, Handle<DebuggerObject*> object,
+                                  HandleValue value, MutableHandleValue result);
+    static bool unsafeDereference(JSContext* cx, Handle<DebuggerObject*> object,
+                                  MutableHandleObject result);
+    static bool unwrap(JSContext* cx, Handle<DebuggerObject*> object,
+                       MutableHandle<DebuggerObject*> result);
+
+    static bool requireGlobal(JSContext* cx, Handle<DebuggerObject*> object);
 
   private:
     enum {
@@ -1079,6 +1133,45 @@ class DebuggerObject : public NativeObject
     }
 
     Debugger* owner() const;
+
+    static bool callableGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool isBoundFunctionGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool isArrowFunctionGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool protoGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool classGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool nameGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool displayNameGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool parameterNamesGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool scriptGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool environmentGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool boundTargetFunctionGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool boundThisGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool boundArgumentsGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool globalGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool allocationSiteGetter(JSContext* cx, unsigned argc, Value* vp);
+    static bool errorMessageNameGetter(JSContext* cx, unsigned argc, Value* vp);
+
+    static bool isExtensibleMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool isSealedMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool isFrozenMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool getOwnPropertyNamesMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool getOwnPropertySymbolsMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool getOwnPropertyDescriptorMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool preventExtensionsMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool sealMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool freezeMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool definePropertyMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool definePropertiesMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool deletePropertyMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool callMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool applyMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool asEnvironmentMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool forceLexicalInitializationByNameMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool executeInGlobalMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool executeInGlobalWithBindingsMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool makeDebuggeeValueMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool unsafeDereferenceMethod(JSContext* cx, unsigned argc, Value* vp);
+    static bool unwrapMethod(JSContext* cx, unsigned argc, Value* vp);
 };
 
 class BreakpointSite {
