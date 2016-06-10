@@ -652,22 +652,23 @@ function createGetValue(bundles) {
   };
 }
 
-function observe(subject, topic, data) {
-  switch (topic) {
-    case 'language-create':
-    case 'language-update': {
-      this.interactive = this.interactive.then(bundles => {
-        // just overwrite any existing messages in the first bundle
-        const ctx = contexts.get(bundles[0]);
-        ctx.addMessages(data);
-        return bundles;
-      });
-      return this.interactive.then(
-        bundles => translateDocument(this, bundles)
-      );
-    }
-    default: {
-      throw new Error(`Unknown topic: ${topic}`);
+// create nsIObserver's observe method bound to a LocalizationObserver obs
+function createObserve(obs) {
+  return function observe(subject, topic, data) {
+    switch (topic) {
+      case 'language-create':
+      case 'language-update': {
+        this.interactive = this.interactive.then(bundles => {
+          // just overwrite any existing messages in the first bundle
+          const ctx = contexts.get(bundles[0]);
+          ctx.addMessages(data);
+          return bundles;
+        });
+        return obs.translateRoots(this);
+      }
+      default: {
+        throw new Error(`Unknown topic: ${topic}`);
+      }
     }
   }
 }
@@ -715,7 +716,7 @@ function createLocalization(name, resIds) {
   }
 
   const l10n = new HTMLLocalization(requestBundles, createContext);
-  l10n.observe = observe;
+  l10n.observe = createObserve(document.l10n);
   Services.obs.addObserver(l10n, 'language-create', false);
   Services.obs.addObserver(l10n, 'language-update', false);
 
