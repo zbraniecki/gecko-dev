@@ -33,6 +33,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "NewTabMessages",
 XPCOMUtils.defineLazyModuleGetter(this, "UITour",
                                   "resource:///modules/UITour.jsm");
 
+XPCOMUtils.defineLazyModuleGetter(this, "L20nDemo",
+                                  "resource:///modules/L20nDemo.jsm");
+
 XPCOMUtils.defineLazyModuleGetter(this, "AddonManager",
                                   "resource://gre/modules/AddonManager.jsm");
 
@@ -3195,4 +3198,8 @@ this.NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
 var globalMM = Cc["@mozilla.org/globalmessagemanager;1"].getService(Ci.nsIMessageListenerManager);
 globalMM.addMessageListener("UITour:onPageEvent", function(aMessage) {
   UITour.onPageEvent(aMessage, aMessage.data);
+});
+
+globalMM.addMessageListener("L20nDemo:onPageEvent", function(aMessage) {
+  L20nDemo.onPageEvent(aMessage, aMessage.data);
 });

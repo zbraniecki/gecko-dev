@@ -12,6 +12,7 @@ DIRS += [
     'downloads',
     'extensions',
     'feeds',
+    'l20ndemo',
     'migration',
     'newtab',
     'places',
