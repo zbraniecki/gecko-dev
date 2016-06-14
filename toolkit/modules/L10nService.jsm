@@ -4,6 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 'use strict';
 
+Components.utils.import('resource://gre/modules/Services.jsm');
+
 function prioritizeLocales(def, availableLangs, requested) {
   const supportedLocales = new Set();
   for (let lang of requested) {
@@ -43,7 +45,7 @@ function load(url) {
   });
 }
 
-const PontoonSource = {
+const L20nDemoSource = {
   resMap: {
     '/branding/brand.ftl': {
       'en-US': "brandShortName = Nightly2"
@@ -155,7 +157,6 @@ const resSources = new Map();
 const resIndex = new Map();
 
 const resCache = new Map();
-const subscribers = new Map();
 
 function fetchResource(resId, lang) {
   const resSourceName = resIndex.get(resId).get(lang)[0];
@@ -246,41 +247,17 @@ this.L10nService = {
   },
 
   onResourcesChanged(resList) {
-    const callList = new Set();
-
-    for (let resId of resList) {
-      if (subscribers.has(resId)) {
-        subscribers.get(resId).forEach(subscriber => {
-          callList.add(subscriber);
-        })
-      } 
-    }
-
-    for (let caller of callList) {
-      caller(resList);
-    }
-    return resList;
+    Services.obs.notifyObservers(this, 'language-registry-update', 'add data');
   },
 
-  subscribe(resIds, cb) {
-    // Should we optimize to check if the supportedLocales is affected?
-    for (let resId of resIds) {
-      if (!subscribers.has(resId)) {
-        subscribers.set(resId, new Set());
-      }
-      subscribers.get(resId).add(cb);
-    }
+  addL20nDemo() {
+    this.registerSource('l20ndemo', L20nDemoSource);
   },
 
-
-  addPontoon() {
-    this.registerSource('pontoon', PontoonSource);
-  },
-
-  updatePontoon() {
+  updateL20nDemo() {
     let resList = new Map();
     resList.set('/branding/brand.ftl', 'brandShortName = Nightly3');
-    return PontoonSource.handleEvent({
+    return L20nDemoSource.handleEvent({
       lang: 'en-US',
       resList
     });

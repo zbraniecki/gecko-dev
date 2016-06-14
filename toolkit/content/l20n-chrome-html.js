@@ -633,6 +633,9 @@ function observe(subject, topic, data) {
         bundles => translateDocument(this, bundles)
       );
     }
+    case 'language-registry-update':
+      console.log('Updated resources!');
+      break;
     default: {
       throw new Error(`Unknown topic: ${topic}`);
     }
@@ -675,6 +678,7 @@ documentReady().then(() => {
   }
 });
 
+
 function createLocalization(name, resIds) {
   function requestBundles(requestedLangs = new Set(navigator.languages)) {
     const { resBundles } = L10nService.getResources(requestedLangs, resIds);
@@ -686,9 +690,12 @@ function createLocalization(name, resIds) {
   Services.obs.addObserver(l10n, 'language-create', false);
   Services.obs.addObserver(l10n, 'language-update', false);
 
+  Services.obs.addObserver(l10n, 'language-registry-update', false);
+
   // XXX this is currently used by about:support; it doesn't support language 
   // changes nor live updates
   document.l10n.ready = l10n.interactive;
+  document.l10n.L10nService = L10nService;
   document.l10n.ready.then(
     bundles => document.l10n.getValue = createGetValue(bundles)
   );
