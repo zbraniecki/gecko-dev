@@ -652,22 +652,27 @@ function createGetValue(bundles) {
   };
 }
 
-function observe(subject, topic, data) {
-  switch (topic) {
-    case 'language-create':
-    case 'language-update': {
-      this.interactive = this.interactive.then(bundles => {
-        // just overwrite any existing messages in the first bundle
-        const ctx = contexts.get(bundles[0]);
-        ctx.addMessages(data);
-        return bundles;
-      });
-      return this.interactive.then(
-        bundles => translateDocument(this, bundles)
-      );
-    }
-    default: {
-      throw new Error(`Unknown topic: ${topic}`);
+// create nsIObserver's observe method bound to a LocalizationObserver obs
+function createObserve(obs) {
+  return function observe(subject, topic, data) {
+    switch (topic) {
+      case 'language-registry-update': {
+        const { requestBundles } = properties.get(this);
+        this.interactive = requestBundles();
+        return obs.translateRoots(this);
+      }
+      case 'language-registry-incremental': {
+        this.interactive = this.interactive.then(bundles => {
+          // just overwrite any existing messages in the first bundle
+          const ctx = contexts.get(bundles[0]);
+          ctx.addMessages(data);
+          return bundles;
+        });
+        return obs.translateRoots(this);
+      }
+      default: {
+        throw new Error(`Unknown topic: ${topic}`);
+      }
     }
   }
 }
@@ -715,9 +720,9 @@ function createLocalization(name, resIds) {
   }
 
   const l10n = new HTMLLocalization(requestBundles, createContext);
-  l10n.observe = observe;
-  Services.obs.addObserver(l10n, 'language-create', false);
-  Services.obs.addObserver(l10n, 'language-update', false);
+  l10n.observe = createObserve(document.l10n);
+  Services.obs.addObserver(l10n, 'language-registry-update', false);
+  Services.obs.addObserver(l10n, 'language-registry-incremental', false);
 
   // XXX this is currently used by about:support; it doesn't support language 
   // changes nor live updates
