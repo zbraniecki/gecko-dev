@@ -207,9 +207,9 @@ function getLanguages(resIds) {
 
   for (let id of resIds) {
     if (resIndex.has(id)) {
-      Object.keys(resIndex.get(id)).forEach(lang => {
+      for (let lang of resIndex.get(id).keys()) {
         locales.add(lang);
-      });
+      }
     }
   }
   return locales;
