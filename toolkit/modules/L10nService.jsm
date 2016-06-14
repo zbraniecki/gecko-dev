@@ -51,6 +51,7 @@ const L20nDemoSource = {
       'en-US': "brandShortName = Nightly2"
     }
   },
+  name: 'l20ndemo',
 
   init(L10nService) {
     this.L10nService = L10nService;
@@ -60,7 +61,7 @@ const L20nDemoSource = {
     const result = {};
 
     for (let resId in this.resMap) {
-      result[resId] = Object.keys(this.resMap[resId]);
+      result[resId] = new Set(Object.keys(this.resMap[resId]));
     }
     return result;
   },
@@ -71,13 +72,20 @@ const L20nDemoSource = {
 
   handleEvent(evt) {
     let lang = evt.lang;
-    let resList = evt.resList;
+    let result = new Map();
 
-    for (let [resId, value] of resList) {
+    for (let [resId, value] of evt.resList) {
       this.resMap[resId][lang] = value;
     }
 
-    this.L10nService.onResourcesChanged(resList.keys());
+    for (let resId of evt.resList) {
+      if (!result.has(resId)) {
+        result.set(resId, new Set());
+      }
+      result.get(resId).add(lang);
+    }
+
+    this.L10nService.onResourcesChanged(result, this.name);
   },
 }
 
@@ -132,6 +140,7 @@ const FileSource = {
       ]
     },
   },
+  name: 'file',
 
   init(L10nService) {
     this.L10nService = L10nService;
@@ -226,6 +235,10 @@ this.L10nService = {
     source.init(this);
     let resIds = source.indexResources();
 
+    this.onResourcesChanged(resIds, sourceName);
+  },
+
+  onResourcesChanged(resIds, sourceName) {
     let changedResources = new Set();
 
     for (let resId in resIds) {
@@ -238,15 +251,12 @@ this.L10nService = {
         if (!resLangs.has(lang)) {
           resLangs.set(lang, []);
         }
+        // sourceName undefined
         resLangs.get(lang).unshift(sourceName);
         changedResources.add(resId);
       }
     }
 
-    this.onResourcesChanged(changedResources);
-  },
-
-  onResourcesChanged(resList) {
     Services.obs.notifyObservers(this, 'language-registry-update', 'add data');
   },
 
