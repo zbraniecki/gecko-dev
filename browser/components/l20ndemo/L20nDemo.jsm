@@ -75,10 +75,7 @@ this.L20nDemo = {
       case "update": {
         const { resId, lang, messages } = data;
         this.updateResource(resId, lang, messages);
-        const changed = new Map([
-          [resId, new Set([lang])]
-        ]);
-        L10nService.onResourcesChanged("l20ndemo", changed);
+        L10nService.onResourcesChanged("l20ndemo", { [resId]: [lang] });
         this.sendPageResponse(messageManager, "updated");
         break;
       }

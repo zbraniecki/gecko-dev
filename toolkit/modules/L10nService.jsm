@@ -195,11 +195,20 @@ this.L10nService = {
       let resLangs = resIndex.get(resId);
 
       for (let lang of resIds[resId]) {
+        const cacheId = `${resId}-${lang}-${sourceName}`;
+        if (resCache.has(cacheId)) {
+          resCache.delete(cacheId);
+        }
+
         if (!resLangs.has(lang)) {
           resLangs.set(lang, []);
         }
-        // sourceName undefined
-        resLangs.get(lang).unshift(sourceName);
+        const sources = resLangs.get(lang);
+        if (sources.includes(sourceName)) {
+          // remove it before it's added in front
+          sources.splice(sources.indexOf(sourceName), 1);
+        }
+        sources.unshift(sourceName);
         changedResources.add(resId);
       }
     }
