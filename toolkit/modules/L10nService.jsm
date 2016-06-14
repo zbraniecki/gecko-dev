@@ -4,6 +4,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 'use strict';
 
+Components.utils.import('resource://gre/modules/Services.jsm');
+
 function prioritizeLocales(def, availableLangs, requested) {
   const supportedLocales = new Set();
   for (let lang of requested) {
@@ -17,58 +19,6 @@ function prioritizeLocales(def, availableLangs, requested) {
 }
 
 const { classes: Cc, interfaces: Ci } = Components;
-
-const resIndex = {
-  '/global/aboutSupport.ftl': {
-    'en-US': [
-      'chrome://global/locale/aboutSupport.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://global/locale/aboutSupport.pl.ftl',
-    ]
-  },
-  '/branding/brand.ftl': {
-    'en-US': [
-      'chrome://branding/locale/brand.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://branding/locale/brand.pl.ftl',
-    ]
-  },
-  '/global/resetProfile.ftl': {
-    'en-US': [
-      'chrome://global/locale/resetProfile.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://global/locale/resetProfile.pl.ftl',
-    ]
-  },
-  '/browser/aboutDialog.ftl': {
-    'en-US': [
-      'chrome://browser/locale/aboutDialog.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://browser/locale/aboutDialog.pl.ftl',
-    ]
-  },
-  '/browser/browser.ftl': {
-    'en-US': [
-      'chrome://browser/locale/browser.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://browser/locale/browser.pl.ftl',
-    ]
-  },
-  '/browser/tabbrowser.ftl': {
-    'en-US': [
-      'chrome://browser/locale/tabbrowser.en-US.ftl',
-    ],
-    'pl': [
-      'chrome://browser/locale/tabbrowser.pl.ftl',
-    ]
-  },
-};
-
 
 const HTTP_STATUS_CODE_OK = 200;
 
@@ -95,9 +45,141 @@ function load(url) {
   });
 }
 
+const L20nDemoSource = {
+  resMap: {
+    '/branding/brand.ftl': {
+      'en-US': "brandShortName = Nightly2"
+    }
+  },
+  name: 'l20ndemo',
+
+  init(L10nService) {
+    this.L10nService = L10nService;
+  },
+
+  indexResources() {
+    const result = {};
+
+    for (let resId in this.resMap) {
+      result[resId] = new Set(Object.keys(this.resMap[resId]));
+    }
+    return result;
+  },
+
+  loadResource(resId, lang) {
+    return Promise.resolve(this.resMap[resId][lang]);
+  },
+
+  handleEvent(evt) {
+    let lang = evt.lang;
+    let result = new Map();
+
+    for (let [resId, value] of evt.resList) {
+      this.resMap[resId][lang] = value;
+    }
+
+    for (let resId of evt.resList) {
+      if (!result.has(resId)) {
+        result.set(resId, new Set());
+      }
+      result.get(resId).add(lang);
+    }
+
+    this.L10nService.onResourcesChanged(result, this.name);
+  },
+}
+
+const FileSource = {
+  resMap: {
+    '/global/aboutSupport.ftl': {
+      'en-US': [
+        'chrome://global/locale/aboutSupport.en-US.ftl',
+      ],
+      'pl': [
+        'chrome://global/locale/aboutSupport.pl.ftl',
+      ]
+    },
+    '/branding/brand.ftl': {
+      'en-US': [
+        'chrome://branding/locale/brand.en-US.ftl',
+      ],
+      'pl': [
+        'chrome://branding/locale/brand.pl.ftl',
+      ]
+    },
+    '/global/resetProfile.ftl': {
+      'en-US': [
+        'chrome://global/locale/resetProfile.en-US.ftl',
+      ],
+      'pl': [
+        'chrome://global/locale/resetProfile.pl.ftl',
+      ]
+    },
+    '/browser/aboutDialog.ftl': {
+      'en-US': [
+        'chrome://browser/locale/aboutDialog.en-US.ftl',
+      ],
+      'pl': [
+        'chrome://browser/locale/aboutDialog.pl.ftl',
+      ]
+    },
+    '/browser/browser.ftl': {
+      'en-US': [
+        'chrome://browser/locale/browser.en-US.ftl',
+      ],
+      'pl': [
+        'chrome://browser/locale/browser.pl.ftl',
+      ]
+    },
+    '/browser/tabbrowser.ftl': {
+      'en-US': [
+        'chrome://browser/locale/tabbrowser.en-US.ftl',
+      ],
+      'pl': [
+        'chrome://browser/locale/tabbrowser.pl.ftl',
+      ]
+    },
+  },
+  name: 'file',
+
+  init(L10nService) {
+    this.L10nService = L10nService;
+  },
+
+  indexResources() {
+    const result = {};
+
+    for (let resId in this.resMap) {
+      result[resId] = Object.keys(this.resMap[resId]);
+    }
+    return result;
+  },
+
+  loadResource(resId, lang) {
+    const url = this.resMap[resId][lang][0];
+    return load(url);
+  }
+}
+
+const resSources = new Map();
+
+const resIndex = new Map();
+
+const resCache = new Map();
+
 function fetchResource(resId, lang) {
-  const url = resIndex[resId][lang][0];
-  return load(url).catch(e => e);
+  const resSourceName = resIndex.get(resId).get(lang)[0];
+
+  const cacheId = `${resId}-${lang}-${resSourceName}`;
+
+  if (resCache.has(cacheId)) {
+    return Promise.resolve(resCache.get(cacheId));
+  }
+
+  return resSources.get(resSourceName).loadResource(resId, lang).then(data => {
+    resCache.set(cacheId, data);
+    return data;
+  }).catch(e => e);
 }
 
 class ResourceBundle {
@@ -124,8 +206,8 @@ function getLanguages(resIds) {
   const locales = new Set();
 
   for (let id of resIds) {
-    if (resIndex[id]) {
-      Object.keys(resIndex[id]).forEach(lang => {
+    if (resIndex.has(id)) {
+      Object.keys(resIndex.get(id)).forEach(lang => {
         locales.add(lang);
       });
     }
@@ -147,4 +229,49 @@ this.L10nService = {
       resBundles
     };
   },
+
+  registerSource(sourceName, source) {
+    resSources.set(sourceName, source);
+    source.init(this);
+    let resIds = source.indexResources();
+
+    this.onResourcesChanged(resIds, sourceName);
+  },
+
+  onResourcesChanged(resIds, sourceName) {
+    let changedResources = new Set();
+
+    for (let resId in resIds) {
+      if (!resIndex.has(resId)) {
+        resIndex.set(resId, new Map());
+      }
+      let resLangs = resIndex.get(resId);
+
+      for (let lang of resIds[resId]) {
+        if (!resLangs.has(lang)) {
+          resLangs.set(lang, []);
+        }
+        // sourceName undefined
+        resLangs.get(lang).unshift(sourceName);
+        changedResources.add(resId);
+      }
+    }
+
+    Services.obs.notifyObservers(this, 'language-registry-update', 'add data');
+  },
+
+  addL20nDemo() {
+    this.registerSource('l20ndemo', L20nDemoSource);
+  },
+
+  updateL20nDemo() {
+    let resList = new Map();
+    resList.set('/branding/brand.ftl', 'brandShortName = Nightly3');
+    return L20nDemoSource.handleEvent({
+      lang: 'en-US',
+      resList
+    });
+  }
 };
+
+this.L10nService.registerSource('file', FileSource);
