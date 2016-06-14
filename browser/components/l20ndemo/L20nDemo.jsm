@@ -68,9 +68,9 @@ this.L20nDemo = {
       case "create": {
         Services.obs.notifyObservers(
           null,
-          // XXX this should be "language-create" which will create a new 
-          // MessageContext but Localization doesn't support it yet
-          "language-update",
+          // XXX this should be "language-registry-update" which will create 
+          // a new MessageContext but Localization doesn't support it yet
+          "language-registry-incremental",
           data.messages
         );
         this.sendPageResponse(messageManager, "created");
@@ -79,7 +79,7 @@ this.L20nDemo = {
       case "update": {
         Services.obs.notifyObservers(
           null,
-          "language-update",
+          "language-registry-incremental",
           data.messages
         );
         break;
