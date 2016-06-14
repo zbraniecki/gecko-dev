@@ -14,7 +14,6 @@ var L20nDemoListener = {
     if (!this.ensureTrustedOrigin()) {
       return;
     }
-    addMessageListener("L20nDemo:SendPageResponse", this);
     sendAsyncMessage("L20nDemo:onPageEvent", {
       detail: event.detail,
       type: event.type,
@@ -88,3 +87,4 @@ var L20nDemoListener = {
 };
 
 addEventListener("mozL20nDemo", L20nDemoListener, false, true);
+addMessageListener("L20nDemo:SendPageResponse", L20nDemoListener);
