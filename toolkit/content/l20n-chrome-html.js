@@ -657,19 +657,23 @@ function createObserve(obs) {
   return function observe(subject, topic, data) {
     switch (topic) {
       case 'language-registry-update': {
-        console.log('Language Registry Updated');
-        const { requestBundles } = properties.get(this);
-        this.interactive = requestBundles();
+        const { requestBundles, createContext } = properties.get(this);
+        this.interactive = requestBundles().then(
+          bundles => fetchFirstBundle(bundles, createContext)
+        );
         return obs.translateRoots(this);
       }
       case 'language-registry-incremental': {
-        this.interactive = this.interactive.then(bundles => {
-          // just overwrite any existing messages in the first bundle
-          const ctx = contexts.get(bundles[0]);
-          ctx.addMessages(data);
-          return bundles;
+        const { resId, lang, messages } = JSON.parse(data);
+        return this.interactive.then(bundles => {
+          const bundle = bundles[0];
+          if (bundle.resIds.includes(resId) && bundle.lang === lang) {
+            // just overwrite any existing messages in the first bundle
+            const ctx = contexts.get(bundles[0]);
+            ctx.addMessages(messages);
+            return obs.translateRoots(this);
+          }
         });
-        return obs.translateRoots(this);
       }
       default: {
         throw new Error(`Unknown topic: ${topic}`);
@@ -714,7 +718,6 @@ documentReady().then(() => {
   }
 });
 
-
 function createLocalization(name, resIds) {
   function requestBundles(requestedLangs = new Set(navigator.languages)) {
     const { resBundles } = L10nService.getResources(requestedLangs, resIds);
@@ -729,7 +732,6 @@ function createLocalization(name, resIds) {
   // XXX this is currently used by about:support; it doesn't support language 
   // changes nor live updates
   document.l10n.ready = l10n.interactive;
-  document.l10n.L10nService = L10nService;
   document.l10n.ready.then(
     bundles => document.l10n.getValue = createGetValue(bundles)
   );

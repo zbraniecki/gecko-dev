@@ -10,6 +10,7 @@ const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+Cu.import("resource://gre/modules/L10nService.jsm");
 
 // See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
 const PREF_LOG_LEVEL      = "browser.l20ndemo.loglevel";
@@ -61,26 +62,31 @@ this.L20nDemo = {
 
     switch (action) {
       case "helo": {
-        // XXX check if the languages are the same
         this.sendPageResponse(messageManager, "ehlo");
         break;
       }
-      case "create": {
-        Services.obs.notifyObservers(
-          null,
-          // XXX this should be "language-registry-update" which will create 
-          // a new MessageContext but Localization doesn't support it yet
-          "language-registry-incremental",
-          data.messages
-        );
-        this.sendPageResponse(messageManager, "created");
+      case "register": {
+        const { resId, lang, messages } = data;
+        this.updateResource(resId, lang, messages);
+        L10nService.registerSource("l20ndemo", this);
+        this.sendPageResponse(messageManager, "registered");
         break;
       }
       case "update": {
+        const { resId, lang, messages } = data;
+        this.updateResource(resId, lang, messages);
+        const changed = new Map([
+          [resId, new Set([lang])]
+        ]);
+        L10nService.onResourcesChanged("l20ndemo", changed);
+        this.sendPageResponse(messageManager, "updated");
+        break;
+      }
+      case "incremental": {
         Services.obs.notifyObservers(
           null,
           "language-registry-incremental",
-          data.messages
+          JSON.stringify(data)
         );
         break;
       }
@@ -93,6 +99,47 @@ this.L20nDemo = {
     let detail = {action: aAction};
     log.debug("sendPageResponse:", detail);
     aMessageManager.sendAsyncMessage("L20nDemo:SendPageResponse", detail);
+  },
+
+  resMap: {},
+
+  updateResource(resId, lang, messages) {
+    if (resId === undefined) {
+      log.info("Undefined resource id");
+      return false;
+    }
+
+    if (lang === undefined) {
+      log.info("Undefined language");
+      return false;
+    }
+
+    if (messages === undefined) {
+      log.info("Undefined messages");
+      return false;
+    }
+
+    if (resId in this.resMap) {
+     return this.resMap[resId][lang] = messages;
+    }
+
+    this.resMap[resId] = {
+      [lang]: messages
+    };
+  },
+
+  indexResources() {
+    const index = {};
+
+    for (let resId in this.resMap) {
+      index[resId] = new Set(Object.keys(this.resMap[resId]));
+    }
+
+    return index;
+  },
+
+  loadResource(resId, lang) {
+    return Promise.resolve(this.resMap[resId][lang]);
   },
 
 };

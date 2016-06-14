@@ -2,9 +2,16 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 'use strict';
 
-Components.utils.import('resource://gre/modules/Services.jsm');
+this.EXPORTED_SYMBOLS = ['L10nService'];
+
+const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
+
+Cu.import('resource://gre/modules/Services.jsm');
+
+const HTTP_STATUS_CODE_OK = 200;
 
 function prioritizeLocales(def, availableLangs, requested) {
   const supportedLocales = new Set();
@@ -17,10 +24,6 @@ function prioritizeLocales(def, availableLangs, requested) {
   supportedLocales.add(def);
   return supportedLocales;
 }
-
-const { classes: Cc, interfaces: Ci } = Components;
-
-const HTTP_STATUS_CODE_OK = 200;
 
 function load(url) {
   return new Promise((resolve, reject) => {
@@ -43,50 +46,6 @@ function load(url) {
 
     req.send(null);
   });
-}
-
-const L20nDemoSource = {
-  resMap: {
-    '/branding/brand.ftl': {
-      'en-US': "brandShortName = Nightly2"
-    }
-  },
-  name: 'l20ndemo',
-
-  init(L10nService) {
-    this.L10nService = L10nService;
-  },
-
-  indexResources() {
-    const result = {};
-
-    for (let resId in this.resMap) {
-      result[resId] = new Set(Object.keys(this.resMap[resId]));
-    }
-    return result;
-  },
-
-  loadResource(resId, lang) {
-    return Promise.resolve(this.resMap[resId][lang]);
-  },
-
-  handleEvent(evt) {
-    let lang = evt.lang;
-    let result = new Map();
-
-    for (let [resId, value] of evt.resList) {
-      this.resMap[resId][lang] = value;
-    }
-
-    for (let resId of evt.resList) {
-      if (!result.has(resId)) {
-        result.set(resId, new Set());
-      }
-      result.get(resId).add(lang);
-    }
-
-    this.L10nService.onResourcesChanged(result, this.name);
-  },
 }
 
 const FileSource = {
@@ -140,11 +99,6 @@ const FileSource = {
       ]
     },
   },
-  name: 'file',
-
-  init(L10nService) {
-    this.L10nService = L10nService;
-  },
 
   indexResources() {
     const result = {};
@@ -162,9 +116,7 @@ const FileSource = {
 }
 
 const resSources = new Map();
-
 const resIndex = new Map();
-
 const resCache = new Map();
 
 function fetchResource(resId, lang) {
@@ -200,8 +152,6 @@ class ResourceBundle {
   }
 }
 
-this.EXPORTED_SYMBOLS = ['L10nService'];
-
 function getLanguages(resIds) {
   const locales = new Set();
 
@@ -232,13 +182,10 @@ this.L10nService = {
 
   registerSource(sourceName, source) {
     resSources.set(sourceName, source);
-    source.init(this);
-    let resIds = source.indexResources();
-
-    this.onResourcesChanged(resIds, sourceName);
+    this.onResourcesChanged(sourceName, source.indexResources());
   },
 
-  onResourcesChanged(resIds, sourceName) {
+  onResourcesChanged(sourceName, resIds) {
     let changedResources = new Set();
 
     for (let resId in resIds) {
@@ -257,21 +204,10 @@ this.L10nService = {
       }
     }
 
-    Services.obs.notifyObservers(this, 'language-registry-update', 'add data');
+    if (changedResources.size) {
+      Services.obs.notifyObservers(this, 'language-registry-update', 'add data');
+    }
   },
-
-  addL20nDemo() {
-    this.registerSource('l20ndemo', L20nDemoSource);
-  },
-
-  updateL20nDemo() {
-    let resList = new Map();
-    resList.set('/branding/brand.ftl', 'brandShortName = Nightly3');
-    return L20nDemoSource.handleEvent({
-      lang: 'en-US',
-      resList
-    });
-  }
 };
 
 this.L10nService.registerSource('file', FileSource);
