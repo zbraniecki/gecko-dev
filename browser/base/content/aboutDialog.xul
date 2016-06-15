@@ -90,8 +90,11 @@
               </hbox>
               <hbox id="applying" align="center" data-l10n-id="aboutDialog-update-applying">
                 <image class="update-throbber"/>
+                <label></label>
               </hbox>
               <hbox id="downloadFailed" align="center" data-l10n-id="aboutDialog-update-failed">
+                <label id="failedLink" class="text-link"></label>
+                <label></label>
               </hbox>
               <hbox id="adminDisabled" align="center" data-l10n-id="aboutDialog-update-adminDisabled">
               </hbox>
