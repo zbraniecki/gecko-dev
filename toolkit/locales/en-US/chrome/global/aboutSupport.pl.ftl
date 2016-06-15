@@ -5,22 +5,23 @@ aboutSupport-pageTitle = Informacje dla pomocy technicznej
 # Don’t translate “supportLink”, it’s an ID used for CSS.
 # The link points to https://support.mozilla.org
 aboutSupport-pageSubtitle =
-  | This page contains technical information that might be useful when you’re
-  | trying to solve a problem. If you are looking for answers to common questions
-  | about { brandShortName } check out our <a id="supportLink">support website</a>.
+  | Ta strona zawiera informacje techniczne, które mogą być przydatne podczas 
+  | rozwiązywania problemów. Jeśli szukasz odpowiedzi na często zadawane
+  | pytania dotyczące programu { brandShortName }, sprawdź naszą
+  | <a id='supportLink'>stronę wsparcia technicznego</a>. 
 
-aboutSupport-safeModeTitle = Sprobuj trybu bezpiecznego
-# This string is used as a button label. Be aware of length issues compared to
-# the section title.
-aboutSupport-restartInSafeMode = Uruchom ponownie z wylaczonymi dodatkami…
+# XXX removed for demo
+# aboutSupport-safeModeTitle = Spróbuj trybu bezpiecznego
+# XXX broken for demo
+aboutSupport-restartInSafeMode = Uruchom { brandShort } ponownie z wyłączonymi dodatkami…
 
-aboutSupport-copyRawDataToClipboard = Copy raw data to clipboard
+aboutSupport-copyRawDataToClipboard = Skopiuj nieprzetworzone dane do schowka
 aboutSupport-rawDataCopied = Raw data copied to clipboard
 
-aboutSupport-copyTextToClipboard = Copy text to clipboard
+aboutSupport-copyTextToClipboard = Skopiuj tekst do schowka
 aboutSupport-textCopied = Text copied to clipboard
 
-aboutSupport-appBasicsTitle = Application Basics
+aboutSupport-appBasicsTitle = Informacje o aplikacji
 aboutSupport-appBasicsName = Name
 aboutSupport-appBasicsVersion = Version
 aboutSupport-appBasicsBuildID = Build ID
@@ -67,7 +68,7 @@ aboutSupport-appBasicsProfiles = Profiles
 # $total (Number)  - Total number of open windows
 # $status (Number) - Code of the status of e10s in the browser. Used to select description part of the string.
 # Example output: “2/2 (Enabled by default)”
-aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status ->
+aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $statusCode ->
   [0] Enabled by user
   [1] Enabled by default
   [2] Disabled
@@ -77,6 +78,7 @@ aboutSupport-multiProcessWindows = { $remote }/{ $total } ({ $status ->
   [7] Disabled by add-ons
   [8] Disabled forcibly
   [9] Disabled by graphics hardware acceleration on Windows
+  [10] { $system }
  *[other] Unknown status
 })
 
