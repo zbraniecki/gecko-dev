@@ -16,9 +16,6 @@
 
     <content>
       <xul:stringbundle anonid="tbstringbundle" src="chrome://browser/locale/tabbrowser.properties"/>
-      <xul:localization name="tabbrowser-l10n">
-        <xul:source src="/browser/tabbrowser.ftl"/>
-      </xul:localization>
       <xul:tabbox anonid="tabbox" class="tabbrowser-tabbox"
                   flex="1" eventnode="document" xbl:inherits="handleCtrlPageUpDown"
                   onselect="if (event.target.localName == 'tabpanels') this.parentNode.updateCurrentBrowser();">
@@ -4880,6 +4877,9 @@
     </resources>
 
     <content>
+      <xul:localization name="tabbrowser-l10n">
+        <xul:source src="/browser/tabbrowser.ftl"/>
+      </xul:localization>
       <xul:hbox align="end">
         <xul:image class="tab-drop-indicator" anonid="tab-drop-indicator" collapsed="true"/>
       </xul:hbox>
