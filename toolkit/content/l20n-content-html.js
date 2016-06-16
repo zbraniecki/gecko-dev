@@ -1702,18 +1702,6 @@ if (!Intl.ListFormat) {
   }
 }
 
-function prioritizeLocales(def, availableLangs, requested) {
-  const supportedLocales = new Set();
-  for (let lang of requested) {
-    if (availableLangs.has(lang)) {
-      supportedLocales.add(lang);
-    }
-  }
-
-  supportedLocales.add(def);
-  return supportedLocales;
-}
-
 function getDirection(code) {
   const tag = code.split('-')[0];
   return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
@@ -2313,56 +2301,6 @@ class HTMLLocalization extends Localization {
 
 }
 
-const HTTP_STATUS_CODE_OK = 200;
-
-function load(url) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-
-    if (xhr.overrideMimeType) {
-      xhr.overrideMimeType('text/plain');
-    }
-
-    xhr.open('GET', url, true);
-
-    xhr.addEventListener('load', e => {
-      if (e.target.status === HTTP_STATUS_CODE_OK ||
-          e.target.status === 0) {
-        resolve(e.target.response);
-      } else {
-        reject(new L10nError('Not found: ' + url));
-      }
-    });
-    xhr.addEventListener('error', reject);
-    xhr.addEventListener('timeout', reject);
-
-    xhr.send(null);
-  });
-}
-
-function fetchResource(res, lang) {
-  const url = res.replace('{locale}', lang);
-  return load(url).catch(e => e);
-}
-
-class ResourceBundle {
-  constructor(lang, resIds) {
-    this.lang = lang;
-    this.loaded = false;
-    this.resIds = resIds;
-  }
-
-  fetch() {
-    if (!this.loaded) {
-      this.loaded = Promise.all(
-        this.resIds.map(id => fetchResource(id, this.lang))
-      );
-    }
-
-    return this.loaded;
-  }
-}
-
 // A document.ready shim
 // https://github.com/whatwg/html/issues/127
 function documentReady() {
@@ -2388,39 +2326,59 @@ function getResourceLinks(head) {
   );
 }
 
-function getMeta(head) {
-  let availableLangs = new Set();
-  let defaultLang = null;
-  let appVersion = null;
-
-  // XXX take last found instead of first?
-  const metas = Array.from(head.querySelectorAll(
-    'meta[name="availableLanguages"],' +
-    'meta[name="defaultLanguage"],' +
-    'meta[name="appVersion"]')
+function emit(action, requestId, data) {
+  document.dispatchEvent(
+    new CustomEvent('mozL20nDemo', {
+      bubbles: true,
+      detail: {
+        action, requestId, data: data || {},
+      }
+    })
   );
-  for (let meta of metas) {
-    const name = meta.getAttribute('name');
-    const content = meta.getAttribute('content').trim();
-    switch (name) {
-      case 'availableLanguages':
-        availableLangs = new Set(content.split(',').map(lang => {
-          return lang.trim();
-        }));
-        break;
-      case 'defaultLanguage':
-        defaultLang = content;
-        break;
-      case 'appVersion':
-        appVersion = content;
+}
+
+function postMessage(msg, data) {
+  const reqId = Math.random().toString(36).replace(/[^a-z]+/g, '');
+
+  return new Promise((resolve, reject) => {
+    function onResponse(evt) {
+      if (evt.detail.requestId === reqId) {
+        clearTimeout(t);
+        window.removeEventListener('mozL20nDemoResponse', onResponse);
+        resolve(evt.detail.data);
+      }
     }
+
+    const t = setTimeout(() => {
+      window.removeEventListener('mozL20nDemoResponse', onResponse);
+      reject();
+    }, 15000);
+
+    window.addEventListener('mozL20nDemoResponse', onResponse);
+
+    emit(msg, reqId, data);
+  });
+}
+
+class ResourceBundle {
+  constructor(resIds, lang) {
+    this.lang = lang;
+    this.resIds = resIds;
+    this.loaded = false;
   }
 
-  return {
-    defaultLang,
-    availableLangs,
-    appVersion
-  };
+  fetch() {
+    if (!this.loaded) {
+      this.loaded = Promise.all(
+        this.resIds.map(resId => postMessage('fetchResource', {
+          resId: resId,
+          lang: this.lang,
+        }))
+      );
+    }
+
+    return this.loaded;
+  }
 }
 
 function createContext(lang) {
@@ -2431,25 +2389,22 @@ document.l10n = new ContentLocalizationObserver();
 window.addEventListener('languagechange', document.l10n);
 
 documentReady().then(() => {
-  const { defaultLang, availableLangs } = getMeta(document.head);
   for (let [name, resIds] of getResourceLinks(document.head)) {
     if (!document.l10n.has(name)) {
-      createLocalization(name, resIds, defaultLang, availableLangs);
+      createLocalization(name, resIds);
     }
   }
 });
 
-function createLocalization(name, resIds, defaultLang, availableLangs) {
-  function requestBundles(requestedLangs = new Set(navigator.languages)) {
-    const newLangs = prioritizeLocales(
-      defaultLang, availableLangs, requestedLangs
+function createLocalization(name, resIds) {
+  function requestBundles(requestedLangs = navigator.languages) {
+    return postMessage('getResources', {
+      requestedLangs, resIds
+    }).then(
+      ({availableLangs}) => Array.from(availableLangs).map(
+        lang => new ResourceBundle(resIds, lang)
+      )
     );
-
-    const bundles = [];
-    newLangs.forEach(lang => {
-      bundles.push(new ResourceBundle(lang, resIds));
-    });
-    return Promise.resolve(bundles);
   }
 
   document.l10n.set(

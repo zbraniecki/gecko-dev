@@ -93,17 +93,30 @@ this.L20nDemo = {
         );
         break;
       }
+      case "getResources": {
+        const { requestedLangs, resIds } = data;
+        const resp = L10nService.getResources(requestedLangs, resIds);
+        this.sendPageResponse(messageManager, requestId, resp);
+        break;
+      }
+      case "fetchResource": {
+        const { resId, lang } = data;
+        L10nService.fetchResource(resId, lang).then(
+          resp => this.sendPageResponse(messageManager, requestId, resp)
+        );
+        break;
+      }
     }
 
     return true;
   },
 
-  sendPageResponse: function(aMessageManager, aRequestId) {
+  sendPageResponse: function(aMessageManager, aRequestId, aResponse) {
     if (aRequestId === null) {
       return false;
     }
 
-    let detail = {requestId: aRequestId};
+    let detail = {requestId: aRequestId, data: aResponse};
     log.debug("sendPageResponse:", detail);
     aMessageManager.sendAsyncMessage("L20nDemo:SendPageResponse", detail);
 

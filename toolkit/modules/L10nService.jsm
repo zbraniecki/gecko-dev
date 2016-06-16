@@ -87,6 +87,11 @@ const FileSource = {
         'chrome://browser/locale/aboutDialog.pl.ftl',
       ]
     },
+    '/browser/aboutRobots.ftl': {
+      'en-US': [
+        'chrome://browser/locale/aboutRobots.en-US.ftl',
+      ],
+    },
     '/browser/browser.ftl': {
       'en-US': [
         'chrome://browser/locale/browser.en-US.ftl',
@@ -175,7 +180,8 @@ this.L10nService = {
     const defaultLang = 'en-US';
     const availableLangs = getLanguages(resIds);
     const supportedLocales = prioritizeLocales(
-      defaultLang, availableLangs, requestedLangs);
+      defaultLang, availableLangs, requestedLangs
+    );
     const resBundles = Array.from(supportedLocales).map(
       lang => new ResourceBundle(lang, resIds)
     );
@@ -183,6 +189,10 @@ this.L10nService = {
       availableLangs,
       resBundles
     };
+  },
+
+  fetchResource(resId, lang) {
+    return fetchResource(resId, lang);
   },
 
   registerSource(sourceName, source) {

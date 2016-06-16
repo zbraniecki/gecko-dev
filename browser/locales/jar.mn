@@ -14,6 +14,7 @@
     locale/browser/aboutPrivateBrowsing.dtd        (%chrome/browser/aboutPrivateBrowsing.dtd)
     locale/browser/aboutPrivateBrowsing.properties (%chrome/browser/aboutPrivateBrowsing.properties)
     locale/browser/aboutRobots.dtd                 (%chrome/browser/aboutRobots.dtd)
+    locale/browser/aboutRobots.en-US.ftl           (%chrome/browser/aboutRobots.en-US.ftl)
     locale/browser/aboutHome.dtd                   (%chrome/browser/aboutHome.dtd)
     locale/browser/accounts.properties             (%chrome/browser/accounts.properties)
 #ifdef MOZ_SERVICES_HEALTHREPORT

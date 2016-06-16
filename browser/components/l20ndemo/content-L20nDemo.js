@@ -2,11 +2,12 @@
 * License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+const { utils: Cu } = Components;
 
 const PREF_TEST_WHITELIST = "browser.l20ndemo.testingOrigins";
+const L20NDEMO_PERMISSION   = "l20ndemo";
 
-var L20nDemoListener = {
+const L20nDemoListener = {
   handleEvent: function (event) {
     if (!Services.prefs.getBoolPref("browser.l20ndemo.enabled")) {
       return;
@@ -63,6 +64,10 @@ var L20nDemoListener = {
 
     if (!this.isSafeScheme(uri))
       return false;
+
+    let permission = Services.perms.testPermission(uri, L20NDEMO_PERMISSION);
+    if (permission == Services.perms.ALLOW_ACTION)
+      return true;
 
     return this.isTestingOrigin(uri);
   },
