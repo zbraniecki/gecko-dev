@@ -50,6 +50,11 @@ function load(url) {
 
 const FileSource = {
   resMap: {
+    '/global/aboutLocalization.ftl': {
+      'en-US': [
+        'chrome://global/locale/aboutLocalization.en-US.ftl',
+      ],
+    },
     '/global/aboutSupport.ftl': {
       'en-US': [
         'chrome://global/locale/aboutSupport.en-US.ftl',
@@ -216,6 +221,14 @@ this.L10nService = {
     if (changedResources.size) {
       Services.obs.notifyObservers(this, 'language-registry-update', 'add data');
     }
+  },
+
+  requestResourceInfo() {
+    return resIndex;
+  },
+
+  requestCacheInfo() {
+    return resCache;
   },
 };
 

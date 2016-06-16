@@ -16,6 +16,8 @@ toolkit.jar:
    content/global/about.xhtml
    content/global/aboutAbout.js
    content/global/aboutAbout.xhtml
+   content/global/aboutLocalization.js
+   content/global/aboutLocalization.xhtml
 #ifdef MOZILLA_OFFICIAL
    content/global/aboutRights.xhtml
 #else

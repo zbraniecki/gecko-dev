@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title data-l10n-id="about-localization-title"></title>
+    <link rel="stylesheet" href="chrome://mozapps/skin/aboutLocalization.css" type="text/css" />
+
+    <link rel="localization" href="/global/aboutLocalization.ftl"/>
+    <script src="chrome://global/content/l20n-chrome-html.js"/>
+
+    <script src="chrome://global/content/aboutLocalization.js" />
+  </head>
+  <body id="body">
+
+    <div id="categories">
+      <div class="category" selected="true" value="resources">
+        <span class="category-name" data-l10n-id="about-localization-resources-title"></span>
+      </div>
+      <div class="category" value="cache">
+        <span class="category-name" data-l10n-id="about-localization-cache-title"></span>
+      </div>
+    </div>
+
+    <div class="main-content">
+
+      <div class="header">
+        <div id="sectionTitle" class="header-name" data-l10n-id="about-localization-resources-title"></div>
+        <div id="refreshDiv">
+          <button id="refreshButton" data-l10n-id="about-localization-refresh-button"></button>
+        </div>
+      </div>
+
+      <div id="resources" class="tab active">
+        <table>
+          <thead>
+            <tr>
+              <th data-l10n-id="about-localization-resources-resource"></th>
+              <th data-l10n-id="about-localization-resources-language"></th>
+              <th data-l10n-id="about-localization-resources-sources"></th>
+            </tr>
+          </thead>
+          <tbody id="resources_content" />
+        </table>
+      </div>
+
+      <div id="cache" class="tab" hidden="true">
+        <dl id="cache_content" />
+      </div>
+
+    </div>
+  </body>
+</html>
