@@ -1,11 +1,8 @@
-#filter substitution
 <?xml version="1.0"?>
 
 <!DOCTYPE window [
   <!ENTITY % file0DTD SYSTEM "chrome://browser/locale/perftest/file0.dtd">
   %file0DTD;
-  <!ENTITY % file1DTD SYSTEM "chrome://browser/locale/perftest/file1.dtd">
-  %file1DTD;
 ]>
 
 <window id="main-window"
@@ -25,15 +22,5 @@
   <label>&entity.id.07;</label>
   <label>&entity.id.08;</label>
   <label>&entity.id.09;</label>
-  <label>&entity.id.10;</label>
-  <label>&entity.id.11;</label>
-  <label>&entity.id.12;</label>
-  <label>&entity.id.13;</label>
-  <label>&entity.id.14;</label>
-  <label>&entity.id.15;</label>
-  <label>&entity.id.16;</label>
-  <label>&entity.id.17;</label>
-  <label>&entity.id.18;</label>
-  <label>&entity.id.19;</label>
   <script type="application/javascript" src="chrome://browser/content/browser.js"/>
 </window>
