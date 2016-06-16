@@ -42,8 +42,14 @@ this.L20nDemo = {
       return false;
     }
 
+    let requestId = aEvent.detail.requestId;
+    if (requestId !== null && typeof requestId != "string") {
+      log.warn("Request ID not defined");
+      return false;
+    }
+
     let action = aEvent.detail.action;
-    if (typeof action != "string" || !action) {
+    if (typeof action != "string") {
       log.warn("Action not defined");
       return false;
     }
@@ -62,21 +68,21 @@ this.L20nDemo = {
 
     switch (action) {
       case "helo": {
-        this.sendPageResponse(messageManager, "ehlo");
+        this.sendPageResponse(messageManager, requestId);
         break;
       }
       case "register": {
         const { resId, lang, messages } = data;
         this.updateResource(resId, lang, messages);
         L10nService.registerSource("l20ndemo", this);
-        this.sendPageResponse(messageManager, "registered");
+        this.sendPageResponse(messageManager, requestId);
         break;
       }
       case "update": {
         const { resId, lang, messages } = data;
         this.updateResource(resId, lang, messages);
         L10nService.onResourcesChanged("l20ndemo", { [resId]: [lang] });
-        this.sendPageResponse(messageManager, "updated");
+        this.sendPageResponse(messageManager, requestId);
         break;
       }
       case "incremental": {
@@ -92,10 +98,16 @@ this.L20nDemo = {
     return true;
   },
 
-  sendPageResponse: function(aMessageManager, aAction) {
-    let detail = {action: aAction};
+  sendPageResponse: function(aMessageManager, aRequestId) {
+    if (aRequestId === null) {
+      return false;
+    }
+
+    let detail = {requestId: aRequestId};
     log.debug("sendPageResponse:", detail);
     aMessageManager.sendAsyncMessage("L20nDemo:SendPageResponse", detail);
+
+    return true;
   },
 
   resMap: {},
