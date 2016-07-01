@@ -11,11 +11,28 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Troubleshoot.jsm");
 Cu.import("resource://gre/modules/ResetProfile.jsm");
 Cu.import("resource://gre/modules/AppConstants.jsm");
+Cu.import("resource://gre/modules/L10nRegistry.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "PluralForm",
                                   "resource://gre/modules/PluralForm.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "PlacesDBUtils",
                                   "resource://gre/modules/PlacesDBUtils.jsm");
+
+
+const resources = L10nRegistry.getResources(['en-US'], [
+  'toolkit:global/aboutSupport.ftl'
+]);
+
+console.log(resources);
+
+const resBundleData = resources.resBundles[0];
+const resBundle = new ResourceBundle(
+  resBundleData[0],
+  resBundleData[1]
+);
+resBundle.fetch().then(resources => {
+  console.log(resources);
+});
 
 window.addEventListener("load", function onload(event) {
   try {
