@@ -1,5 +1,33 @@
 this.EXPORTED_SYMBOLS = [ "L10nRegistry", "ResourceBundle" ];
 
+/* SyncPromise */
+
+class SyncPromise {
+  constructor() {
+  }
+}
+
+SyncPromise.resolve = function(f) {
+  return {
+    then(resolve, reject) {
+      return resolve(f);
+    }
+  }
+}
+
+SyncPromise.all = function(promiseList) {
+  const result = promiseList.map(f => {
+    return f.then(res => {
+      return res;
+    });
+  });
+  return {
+    then(resolve, reject) {
+      resolve(result);
+    }
+  }
+}
+
 /* Sources */
 class Source {
   constructor(name) {
@@ -7,6 +35,10 @@ class Source {
   }
 
   indexResources() {
+    throw new Error('Not implemented');
+  }
+
+  loadResource(resId, lang) {
     throw new Error('Not implemented');
   }
 }
@@ -33,7 +65,7 @@ class FileSource extends Source {
 
   loadResource(resId, lang) {
     const path = this.resMap[resId][lang];
-    return Promise.resolve(fakeSourceMap[path]);;
+    return SyncPromise.resolve(fakeSourceMap[path]);
   }
 }
 
@@ -54,7 +86,8 @@ class ResourceBundle {
         let source = this.resIds[resId][0];
         resPromises.push(L10nRegistry.fetchResource(source, resId, this.lang));;
       }
-      this.loaded = Promise.all(resPromises);
+
+      this.loaded = SyncPromise.all(resPromises);
     }
     return this.loaded;
   }
@@ -65,8 +98,16 @@ class ResourceBundle {
 const sources = new Map();
 const index = new Map();
 
-function prioritizeLocales(defaultLag, availableLangs, requestedLangs) {
-  return new Set(['en-US']);
+function prioritizeLocales(defaultLang, availableLangs, requestedLangs) {
+  const supportedLocales = new Set();
+  for (let lang of requestedLangs) {
+    if (availableLangs.has(lang)) {
+      supportedLocales.add(lang);
+    }
+  }
+
+  supportedLocales.add(defaultLang);
+  return supportedLocales;
 }
 
 function getLanguages(resIds) {
@@ -101,9 +142,13 @@ this.L10nRegistry = {
     );
     const resBundles = Array.from(supportedLocales).map(
       lang => {
+        const resSources = {};
+        resIds.forEach(resId => {
+          resSources[resId] = Array.from(index.get(resId).get(lang));
+        });
         return [
           lang,
-          {'toolkit:global/aboutSupport.ftl': ['toolkit']}
+          resSources
         ];
       }
     )
