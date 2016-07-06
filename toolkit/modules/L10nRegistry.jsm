@@ -1,32 +1,156 @@
 this.EXPORTED_SYMBOLS = [ "L10nRegistry", "ResourceBundle" ];
 
+
+const sync = false;
+
 /* SyncPromise */
 
-class SyncPromise {
-  constructor() {
-  }
+function isPromise(p) {
+  return p && typeof p.then === 'function';
+}
+function addReject(prom, reject) {
+  prom.then(null, reject) // Use this style for sake of non-Promise thenables (e.g., jQuery Deferred)
 }
 
-SyncPromise.resolve = function(f) {
-  return {
-    then(resolve, reject) {
-      return resolve(f);
+// States
+var PENDING = 2,
+    FULFILLED = 0, // We later abuse these as array indices
+    REJECTED = 1;
+
+function SyncPromise(fn) {
+  var self = this;
+  self.v = 0; // Value, this will be set to either a resolved value or rejected reason
+  self.s = PENDING; // State of the promise
+  self.c = [[],[]]; // Callbacks c[0] is fulfillment and c[1] contains rejection callbacks
+  self.a = false; // Has the promise been resolved synchronously
+  var syncResolved = true;
+  function transist(val, state) {
+    self.a = syncResolved;
+    self.v = val;
+    self.s = state;
+    if (state === REJECTED && !self.c[state].length) {
+      throw val;
+    }
+    self.c[state].forEach(function(fn) { fn(val); });
+    self.c = null; // Release memory.
+  }
+  function resolve(val) {
+    if (!self.c) {
+      // Already resolved, do nothing.
+    } else if (isPromise(val)) {
+      addReject(val.then(resolve), reject);
+    } else {
+      transist(val, FULFILLED);
     }
   }
+  function reject(reason) {
+    if (!self.c) {
+      // Already resolved, do nothing.
+    } else if (isPromise(reason)) {
+      addReject(reason.then(reject), reject);
+    } else {
+      transist(reason, REJECTED);
+    }
+  }
+  fn(resolve, reject);
+  syncResolved = false;
 }
 
-SyncPromise.all = function(promiseList) {
-  const result = promiseList.map(f => {
-    return f.then(res => {
-      return res;
+var prot = SyncPromise.prototype;
+
+prot.then = function(cb, errBack) {
+  var self = this;
+  if (self.a) { // Promise has been resolved synchronously
+    //throw new Error('Cannot call `then` on synchronously resolved promise');
+  }
+  return new SyncPromise(function(resolve, reject) {
+    var rej = typeof errBack === 'function' ? errBack : reject;
+    function settle() {
+      try {
+        resolve(cb ? cb(self.v) : self.v);
+      } catch(e) {
+        rej(e);
+      }
+    }
+    if (self.s === FULFILLED) {
+      settle();
+    } else if (self.s === REJECTED) {
+      rej(self.v);
+    } else {
+      self.c[FULFILLED].push(settle);
+      self.c[REJECTED].push(rej);
+    }
+  });
+};
+
+prot.catch = function(cb) {
+  var self = this;
+  if (self.a) { // Promise has been resolved synchronously
+    throw new Error('Cannot call `catch` on synchronously resolved promise');
+  }
+  return new SyncPromise(function(resolve, reject) {
+    function settle() {
+      try {
+        resolve(cb(self.v));
+      } catch(e) {
+        reject(e);
+      }
+    }
+    if (self.s === REJECTED) {
+      settle();
+    } else if (self.s === FULFILLED) {
+      resolve(self.v);
+    } else {
+      self.c[REJECTED].push(settle);
+      self.c[FULFILLED].push(resolve);
+    }
+  });
+};
+
+SyncPromise.all = function(promises) {
+  return new SyncPromise(function(resolve, reject, l) {
+    l = promises.length;
+    var hasPromises = false;
+    promises.forEach(function(p, i) {
+      if (isPromise(p)) {
+        hasPromises = true;
+        addReject(p.then(function(res) {
+          promises[i] = res;
+          --l || resolve(promises);
+        }), reject);
+      } else {
+        --l || resolve(promises);
+      }
     });
   });
-  return {
-    then(resolve, reject) {
-      resolve(result);
-    }
-  }
+};
+
+SyncPromise.race = function(promises) {
+  var resolved = false;
+  return new SyncPromise(function(resolve, reject) {
+    promises.some(function(p, i) {
+      if (isPromise(p)) {
+        addReject(p.then(function(res) {
+          if (resolved) {
+            return;
+          }
+          resolve(res);
+          resolved = true;
+        }), reject);
+      } else {
+        throw new Error('Must use promises within `SyncPromise.race`');
+      }
+    });
+  });
+};
+
+SyncPromise.resolve = function(f) {
+  return new SyncPromise(function(resolve, reject) {
+    resolve(f);
+  })
 }
+
+const CurPromise = sync ? SyncPromise : Promise;
 
 /* Sources */
 class Source {
@@ -47,6 +171,7 @@ const fakeSourceMap = {
   'omni.ja!/toolkit/locales/en-US/global/aboutSupport.ftl': 'support = Support String',
   'omni.ja!/toolkit/locales/pl/global/aboutSupport.ftl': 'support = Support String [PL]',
   'omni.ja!/browser/locales/en-US/global/netError.ftl': 'error = Error from browser',
+  'omni.ja!/browser/locales/pl/global/netError.ftl': 'error = Error from browser [PL]',
   'omni.ja!/toolkit/locales/en-US/global/netError.ftl': 'error = Error from toolkit',
   'omni.ja!/toolkit/locales/pl/global/netError.ftl': 'error = Error from toolkit [PL]'
 }
@@ -69,29 +194,41 @@ class FileSource extends Source {
 
   loadResource(resId, lang) {
     const path = this.resMap[resId][lang];
-    return SyncPromise.resolve(fakeSourceMap[path]);
+    return CurPromise.resolve(fakeSourceMap[path]);
   }
 }
 
 /* ResourceBundle */
 
 class ResourceBundle {
-  constructor(lang, resIds) {
+  constructor(lang, resources) {
     this.lang = lang;
     this.loaded = undefined;
-    this.resIds = resIds;
+    this.resources = resources;
+
+
+    let data = Array.from(resources).map(resId => {
+      return resources[resId].data;
+    });
+
+    if (data.every(d => d !== null)) {
+      //this.loaded = CurPromise.resolve(data);
+    }
   }
 
   fetch() {
     if (!this.loaded) {
       const resPromises = [];
 
-      for (let resId in this.resIds) {
-        let source = this.resIds[resId][0];
-        resPromises.push(L10nRegistry.fetchResource(source, resId, this.lang));;
+      for (let resId in this.resources) {
+        let {
+          source,
+          lang
+        } = this.resources[resId];
+        resPromises.push(L10nRegistry.fetchResource(source, resId, lang));;
       }
 
-      this.loaded = SyncPromise.all(resPromises);
+      this.loaded = CurPromise.all(resPromises);
     }
     return this.loaded;
   }
@@ -168,6 +305,48 @@ function getSource(resId, locales, sourcesPtr = 0) {
   return [null, null];
 }
 
+function buildResBundleData(resIds, subLocales, sources, firstLocale) {
+  const locale = subLocales[0];
+  const subSources = Array.from(getSources(locale, resIds));
+
+  return CurPromise.all(subSources.map((subSource, j) => {
+    const resSources = {};
+
+
+    const fetch = firstLocale && j === 0;
+
+    return CurPromise.all(resIds.map(resId => {
+      let [lang, source] = getSource(resId, subLocales, sources.indexOf(subSources[j]));
+      return fetch ? this.fetchResource(source, resId, lang).then(data => {
+        return {
+          resId,
+          data,
+          source,
+          lang
+        };
+      }) : {
+        resId,
+        data: null,
+        source,
+        lang
+      };
+    })).then((resList) => {
+      const resSources = {};
+      resList.forEach(res => {
+        resSources[res.resId] = {
+          lang: res.lang,
+          source: res.source,
+          data: res.data
+        }
+      });
+      return {
+        locale,
+        resources: resSources
+      };
+    })
+  }));
+}
+
 this.L10nRegistry = {
   getResources(requestedLangs, resIds) {
     const defaultLang = 'en-US';
@@ -175,36 +354,25 @@ this.L10nRegistry = {
     const supportedLocales = prioritizeLocales(
       defaultLang, availableLangs, requestedLangs
     );
-    const resBundles = [];
 
     const locales = Array.from(supportedLocales);
     const sources = Array.from(sourcesOrder);
 
-    for (let i in locales) {
+    return CurPromise.all(locales.map((locale, i) => {
       let subLocales = locales.slice(i);
-      const subSources = Array.from(getSources(locales[i], resIds));
-
-      for (let j in subSources) {
-        const resSources = {};
-
-        resIds.forEach(resId => {
-          let [lang, source] = getSource(resId, subLocales, sources.indexOf(subSources[j]));
-          resSources[resId] = {
-            lang,
-            source,
-            data: null
-          };
-        });
-        resBundles.push({
-          lang: locales[i],
-          resources: resSources
-        })
+      
+      return buildResBundleData.call(
+        this,
+        resIds,
+        subLocales,
+        sources,
+        i === 0);
+    })).then(resBundles => {
+      return {
+        supportedLocales: locales,
+        bundles: [].concat.apply([], resBundles)
       }
-    }
-    return {
-      supporedLocales: locales,
-      resBundles
-    };
+    })
   },
 
   registerSource(source) {

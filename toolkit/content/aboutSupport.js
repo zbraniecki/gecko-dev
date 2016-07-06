@@ -19,25 +19,28 @@ XPCOMUtils.defineLazyModuleGetter(this, "PlacesDBUtils",
                                   "resource://gre/modules/PlacesDBUtils.jsm");
 
 
-const resources = L10nRegistry.getResources(['pl', 'en-US'], [
+L10nRegistry.getResources(['pl', 'en-US'], [
   'toolkit:global/aboutSupport.ftl',
   'toolkit:global/netError.ftl'
-]);
+]).then(({supportedLocales, bundles}) => {
+  console.log(1);
+  console.log(supportedLocales);
+  console.log(bundles);
 
-console.log(1);
-console.log(resources);
-
-const resBundleData = resources.resBundles[0];
-const resBundle = new ResourceBundle(
-  resBundleData[0],
-  resBundleData[1]
-);
-resBundle.fetch().then(resources => {
+  const resBundleData = bundles[1];
+  const resBundle = new ResourceBundle(
+    resBundleData.locale,
+    resBundleData.resources
+  );
   console.log(2);
-  console.log(resources);
+  resBundle.fetch().then(resources => {
+    console.log(3);
+    console.log(resources);
+  });
+
+  console.log(4);
 });
 
-console.log(3);
 
 window.addEventListener("load", function onload(event) {
   try {
