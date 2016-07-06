@@ -44,7 +44,11 @@ class Source {
 }
 
 const fakeSourceMap = {
-  'chrome/toolkit/locales/en-US/global/aboutSupport.ftl': 'key1 = Value1'
+  'omni.ja!/toolkit/locales/en-US/global/aboutSupport.ftl': 'support = Support String',
+  'omni.ja!/toolkit/locales/pl/global/aboutSupport.ftl': 'support = Support String [PL]',
+  'omni.ja!/browser/locales/en-US/global/netError.ftl': 'error = Error from browser',
+  'omni.ja!/toolkit/locales/en-US/global/netError.ftl': 'error = Error from toolkit',
+  'omni.ja!/toolkit/locales/pl/global/netError.ftl': 'error = Error from toolkit [PL]'
 }
 
 class FileSource extends Source {
@@ -96,6 +100,7 @@ class ResourceBundle {
 /* Registry */
 
 const sources = new Map();
+let sourcesOrder = new Set();
 const index = new Map();
 
 function prioritizeLocales(defaultLang, availableLangs, requestedLangs) {
@@ -113,24 +118,54 @@ function prioritizeLocales(defaultLang, availableLangs, requestedLangs) {
 function getLanguages(resIds) {
   const locales = new Set();
 
-  let firstRes = true;
   for (let resId of resIds) {
     if (index.has(resId)) {
-      if (firstRes) {
-        for (let lang of index.get(resId).keys()) {
-          locales.add(lang);
-        }
-      } else {
-        for (let lang of locales) {
-          if (!(lang in index.get(resId).keys())) {
-            locales.delete(lang);
-          }
+      for (let lang of index.get(resId).keys()) {
+        locales.add(lang);
+      }
+    }
+  }
+  return locales;
+}
+
+function getSources(lang, resIds) {
+  const result = new Set();
+  
+  for (let sourceName of sourcesOrder) {
+    for (let resId of resIds) {
+      if (index.has(resId) && index.get(resId).has(lang)) {
+        let sources = index.get(resId).get(lang);
+        if (sources.has(sourceName)) {
+          result.add(sourceName);
         }
       }
     }
-    firstRes = false;
   }
-  return locales;
+
+  return result;
+}
+
+function getSource(resId, locales, sourcesPtr = 0) {
+  const sources = Array.from(sourcesOrder);
+
+  let lang = locales[0];
+  let source = sources[sourcesPtr];
+
+  if (!index.get(resId).has(lang)) {
+    return getSource(resId, locales.slice(1));
+  }
+  if (index.get(resId).get(lang).has(source)) {
+    return [lang, source];
+  }
+
+  if (sourcesPtr + 1 < sources.length) {
+    return getSource(resId, locales, sourcesPtr + 1);
+  }
+
+  if (locales > 1) {
+    return getSource(resId, locales.slice(1));
+  }
+  return [null, null];
 }
 
 this.L10nRegistry = {
@@ -140,27 +175,41 @@ this.L10nRegistry = {
     const supportedLocales = prioritizeLocales(
       defaultLang, availableLangs, requestedLangs
     );
-    const resBundles = Array.from(supportedLocales).map(
-      lang => {
+    const resBundles = [];
+
+    const locales = Array.from(supportedLocales);
+    const sources = Array.from(sourcesOrder);
+
+    for (let i in locales) {
+      let subLocales = locales.slice(i);
+      const subSources = Array.from(getSources(locales[i], resIds));
+
+      for (let j in subSources) {
         const resSources = {};
+
         resIds.forEach(resId => {
-          resSources[resId] = Array.from(index.get(resId).get(lang));
+          let [lang, source] = getSource(resId, subLocales, sources.indexOf(subSources[j]));
+          resSources[resId] = {
+            lang,
+            source,
+            data: null
+          };
         });
-        return [
-          lang,
-          resSources
-        ];
+        resBundles.push({
+          lang: locales[i],
+          resources: resSources
+        })
       }
-    )
+    }
     return {
-      availableLangs,
-      supportedLocales,
+      supporedLocales: locales,
       resBundles
     };
   },
 
   registerSource(source) {
     sources.set(source.name, source);
+    sourcesOrder = new Set([source.name].concat(Array.from(sourcesOrder)));
 
     const resList = source.indexResources();
 
@@ -184,10 +233,23 @@ this.L10nRegistry = {
 };
 
 
-const toolkitSource = new FileSource('toolkit', {
+const toolkitFileSource = new FileSource('toolkit', {
   'toolkit:global/aboutSupport.ftl': {
-    'en-US': 'chrome/toolkit/locales/en-US/global/aboutSupport.ftl'
+    'en-US': 'omni.ja!/toolkit/locales/en-US/global/aboutSupport.ftl',
+    'pl': 'omni.ja!/toolkit/locales/pl/global/aboutSupport.ftl',
+  },
+  'toolkit:global/netError.ftl': {
+    'en-US': 'omni.ja!/toolkit/locales/en-US/global/netError.ftl',
+    'pl': 'omni.ja!/toolkit/locales/pl/global/netError.ftl'
   }
 });
 
-L10nRegistry.registerSource(toolkitSource);
+const browserFileSource = new FileSource('browser', {
+  'toolkit:global/netError.ftl': {
+    'en-US': 'omni.ja!/browser/locales/en-US/global/netError.ftl',
+    'pl': 'omni.ja!/browser/locales/pl/global/netError.ftl'
+  }
+});
+
+L10nRegistry.registerSource(toolkitFileSource);
+L10nRegistry.registerSource(browserFileSource);

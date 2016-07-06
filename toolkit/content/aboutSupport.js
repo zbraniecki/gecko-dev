@@ -19,8 +19,9 @@ XPCOMUtils.defineLazyModuleGetter(this, "PlacesDBUtils",
                                   "resource://gre/modules/PlacesDBUtils.jsm");
 
 
-const resources = L10nRegistry.getResources(['en-US'], [
-  'toolkit:global/aboutSupport.ftl'
+const resources = L10nRegistry.getResources(['pl', 'en-US'], [
+  'toolkit:global/aboutSupport.ftl',
+  'toolkit:global/netError.ftl'
 ]);
 
 console.log(1);
