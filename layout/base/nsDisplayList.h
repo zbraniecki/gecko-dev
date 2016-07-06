@@ -248,7 +248,7 @@ public:
     mMode = nsDisplayListBuilderMode::PLUGIN_GEOMETRY;
   }
 
-  mozilla::layers::LayerManager* GetWidgetLayerManager(nsView** aView = nullptr, bool* aAllowRetaining = nullptr);
+  mozilla::layers::LayerManager* GetWidgetLayerManager(nsView** aView = nullptr);
 
   /**
    * @return true if the display is being built in order to determine which
@@ -1005,8 +1005,7 @@ public:
 
   static OutOfFlowDisplayData* GetOutOfFlowData(nsIFrame* aFrame)
   {
-    return static_cast<OutOfFlowDisplayData*>(
-      aFrame->Properties().Get(OutOfFlowDisplayDataProperty()));
+    return aFrame->Properties().Get(OutOfFlowDisplayDataProperty());
   }
 
   nsPresContext* CurrentPresContext() {
@@ -3391,7 +3390,7 @@ public:
                             const DisplayItemClip* aClip) override;
   virtual bool CanApplyOpacity() const override;
   virtual bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override;
-  bool NeedsActiveLayer(nsDisplayListBuilder* aBuilder);
+  static bool NeedsActiveLayer(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame);
   NS_DISPLAY_DECL_NAME("Opacity", TYPE_OPACITY)
   virtual void WriteDebugInfo(std::stringstream& aStream) override;
 
@@ -3527,7 +3526,8 @@ public:
   nsDisplayOwnLayer(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                     nsDisplayList* aList, uint32_t aFlags = 0,
                     ViewID aScrollTarget = mozilla::layers::FrameMetrics::NULL_SCROLL_ID,
-                    float aScrollbarThumbRatio = 0.0f);
+                    float aScrollbarThumbRatio = 0.0f,
+                    bool aForceActive = true);
 #ifdef NS_BUILD_REFCNT_LOGGING
   virtual ~nsDisplayOwnLayer();
 #endif
@@ -3537,10 +3537,7 @@ public:
                                              const ContainerLayerParameters& aContainerParameters) override;
   virtual LayerState GetLayerState(nsDisplayListBuilder* aBuilder,
                                    LayerManager* aManager,
-                                   const ContainerLayerParameters& aParameters) override
-  {
-    return mozilla::LAYER_ACTIVE_FORCE;
-  }
+                                   const ContainerLayerParameters& aParameters) override;
   virtual bool TryMerge(nsDisplayItem* aItem) override
   {
     // Don't allow merging, each sublist must have its own layer
@@ -3555,6 +3552,7 @@ protected:
   uint32_t mFlags;
   ViewID mScrollTarget;
   float mScrollbarThumbRatio;
+  bool mForceActive;
 };
 
 /**
@@ -3788,7 +3786,7 @@ private:
 class nsDisplaySVGEffects : public nsDisplayWrapList {
 public:
   nsDisplaySVGEffects(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
-                      nsDisplayList* aList);
+                      nsDisplayList* aList, bool aOpacityItemCreated);
 #ifdef NS_BUILD_REFCNT_LOGGING
   virtual ~nsDisplaySVGEffects();
 #endif
@@ -3842,6 +3840,9 @@ public:
 private:
   // relative to mFrame
   nsRect mEffectsBounds;
+  // True if the caller also created an nsDisplayOpacity item, and we should tell
+  // PaintFramesWithEffects that it doesn't need to handle opacity itself.
+  bool mOpacityItemCreated;
 };
 
 /* A display item that applies a transformation to all of its descendant

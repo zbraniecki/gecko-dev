@@ -222,6 +222,13 @@ defineLazyGetter(exports.modules, "CSS", () => {
   return sandbox.CSS;
 });
 
+defineLazyGetter(exports.modules, "FileReader", () => {
+  let sandbox
+    = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
+                 {wantGlobalProperties: ["FileReader"]});
+  return sandbox.FileReader;
+});
+
 // List of all custom globals exposed to devtools modules.
 // Changes here should be mirrored to devtools/.eslintrc.
 const globals = exports.globals = {
@@ -285,4 +292,8 @@ defineLazyGetter(globals, "URL", () => {
     = Cu.Sandbox(CC("@mozilla.org/systemprincipal;1", "nsIPrincipal")(),
                  {wantGlobalProperties: ["URL"]});
   return sandbox.URL;
+});
+defineLazyGetter(globals, "CSSRule", () => Ci.nsIDOMCSSRule);
+defineLazyGetter(globals, "DOMParser", () => {
+  return CC("@mozilla.org/xmlextras/domparser;1", "nsIDOMParser");
 });

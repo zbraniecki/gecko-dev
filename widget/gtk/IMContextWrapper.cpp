@@ -21,7 +21,7 @@
 namespace mozilla {
 namespace widget {
 
-PRLogModuleInfo* gGtkIMLog = nullptr;
+LazyLogModule gGtkIMLog("nsGtkIMModuleWidgets");
 
 static inline const char*
 ToChar(bool aBool)
@@ -180,9 +180,6 @@ IMContextWrapper::IMContextWrapper(nsWindow* aOwnerWindow)
     , mSetCursorPositionOnKeyEvent(true)
     , mPendingResettingIMContext(false)
 {
-    if (!gGtkIMLog) {
-        gGtkIMLog = PR_NewLogModule("nsGtkIMModuleWidgets");
-    }
     static bool sFirstInstance = true;
     if (sFirstInstance) {
         sFirstInstance = false;
@@ -336,16 +333,12 @@ IMContextWrapper::GetIMEUpdatePreference() const
     }
 
     nsIMEUpdatePreference::Notifications notifications =
-        nsIMEUpdatePreference::NOTIFY_SELECTION_CHANGE;
+        nsIMEUpdatePreference::NOTIFY_NOTHING;
     // If it's not enabled, we don't need position change notification.
     if (IsEnabled()) {
         notifications |= nsIMEUpdatePreference::NOTIFY_POSITION_CHANGE;
     }
     nsIMEUpdatePreference updatePreference(notifications);
-    // We shouldn't notify IME of selection change caused by changes of
-    // composition string.  Therefore, we don't need to be notified selection
-    // changes which are caused by compositionchange events handled.
-    updatePreference.DontNotifyChangesCausedByComposition();
     return updatePreference;
 }
 
@@ -1190,9 +1183,9 @@ IMContextWrapper::OnDeleteSurroundingNative(GtkIMContext* aContext,
                                             gint aNChars)
 {
     MOZ_LOG(gGtkIMLog, LogLevel::Info,
-        ("GTKIM: %p OnDeleteSurroundingNative(aContext=%p, aOffset=%ld, "
-         "aNChar=%ld), current context=%p",
-         this, aContext, GetCurrentContext()));
+        ("GTKIM: %p OnDeleteSurroundingNative(aContext=%p, aOffset=%d, "
+         "aNChar=%d), current context=%p",
+         this, aContext, aOffset, aNChars, GetCurrentContext()));
 
     // See bug 472635, we should do nothing if IM context doesn't match.
     if (GetCurrentContext() != aContext) {
@@ -1662,13 +1655,34 @@ IMContextWrapper::CreateTextRangeArray(GtkIMContext* aContext,
         return textRangeArray.forget();
     }
 
+    uint32_t minOffsetOfClauses = aCompositionString.Length();
     do {
         TextRange range;
         if (!SetTextRange(iter, preedit_string, caretOffsetInUTF16, range)) {
             continue;
         }
+        MOZ_ASSERT(range.Length());
+        minOffsetOfClauses = std::min(minOffsetOfClauses, range.mStartOffset);
         textRangeArray->AppendElement(range);
     } while (pango_attr_iterator_next(iter));
+
+    // If the IME doesn't define clause from the start of the composition,
+    // we should insert dummy clause information since TextRangeArray assumes
+    // that there must be a clause whose start is 0 when there is one or
+    // more clauses.
+    if (minOffsetOfClauses) {
+        TextRange dummyClause;
+        dummyClause.mStartOffset = 0;
+        dummyClause.mEndOffset = minOffsetOfClauses;
+        dummyClause.mRangeType = TextRangeType::eRawClause;
+        textRangeArray->InsertElementAt(0, dummyClause);
+        MOZ_LOG(gGtkIMLog, LogLevel::Warning,
+             ("GTKIM: %p   CreateTextRangeArray(), inserting a dummy clause "
+              "at the beginning of the composition string mStartOffset=%u, "
+              "mEndOffset=%u, mRangeType=%s",
+              this, dummyClause.mStartOffset, dummyClause.mEndOffset,
+              ToChar(dummyClause.mRangeType)));
+    }
 
     TextRange range;
     range.mStartOffset = range.mEndOffset = caretOffsetInUTF16;
@@ -1744,6 +1758,17 @@ IMContextWrapper::SetTextRange(PangoAttrIterator* aPangoAttrIter,
         MOZ_LOG(gGtkIMLog, LogLevel::Error,
             ("GTKIM: %p   SetTextRange(), FAILED, due to g_utf8_to_utf16() "
              "failure (retrieving current clause)",
+             this));
+        return false;
+    }
+
+    // iBus Chewing IME tells us that there is an empty clause at the end of
+    // the composition string but we should ignore it since our code doesn't
+    // assume that there is an empty clause.
+    if (!utf16CurrentClauseLength) {
+        MOZ_LOG(gGtkIMLog, LogLevel::Warning,
+            ("GTKIM: %p   SetTextRange(), FAILED, due to current clause length "
+             "is 0",
              this));
         return false;
     }
@@ -2064,7 +2089,7 @@ IMContextWrapper::DeleteText(GtkIMContext* aContext,
                              uint32_t aNChars)
 {
     MOZ_LOG(gGtkIMLog, LogLevel::Info,
-        ("GTKIM: %p DeleteText(aContext=%p, aOffset=%d, aNChars=%d), "
+        ("GTKIM: %p DeleteText(aContext=%p, aOffset=%d, aNChars=%u), "
          "mCompositionState=%s",
          this, aContext, aOffset, aNChars, GetCompositionStateName()));
 

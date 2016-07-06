@@ -766,7 +766,13 @@ IonBuilder::pushLoop(CFGState::State initial, jsbytecode* stopAt, MBasicBlock* e
 bool
 IonBuilder::init()
 {
-    if (!TypeScript::FreezeTypeSets(constraints(), script(), &thisTypes, &argTypes, &typeArray))
+    {
+        LifoAlloc::AutoFallibleScope fallibleAllocator(alloc().lifoAlloc());
+        if (!TypeScript::FreezeTypeSets(constraints(), script(), &thisTypes, &argTypes, &typeArray))
+            return false;
+    }
+
+    if (!alloc().ensureBallast())
         return false;
 
     if (inlineCallInfo_) {
@@ -1271,7 +1277,12 @@ IonBuilder::initArgumentsObject()
     JitSpew(JitSpew_IonMIR, "%s:%" PRIuSIZE " - Emitting code to initialize arguments object! block=%p",
                               script()->filename(), script()->lineno(), current);
     MOZ_ASSERT(info().needsArgsObj());
-    MCreateArgumentsObject* argsObj = MCreateArgumentsObject::New(alloc(), current->scopeChain());
+
+    bool mapped = script()->hasMappedArgsObj();
+    ArgumentsObject* templateObj = script()->compartment()->maybeArgumentsTemplateObject(mapped);
+
+    MCreateArgumentsObject* argsObj =
+        MCreateArgumentsObject::New(alloc(), current->scopeChain(), templateObj);
     current->add(argsObj);
     current->setArgumentsObject(argsObj);
     return true;
@@ -1402,6 +1413,9 @@ IonBuilder::maybeAddOsrTypeBarriers()
         // discarded here.
         if (info().isSlotAliasedAtOsr(slot))
             continue;
+
+        if (!alloc().ensureBallast())
+            return false;
 
         MInstruction* def = osrBlock->getSlot(slot)->toInstruction();
         MPhi* preheaderPhi = preheader->getSlot(slot)->toPhi();
@@ -2146,6 +2160,9 @@ IonBuilder::inspectOpcode(JSOp op)
         return true;
       }
 
+      case JSOP_IS_CONSTRUCTING:
+        pushConstant(MagicValue(JS_IS_CONSTRUCTING));
+        return true;
 
 #ifdef DEBUG
       case JSOP_PUSHBLOCKSCOPE:
@@ -6208,9 +6225,9 @@ IonBuilder::createCallObject(MDefinition* callee, MDefinition* scope)
 
     // Allocate the object. Run-once scripts need a singleton type, so always do
     // a VM call in such cases.
-    MNullaryInstruction* callObj;
-    if (script()->treatAsRunOnce())
-        callObj = MNewRunOnceCallObject::New(alloc(), templateObj);
+    MNewCallObjectBase* callObj;
+    if (script()->treatAsRunOnce() || templateObj->isSingleton())
+        callObj = MNewSingletonCallObject::New(alloc(), templateObj);
     else
         callObj = MNewCallObject::New(alloc(), templateObj);
     current->add(callObj);
@@ -9825,7 +9842,7 @@ IonBuilder::jsop_getelem_dense(MDefinition* obj, MDefinition* index, JSValueType
 MInstruction*
 IonBuilder::addArrayBufferByteLength(MDefinition* obj)
 {
-    MLoadFixedSlot* ins = MLoadFixedSlot::New(alloc(), obj, ArrayBufferObject::BYTE_LENGTH_SLOT);
+    MLoadFixedSlot* ins = MLoadFixedSlot::New(alloc(), obj, size_t(ArrayBufferObject::BYTE_LENGTH_SLOT));
     current->add(ins);
     ins->setResultType(MIRType::Int32);
     return ins;

@@ -60,7 +60,7 @@
 #include "jswrapper.h"
 #include "shellmoduleloader.out.h"
 
-#include "asmjs/Wasm.h"
+#include "asmjs/WasmJS.h"
 #include "builtin/ModuleObject.h"
 #include "builtin/TestingFunctions.h"
 #include "frontend/Parser.h"
@@ -158,6 +158,7 @@ struct ShellRuntime
 
     bool isWorker;
     double timeoutInterval;
+    double startTime;
     Atomic<bool> serviceInterrupt;
     Atomic<bool> haveInterruptFunc;
     JS::PersistentRootedValue interruptFunc;
@@ -205,6 +206,7 @@ static bool enableAsmJS = false;
 static bool enableNativeRegExp = false;
 static bool enableUnboxedArrays = false;
 static bool enableSharedMemory = SHARED_MEMORY_DEFAULT;
+static bool enableWasmAlwaysBaseline = false;
 #ifdef JS_GC_ZEAL
 static uint32_t gZealBits = 0;
 static uint32_t gZealFrequency = 0;
@@ -240,12 +242,6 @@ ScheduleWatchdog(JSRuntime* rt, double t);
 
 static void
 CancelExecution(JSRuntime* rt);
-
-static JSContext*
-NewContext(JSRuntime* rt);
-
-static void
-DestroyContext(JSContext* cx, bool withGC);
 
 static JSObject*
 NewGlobalObject(JSContext* cx, JS::CompartmentOptions& options,
@@ -320,6 +316,7 @@ extern JS_EXPORT_API(void)   add_history(char* line);
 ShellRuntime::ShellRuntime(JSRuntime* rt)
   : isWorker(false),
     timeoutInterval(-1.0),
+    startTime(PRMJ_Now()),
     serviceInterrupt(false),
     haveInterruptFunc(false),
     interruptFunc(rt, NullValue()),
@@ -339,12 +336,6 @@ GetShellRuntime(JSRuntime *rt)
     ShellRuntime* sr = static_cast<ShellRuntime*>(JS_GetRuntimePrivate(rt));
     MOZ_ASSERT(sr);
     return sr;
-}
-
-static ShellRuntime*
-GetShellRuntime(JSContext* cx)
-{
-    return GetShellRuntime(cx->runtime());
 }
 
 static char*
@@ -415,32 +406,6 @@ GetLine(FILE* file, const char * prompt)
         current = buffer + len;
     } while (true);
     return nullptr;
-}
-
-/* State to store as JSContext private. */
-struct JSShellContextData {
-    /* Creation timestamp, used by the elapsed() shell builtin. */
-    int64_t startTime;
-};
-
-static JSShellContextData*
-NewContextData()
-{
-    JSShellContextData* data = (JSShellContextData*)
-                               js_calloc(sizeof(JSShellContextData), 1);
-    if (!data)
-        return nullptr;
-    data->startTime = PRMJ_Now();
-    return data;
-}
-
-static inline JSShellContextData*
-GetContextData(JSContext* cx)
-{
-    JSShellContextData* data = (JSShellContextData*) JS_GetContextPrivate(cx);
-
-    MOZ_ASSERT(data);
-    return data;
 }
 
 static bool
@@ -2979,8 +2944,8 @@ WorkerMain(void* arg)
     JS_InitDestroyPrincipalsCallback(rt, ShellPrincipals::destroy);
     SetWorkerRuntimeOptions(rt);
 
-    JSContext* cx = NewContext(rt);
-    if (!cx) {
+    JSContext* cx = JS_GetContext(rt);
+    if (!JS::InitSelfHostedCode(cx)) {
         JS_DestroyRuntime(rt);
         js_delete(input);
         return;
@@ -3025,8 +2990,6 @@ WorkerMain(void* arg)
     sr->jobQueue.reset();
 #endif // SPIDERMONKEY_PROMISE
 
-    DestroyContext(cx, false);
-
     KillWatchdog(rt);
 
     JS_DestroyRuntime(rt);
@@ -3035,18 +2998,17 @@ WorkerMain(void* arg)
 }
 
 // Workers can spawn other workers, so we need a lock to access workerThreads.
-static PRLock* workerThreadsLock = nullptr;
+static Mutex* workerThreadsLock = nullptr;
 static Vector<PRThread*, 0, SystemAllocPolicy> workerThreads;
 
-class MOZ_RAII AutoLockWorkerThreads
+class MOZ_RAII AutoLockWorkerThreads : public LockGuard<Mutex>
 {
+    using Base = LockGuard<Mutex>;
   public:
-    AutoLockWorkerThreads() {
+    AutoLockWorkerThreads()
+      : Base(*workerThreadsLock)
+    {
         MOZ_ASSERT(workerThreadsLock);
-        PR_Lock(workerThreadsLock);
-    }
-    ~AutoLockWorkerThreads() {
-        PR_Unlock(workerThreadsLock);
     }
 };
 
@@ -3068,7 +3030,7 @@ EvalInWorker(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
     if (!workerThreadsLock) {
-        workerThreadsLock = PR_NewLock();
+        workerThreadsLock = js_new<Mutex>();
         if (!workerThreadsLock) {
             ReportOutOfMemory(cx);
             return false;
@@ -3270,7 +3232,7 @@ KillWorkerThreads()
         PR_JoinThread(thread);
     }
 
-    PR_DestroyLock(workerThreadsLock);
+    js_delete(workerThreadsLock);
     workerThreadsLock = nullptr;
 }
 
@@ -3521,10 +3483,7 @@ Elapsed(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     if (args.length() == 0) {
-        double d = 0.0;
-        JSShellContextData* data = GetContextData(cx);
-        if (data)
-            d = PRMJ_Now() - data->startTime;
+        double d = PRMJ_Now() - GetShellRuntime(cx)->startTime;
         args.rval().setDouble(d);
         return true;
     }
@@ -3768,7 +3727,6 @@ class OffThreadState {
 
   public:
     OffThreadState() : monitor(), state(IDLE), token(), source(nullptr) { }
-    bool init() { return monitor.init(); }
 
     bool startIfIdle(JSContext* cx, ScriptKind kind,
                      ScopedJSFreePtr<char16_t>& newSource)
@@ -4664,13 +4622,13 @@ IsLatin1(JSContext* cx, unsigned argc, Value* vp)
 // decrements will be on a garbage object.  We could implement this
 // with atomics and a CAS loop but it's not worth the bother.
 
-static PRLock* sharedArrayBufferMailboxLock;
+static Mutex* sharedArrayBufferMailboxLock;
 static SharedArrayRawBuffer* sharedArrayBufferMailbox;
 
 static bool
 InitSharedArrayBufferMailbox()
 {
-    sharedArrayBufferMailboxLock = PR_NewLock();
+    sharedArrayBufferMailboxLock = js_new<Mutex>();
     return sharedArrayBufferMailboxLock != nullptr;
 }
 
@@ -4680,7 +4638,7 @@ DestructSharedArrayBufferMailbox()
     // All workers need to have terminated at this point.
     if (sharedArrayBufferMailbox)
         sharedArrayBufferMailbox->dropReference();
-    PR_DestroyLock(sharedArrayBufferMailboxLock);
+    js_delete(sharedArrayBufferMailboxLock);
 }
 
 static bool
@@ -4690,7 +4648,7 @@ GetSharedArrayBuffer(JSContext* cx, unsigned argc, Value* vp)
     JSObject* newObj = nullptr;
     bool rval = true;
 
-    PR_Lock(sharedArrayBufferMailboxLock);
+    sharedArrayBufferMailboxLock->lock();
     SharedArrayRawBuffer* buf = sharedArrayBufferMailbox;
     if (buf) {
         buf->addReference();
@@ -4703,7 +4661,7 @@ GetSharedArrayBuffer(JSContext* cx, unsigned argc, Value* vp)
             rval = false;
         }
     }
-    PR_Unlock(sharedArrayBufferMailboxLock);
+    sharedArrayBufferMailboxLock->unlock();
 
     args.rval().setObjectOrNull(newObj);
     return rval;
@@ -4726,12 +4684,12 @@ SetSharedArrayBuffer(JSContext* cx, unsigned argc, Value* vp)
         return false;
     }
 
-    PR_Lock(sharedArrayBufferMailboxLock);
+    sharedArrayBufferMailboxLock->lock();
     SharedArrayRawBuffer* oldBuffer = sharedArrayBufferMailbox;
     if (oldBuffer)
         oldBuffer->dropReference();
     sharedArrayBufferMailbox = newBuffer;
-    PR_Unlock(sharedArrayBufferMailboxLock);
+    sharedArrayBufferMailboxLock->unlock();
 
     args.rval().setUndefined();
     return true;
@@ -5221,8 +5179,8 @@ WasmLoop(JSContext* cx, unsigned argc, Value* vp)
             return false;
 
         Rooted<TypedArrayObject*> typedArray(cx, &ret->as<TypedArrayObject>());
-        RootedObject exportObj(cx);
-        if (!wasm::Eval(cx, typedArray, importObj, &exportObj)) {
+        RootedWasmInstanceObject instanceObj(cx);
+        if (!wasm::Eval(cx, typedArray, importObj, &instanceObj)) {
             // Clear any pending exceptions, we don't care about them
             cx->clearPendingException();
         }
@@ -5523,7 +5481,7 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 
     JS_FN_HELP("elapsed", Elapsed, 0, 0,
 "elapsed()",
-"  Execution time elapsed for the current context."),
+"  Execution time elapsed for the current thread."),
 
     JS_FN_HELP("decompileFunction", DecompileFunction, 1, 0,
 "decompileFunction(func)",
@@ -6532,35 +6490,6 @@ static const JS::AsmJSCacheOps asmJSCacheOps = {
     ShellCloseAsmJSCacheEntryForWrite
 };
 
-static JSContext*
-NewContext(JSRuntime* rt)
-{
-    JSContext* cx = JS_NewContext(rt, gStackChunkSize);
-    if (!cx)
-        return nullptr;
-
-    JSShellContextData* data = NewContextData();
-    if (!data) {
-        DestroyContext(cx, false);
-        return nullptr;
-    }
-
-    JS_SetContextPrivate(cx, data);
-    return cx;
-}
-
-static void
-DestroyContext(JSContext* cx, bool withGC)
-{
-    // Don't use GetContextData as |data| could be a nullptr in the case of
-    // destroying a context precisely because we couldn't create its private
-    // data.
-    JSShellContextData* data = (JSShellContextData*) JS_GetContextPrivate(cx);
-    JS_SetContextPrivate(cx, nullptr);
-    js_free(data);
-    withGC ? JS_DestroyContext(cx) : JS_DestroyContextNoGC(cx);
-}
-
 static JSObject*
 NewGlobalObject(JSContext* cx, JS::CompartmentOptions& options,
                 JSPrincipals* principals)
@@ -6783,11 +6712,13 @@ SetRuntimeOptions(JSRuntime* rt, const OptionParser& op)
     enableAsmJS = !op.getBoolOption("no-asmjs");
     enableNativeRegExp = !op.getBoolOption("no-native-regexp");
     enableUnboxedArrays = op.getBoolOption("unboxed-arrays");
+    enableWasmAlwaysBaseline = op.getBoolOption("wasm-always-baseline");
 
     JS::RuntimeOptionsRef(rt).setBaseline(enableBaseline)
                              .setIon(enableIon)
                              .setAsmJS(enableAsmJS)
                              .setWasm(true)
+                             .setWasmAlwaysBaseline(enableWasmAlwaysBaseline)
                              .setNativeRegExp(enableNativeRegExp)
                              .setUnboxedArrays(enableUnboxedArrays);
 
@@ -7056,6 +6987,7 @@ SetWorkerRuntimeOptions(JSRuntime* rt)
                              .setIon(enableIon)
                              .setAsmJS(enableAsmJS)
                              .setWasm(true)
+                             .setWasmAlwaysBaseline(enableWasmAlwaysBaseline)
                              .setNativeRegExp(enableNativeRegExp)
                              .setUnboxedArrays(enableUnboxedArrays);
     rt->setOffthreadIonCompilationEnabled(offthreadCompilation);
@@ -7179,8 +7111,6 @@ main(int argc, char** argv, char** envp)
     sArgc = argc;
     sArgv = argv;
 
-    JSRuntime* rt;
-    JSContext* cx;
     int result;
 
 #ifdef HAVE_SETLOCALE
@@ -7243,6 +7173,7 @@ main(int argc, char** argv, char** envp)
         || !op.addBoolOption('\0', "no-native-regexp", "Disable native regexp compilation")
         || !op.addBoolOption('\0', "no-unboxed-objects", "Disable creating unboxed plain objects")
         || !op.addBoolOption('\0', "unboxed-arrays", "Allow creating unboxed arrays")
+        || !op.addBoolOption('\0', "wasm-always-baseline", "Enable experimental Wasm baseline compiler when possible")
 #ifdef ENABLE_SHARED_ARRAY_BUFFER
         || !op.addStringOption('\0', "shared-memory", "on/off",
                                "SharedArrayBuffer and Atomics "
@@ -7269,7 +7200,7 @@ main(int argc, char** argv, char** envp)
         || !op.addStringOption('\0', "ion-edgecase-analysis", "on/off",
                                "Find edge cases where Ion can avoid bailouts (default: on, off to disable)")
         || !op.addStringOption('\0', "ion-pgo", "on/off",
-                               "Profile guided optimization (default: off, on to enable)")
+                               "Profile guided optimization (default: on, off to disable)")
         || !op.addStringOption('\0', "ion-range-analysis", "on/off",
                                "Range analysis (default: on, off to disable)")
 #if defined(__APPLE__)
@@ -7315,8 +7246,6 @@ main(int argc, char** argv, char** envp)
                             "Wait for COUNT calls or iterations before baseline-compiling "
                             "(default: 10)", -1)
         || !op.addBoolOption('\0', "non-writable-jitcode", "(NOP for fuzzers) Allocate JIT code as non-writable memory.")
-        || !op.addBoolOption('\0', "no-fpu", "Pretend CPU does not support floating-point operations "
-                             "to test JIT codegen (no-op on platforms other than x86).")
         || !op.addBoolOption('\0', "no-sse3", "Pretend CPU does not support SSE3 instructions and above "
                              "to test JIT codegen (no-op on platforms other than x86 and x64).")
         || !op.addBoolOption('\0', "no-sse4", "Pretend CPU does not support SSE4 instructions"
@@ -7393,11 +7322,6 @@ main(int argc, char** argv, char** envp)
     OOM_printAllocationCount = op.getBoolOption('O');
 #endif
 
-#ifdef JS_CODEGEN_X86
-    if (op.getBoolOption("no-fpu"))
-        js::jit::CPUInfo::SetFloatingPointDisabled();
-#endif
-
 #if defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
     if (op.getBoolOption("no-sse3")) {
         js::jit::CPUInfo::SetSSE3Disabled();
@@ -7433,7 +7357,7 @@ main(int argc, char** argv, char** envp)
     nurseryBytes = op.getIntOption("nursery-size") * 1024L * 1024L;
 
     /* Use the same parameters as the browser in xpcjsruntime.cpp. */
-    rt = JS_NewRuntime(JS::DefaultHeapMaxBytes, nurseryBytes);
+    JSRuntime* rt = JS_NewRuntime(JS::DefaultHeapMaxBytes, nurseryBytes);
     if (!rt)
         return 1;
 
@@ -7466,11 +7390,8 @@ main(int argc, char** argv, char** envp)
 
     JS::dbg::SetDebuggerMallocSizeOf(rt, moz_malloc_size_of);
 
-    if (!offThreadState.init())
-        return 1;
-
-    cx = NewContext(rt);
-    if (!cx)
+    JSContext* cx = JS_GetContext(rt);
+    if (!JS::InitSelfHostedCode(cx))
         return 1;
 
 #ifdef SPIDERMONKEY_PROMISE
@@ -7510,8 +7431,6 @@ main(int argc, char** argv, char** envp)
     JS::SetEnqueuePromiseJobCallback(rt, nullptr);
     sr->jobQueue.reset();
 #endif // SPIDERMONKEY_PROMISE
-
-    DestroyContext(cx, true);
 
     KillWatchdog(rt);
 

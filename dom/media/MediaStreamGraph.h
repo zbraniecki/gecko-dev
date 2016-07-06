@@ -20,6 +20,7 @@
 #include "VideoFrameContainer.h"
 #include "VideoSegment.h"
 #include "MainThreadUtils.h"
+#include "nsAutoPtr.h"
 #include "nsAutoRef.h"
 #include <speex/speex_resampler.h>
 #include "DOMMediaStream.h"
@@ -1090,6 +1091,13 @@ public:
   void EndAllTrackAndFinish();
 
   void RegisterForAudioMixing();
+
+  /**
+   * Returns true if this SourceMediaStream contains at least one audio track
+   * that is in pending state.
+   * This is thread safe, and takes the SourceMediaStream mutex.
+   */
+  bool HasPendingAudioTrack();
 
   // XXX need a Reset API
 

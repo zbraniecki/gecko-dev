@@ -217,6 +217,16 @@ Gecko_ClassOrClassList(RawGeckoElement* aElement,
   return atomArray->Length();
 }
 
+ServoDeclarationBlock*
+Gecko_GetServoDeclarationBlock(RawGeckoElement* aElement)
+{
+  const nsAttrValue* attr = aElement->GetParsedAttr(nsGkAtoms::style);
+  if (!attr || attr->Type() != nsAttrValue::eServoCSSDeclaration) {
+    return nullptr;
+  }
+  return attr->GetServoCSSDeclarationValue();
+}
+
 ServoNodeData*
 Gecko_GetNodeData(RawGeckoNode* aNode)
 {
@@ -245,12 +255,6 @@ void
 Gecko_ReleaseAtom(nsIAtom* aAtom)
 {
   NS_RELEASE(aAtom);
-}
-
-uint32_t
-Gecko_HashAtom(nsIAtom* aAtom)
-{
-  return aAtom->hash();
 }
 
 const uint16_t*
@@ -417,22 +421,6 @@ Gecko_CreateGradient(uint8_t aShape,
   return result;
 }
 
-void
-Gecko_SetGradientStop(nsStyleGradient* aGradient,
-                      uint32_t aIndex,
-                      const nsStyleCoord* aLocation,
-                      nscolor aColor,
-                      bool aIsInterpolationHint)
-{
-  MOZ_ASSERT(aGradient);
-  MOZ_ASSERT(aLocation);
-  MOZ_ASSERT(aIndex < aGradient->mStops.Length());
-
-  aGradient->mStops[aIndex].mColor = aColor;
-  aGradient->mStops[aIndex].mLocation = *aLocation;
-  aGradient->mStops[aIndex].mIsInterpolationHint = aIsInterpolationHint;
-}
-
 #define STYLE_STRUCT(name, checkdata_cb)                                      \
                                                                               \
 void                                                                          \
@@ -537,6 +525,42 @@ void
 Servo_DropStyleSet(RawServoStyleSet* set)
 {
   MOZ_CRASH("stylo: shouldn't be calling Servo_DropStyleSet in a "
+            "non-MOZ_STYLO build");
+}
+
+ServoDeclarationBlock*
+Servo_ParseStyleAttribute(const uint8_t* bytes, uint8_t length,
+                          nsHTMLCSSStyleSheet* cache)
+{
+  MOZ_CRASH("stylo: shouldn't be calling Servo_ParseStyleAttribute in a "
+            "non-MOZ_STYLO build");
+}
+
+void
+Servo_DropDeclarationBlock(ServoDeclarationBlock* declarations)
+{
+  MOZ_CRASH("stylo: shouldn't be calling Servo_DropDeclarationBlock in a "
+            "non-MOZ_STYLO build");
+}
+
+nsHTMLCSSStyleSheet*
+Servo_GetDeclarationBlockCache(ServoDeclarationBlock* declarations)
+{
+  MOZ_CRASH("stylo: shouldn't be calling Servo_GetDeclarationBlockCache in a "
+            "non-MOZ_STYLO build");
+}
+
+void
+Servo_SetDeclarationBlockImmutable(ServoDeclarationBlock* declarations)
+{
+  MOZ_CRASH("stylo: shouldn't be calling Servo_SetDeclarationBlockImmutable in a "
+            "non-MOZ_STYLO build");
+}
+
+void
+Servo_ClearDeclarationBlockCachePointer(ServoDeclarationBlock* declarations)
+{
+  MOZ_CRASH("stylo: shouldn't be calling Servo_ClearDeclarationBlockCachePointer in a "
             "non-MOZ_STYLO build");
 }
 

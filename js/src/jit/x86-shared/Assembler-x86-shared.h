@@ -241,9 +241,6 @@ class CPUInfo
     static bool IsSSE42Present() { return GetSSEVersion() >= SSE4_2; }
     static bool IsPOPCNTPresent() { return popcntPresent; }
 
-#ifdef JS_CODEGEN_X86
-    static void SetFloatingPointDisabled() { maxEnabledSSEVersion = NoSSE; avxEnabled = false; }
-#endif
     static void SetSSE3Disabled() { maxEnabledSSEVersion = SSE2; avxEnabled = false; }
     static void SetSSE4Disabled() { maxEnabledSSEVersion = SSSE3; avxEnabled = false; }
     static void SetAVXEnabled() { avxEnabled = true; }
@@ -1077,6 +1074,21 @@ class AssemblerX86Shared : public AssemblerShared
     }
     static void patchJumpToTwoByteNop(uint8_t* jump) {
         X86Encoding::BaseAssembler::patchJumpToTwoByteNop(jump);
+    }
+
+    static void UpdateBoundsCheck(uint8_t* patchAt, uint32_t heapLength) {
+        // An access is out-of-bounds iff
+        //          ptr + offset + data-type-byte-size > heapLength
+        //     i.e. ptr > heapLength - data-type-byte-size - offset.
+        // data-type-byte-size and offset are already included in the addend so
+        // we just have to add the heap length here.
+        //
+        // On x64, even with signal handling being used for most bounds checks,
+        // there may be atomic operations that depend on explicit checks. All
+        // accesses that have been recorded are the only ones that need bound
+        // checks (see also
+        // CodeGeneratorX64::visitAsmJS{Load,Store,CompareExchange,Exchange,AtomicBinop}Heap)
+        X86Encoding::AddInt32(patchAt, heapLength);
     }
 
     void breakpoint() {

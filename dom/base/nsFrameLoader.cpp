@@ -1996,15 +1996,6 @@ nsFrameLoader::MaybeCreateDocShell()
     NS_ENSURE_SUCCESS(rv,rv);
   }
 
-  // Apply sandbox flags even if our owner is not an iframe, as this copies
-  // flags from our owning content's owning document.
-  uint32_t sandboxFlags = 0;
-  HTMLIFrameElement* iframe = HTMLIFrameElement::FromContent(mOwnerContent);
-  if (iframe) {
-    sandboxFlags = iframe->GetSandboxFlags();
-  }
-  ApplySandboxFlags(sandboxFlags);
-
   if (!mNetworkCreated) {
     if (mDocShell) {
       mDocShell->SetCreatedDynamically(true);
@@ -2139,6 +2130,17 @@ nsFrameLoader::MaybeCreateDocShell()
     attrs.mInIsolatedMozBrowser = OwnerIsIsolatedMozBrowserFrame();
     mDocShell->SetFrameType(nsIDocShell::FRAME_TYPE_BROWSER);
   }
+
+  // Apply sandbox flags even if our owner is not an iframe, as this copies
+  // flags from our owning content's owning document.
+  // Note: ApplySandboxFlags should be called after mDocShell->SetFrameType
+  // because we need to get the correct presentation URL in ApplySandboxFlags.
+  uint32_t sandboxFlags = 0;
+  HTMLIFrameElement* iframe = HTMLIFrameElement::FromContent(mOwnerContent);
+  if (iframe) {
+    sandboxFlags = iframe->GetSandboxFlags();
+  }
+  ApplySandboxFlags(sandboxFlags);
 
   // Grab the userContextId from owner if XUL
   nsresult rv = PopulateUserContextIdFromAttribute(attrs);
@@ -3010,6 +3012,15 @@ nsFrameLoader::ApplySandboxFlags(uint32_t sandboxFlags)
 
     // The child can only add restrictions, never remove them.
     sandboxFlags |= parentSandboxFlags;
+
+    // If this frame is a receiving browsing context, we should add
+    // sandboxed auxiliary navigation flag to sandboxFlags. See
+    // https://w3c.github.io/presentation-api/#creating-a-receiving-browsing-context
+    nsAutoString presentationURL;
+    nsContentUtils::GetPresentationURL(mDocShell, presentationURL);
+    if (!presentationURL.IsEmpty()) {
+      sandboxFlags |= SANDBOXED_AUXILIARY_NAVIGATION;
+    }
     mDocShell->SetSandboxFlags(sandboxFlags);
   }
 }
@@ -3430,14 +3441,33 @@ nsFrameLoader::GetNewTabContext(MutableTabContext* aTabContext,
                          nsGkAtoms::mozpresentation,
                          presentationURLStr);
 
-  bool isPrivate = mOwnerContent->HasAttr(kNameSpaceID_None, nsGkAtoms::mozprivatebrowsing);
+  nsCOMPtr<nsIDocShell> docShell = mOwnerContent->OwnerDoc()->GetDocShell();
+  nsCOMPtr<nsILoadContext> parentContext = do_QueryInterface(docShell);
+  NS_ENSURE_STATE(parentContext);
+
+  bool isPrivate = parentContext->UsePrivateBrowsing();
   attrs.SyncAttributesWithPrivateBrowsing(isPrivate);
+
+  UIStateChangeType showAccelerators = UIStateChangeType_NoChange;
+  UIStateChangeType showFocusRings = UIStateChangeType_NoChange;
+  nsIDocument* doc = mOwnerContent->OwnerDoc();
+  if (doc) {
+    nsCOMPtr<nsPIWindowRoot> root = nsContentUtils::GetWindowRoot(doc);
+    if (root) {
+      showAccelerators =
+        root->ShowAccelerators() ? UIStateChangeType_Set : UIStateChangeType_Clear;
+      showFocusRings =
+        root->ShowFocusRings() ? UIStateChangeType_Set : UIStateChangeType_Clear;
+    }
+  }
 
   bool tabContextUpdated =
     aTabContext->SetTabContext(OwnerIsMozBrowserFrame(),
                                mIsPrerendered,
                                ownApp,
                                containingApp,
+                               showAccelerators,
+                               showFocusRings,
                                attrs,
                                signedPkgOrigin,
                                presentationURLStr);

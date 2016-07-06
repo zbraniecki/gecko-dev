@@ -1000,6 +1000,19 @@ GetDisplayPortFromMarginsData(nsIContent* aContent,
   LayoutDeviceToScreenScale2D res(presContext->PresShell()->GetCumulativeResolution()
                                 * nsLayoutUtils::GetTransformToAncestorScale(frame));
 
+  // Calculate the expanded scrollable rect, which we'll be clamping the
+  // displayport to.
+  nsRect expandedScrollableRect =
+    nsLayoutUtils::CalculateExpandedScrollableRect(frame);
+
+  // GetTransformToAncestorScale() can return 0. In this case, just return the
+  // base rect (clamped to the expanded scrollable rect), as other calculations
+  // would run into divisions by zero.
+  if (res == LayoutDeviceToScreenScale2D(0, 0)) {
+    // Make sure the displayport remains within the scrollable rect.
+    return base.MoveInsideAndClamp(expandedScrollableRect - scrollPos);
+  }
+
   // First convert the base rect to screen pixels
   LayoutDeviceToScreenScale2D parentRes = res;
   if (isRoot) {
@@ -1109,12 +1122,14 @@ GetDisplayPortFromMarginsData(nsIContent* aContent,
   // Convert the aligned rect back into app units.
   nsRect result = LayoutDeviceRect::ToAppUnits(screenRect / res, auPerDevPixel);
 
-  // Expand it for the low-res buffer if needed
-  result = ApplyRectMultiplier(result, aMultiplier);
+  // If we have non-zero margins, expand the displayport for the low-res buffer
+  // if that's what we're drawing. If we have zero margins, we want the
+  // displayport to reflect the scrollport.
+  if (aMarginsData->mMargins != ScreenMargin()) {
+    result = ApplyRectMultiplier(result, aMultiplier);
+  }
 
   // Make sure the displayport remains within the scrollable rect.
-  nsRect expandedScrollableRect =
-    nsLayoutUtils::CalculateExpandedScrollableRect(frame);
   result = result.MoveInsideAndClamp(expandedScrollableRect - scrollPos);
 
   return result;
@@ -1582,7 +1597,7 @@ nsLayoutUtils::GetClosestFrameOfType(nsIFrame* aFrame,
 nsIFrame*
 nsLayoutUtils::GetStyleFrame(nsIFrame* aFrame)
 {
-  if (aFrame->GetType() == nsGkAtoms::tableOuterFrame) {
+  if (aFrame->GetType() == nsGkAtoms::tableWrapperFrame) {
     nsIFrame* inner = aFrame->PrincipalChildList().FirstChild();
     // inner may be null, if aFrame is mid-destruction
     return inner;
@@ -3796,7 +3811,7 @@ AddBoxesForFrame(nsIFrame* aFrame,
 {
   nsIAtom* pseudoType = aFrame->StyleContext()->GetPseudo();
 
-  if (pseudoType == nsCSSAnonBoxes::tableOuter) {
+  if (pseudoType == nsCSSAnonBoxes::tableWrapper) {
     AddBoxesForFrame(aFrame->PrincipalChildList().FirstChild(), aCallback);
     if (aCallback->mIncludeCaptionBoxForTable) {
       nsIFrame* kid = aFrame->GetChildList(nsIFrame::kCaptionList).FirstChild();
@@ -3831,7 +3846,7 @@ nsLayoutUtils::GetFirstNonAnonymousFrame(nsIFrame* aFrame)
   while (aFrame) {
     nsIAtom* pseudoType = aFrame->StyleContext()->GetPseudo();
 
-    if (pseudoType == nsCSSAnonBoxes::tableOuter) {
+    if (pseudoType == nsCSSAnonBoxes::tableWrapper) {
       nsIFrame* f = GetFirstNonAnonymousFrame(aFrame->PrincipalChildList().FirstChild());
       if (f) {
         return f;
@@ -4359,8 +4374,7 @@ nsLayoutUtils::GetNextContinuationOrIBSplitSibling(nsIFrame *aFrame)
     // frame in the continuation chain. Walk back to find that frame now.
     aFrame = aFrame->FirstContinuation();
 
-    void* value = aFrame->Properties().Get(nsIFrame::IBSplitSibling());
-    return static_cast<nsIFrame*>(value);
+    return aFrame->Properties().Get(nsIFrame::IBSplitSibling());
   }
 
   return nullptr;
@@ -4372,8 +4386,8 @@ nsLayoutUtils::FirstContinuationOrIBSplitSibling(nsIFrame *aFrame)
   nsIFrame *result = aFrame->FirstContinuation();
   if (result->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) {
     while (true) {
-      nsIFrame *f = static_cast<nsIFrame*>
-        (result->Properties().Get(nsIFrame::IBSplitPrevSibling()));
+      nsIFrame* f =
+        result->Properties().Get(nsIFrame::IBSplitPrevSibling());
       if (!f)
         break;
       result = f;
@@ -4389,8 +4403,8 @@ nsLayoutUtils::LastContinuationOrIBSplitSibling(nsIFrame *aFrame)
   nsIFrame *result = aFrame->FirstContinuation();
   if (result->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT) {
     while (true) {
-      nsIFrame *f = static_cast<nsIFrame*>
-        (result->Properties().Get(nsIFrame::IBSplitSibling()));
+      nsIFrame* f =
+        result->Properties().Get(nsIFrame::IBSplitSibling());
       if (!f)
         break;
       result = f;
@@ -4580,15 +4594,11 @@ GetBSizeTakenByBoxSizing(StyleBoxSizing aBoxSizing,
                          bool aIgnorePadding)
 {
   nscoord bSizeTakenByBoxSizing = 0;
-  switch (aBoxSizing) {
-  case StyleBoxSizing::Border: {
+  if (aBoxSizing == StyleBoxSizing::Border) {
     const nsStyleBorder* styleBorder = aFrame->StyleBorder();
     bSizeTakenByBoxSizing +=
       aHorizontalAxis ? styleBorder->GetComputedBorder().TopBottom()
                       : styleBorder->GetComputedBorder().LeftRight();
-    MOZ_FALLTHROUGH;
-  }
-  case StyleBoxSizing::Padding: {
     if (!aIgnorePadding) {
       const nsStyleSides& stylePadding =
         aFrame->StylePadding()->mPadding;
@@ -4611,11 +4621,6 @@ GetBSizeTakenByBoxSizing(StyleBoxSizing aBoxSizing,
         bSizeTakenByBoxSizing += pad;
       }
     }
-    MOZ_FALLTHROUGH;
-  }
-  case StyleBoxSizing::Content:
-  default:
-    break;
   }
   return bSizeTakenByBoxSizing;
 }
@@ -4759,15 +4764,6 @@ AddIntrinsicSizeOffset(nsRenderingContext* aRenderingContext,
   if (!(aFlags & nsLayoutUtils::IGNORE_PADDING)) {
     coordOutsideSize += aOffsets.hPadding;
     pctOutsideSize += aOffsets.hPctPadding;
-
-    if (aBoxSizing == StyleBoxSizing::Padding) {
-      min += coordOutsideSize;
-      result = NSCoordSaturatingAdd(result, coordOutsideSize);
-      pctTotal += pctOutsideSize;
-
-      coordOutsideSize = 0;
-      pctOutsideSize = 0.0f;
-    }
   }
 
   coordOutsideSize += aOffsets.hBorder;
@@ -5451,16 +5447,8 @@ nsLayoutUtils::ComputeSizeWithIntrinsicDimensions(WritingMode aWM,
   bool isAutoBSize = IsAutoBSize(*blockStyleCoord, aCBSize.BSize(aWM));
 
   LogicalSize boxSizingAdjust(aWM);
-  switch (stylePos->mBoxSizing) {
-    case StyleBoxSizing::Border:
-      boxSizingAdjust += aBorder;
-      MOZ_FALLTHROUGH;
-    case StyleBoxSizing::Padding:
-      boxSizingAdjust += aPadding;
-      MOZ_FALLTHROUGH;
-    case StyleBoxSizing::Content:
-      // nothing
-      break;
+  if (stylePos->mBoxSizing == StyleBoxSizing::Border) {
+    boxSizingAdjust = aBorder + aPadding;
   }
   nscoord boxSizingToMarginEdgeISize =
     aMargin.ISize(aWM) + aBorder.ISize(aWM) + aPadding.ISize(aWM) -
@@ -6154,7 +6142,7 @@ nsLayoutUtils::GetFirstLinePosition(WritingMode aWM,
     // For the first-line baseline we also have to check for a table, and if
     // so, use the baseline of its first row.
     nsIAtom* fType = aFrame->GetType();
-    if (fType == nsGkAtoms::tableOuterFrame) {
+    if (fType == nsGkAtoms::tableWrapperFrame) {
       aResult->mBStart = 0;
       aResult->mBaseline = aFrame->GetLogicalBaseline(aWM);
       // This is what we want for the list bullet caller; not sure if
@@ -6734,18 +6722,28 @@ DrawImageInternal(gfxContext&            aContext,
 
     IntRect tmpDTRect;
 
-    if (destCtx->CurrentOp() != CompositionOp::OP_OVER) {
+    if (destCtx->CurrentOp() == CompositionOp::OP_OVER) {
+      destCtx->SetMatrix(params.imageSpaceToDeviceSpace);
+    } else {
+      // We need a temporary DrawTarget to composite correctly
       Rect imageRect = ToRect(params.imageSpaceToDeviceSpace.TransformBounds(params.region.Rect()));
       imageRect.ToIntRect(&tmpDTRect);
 
-      RefPtr<DrawTarget> tempDT = destCtx->GetDrawTarget()->CreateSimilarDrawTarget(tmpDTRect.Size(), SurfaceFormat::B8G8R8A8);
-      destCtx = gfxContext::CreateOrNull(tempDT, imageRect.TopLeft());
+      RefPtr<DrawTarget> tempDT =
+        destCtx->GetDrawTarget()->CreateSimilarDrawTarget(tmpDTRect.Size(),
+                                                          SurfaceFormat::B8G8R8A8);
+      if (!tempDT || !tempDT->IsValid()) {
+        gfxDevCrash(LogReason::InvalidContext) << "NonOP_OVER context problem " << gfx::hexa(tempDT);
+        return DrawResult::TEMPORARY_ERROR;
+      }
+      tempDT->SetTransform(ToMatrix(params.imageSpaceToDeviceSpace).
+                             PostTranslate(-tmpDTRect.TopLeft()));
+      destCtx = gfxContext::CreatePreservingTransformOrNull(tempDT);
       if (!destCtx) {
         gfxDevCrash(LogReason::InvalidContext) << "NonOP_OVER context problem " << gfx::hexa(tempDT);
         return result;
       }
     }
-    destCtx->SetMatrix(params.imageSpaceToDeviceSpace);
 
     Maybe<SVGImageContext> svgContext = ToMaybe(aSVGContext);
     if (!svgContext) {
@@ -6758,6 +6756,7 @@ DrawImageInternal(gfxContext&            aContext,
                           svgContext, aImageFlags);
 
     if (!tmpDTRect.IsEmpty()) {
+      // Snapshot the temporary DrawTarget and composite the result
       DrawTarget* dt = aContext.GetDrawTarget();
       RefPtr<SourceSurface> surf = destCtx->GetDrawTarget()->Snapshot();
 
@@ -8864,6 +8863,8 @@ nsLayoutUtils::ComputeScrollMetadata(nsIFrame* aForFrame,
     }
     if (nsLayoutUtils::GetCriticalDisplayPort(aContent, &dp)) {
       metrics.SetCriticalDisplayPort(CSSRect::FromAppUnits(dp));
+      nsLayoutUtils::LogTestDataForPaint(aLayer->Manager(), scrollId,
+          "criticalDisplayport", metrics.GetCriticalDisplayPort());
     }
     DisplayPortMarginsPropertyData* marginsData =
         static_cast<DisplayPortMarginsPropertyData*>(aContent->GetProperty(nsGkAtoms::DisplayPortMargins));
@@ -9331,3 +9332,26 @@ nsLayoutUtils::IsTransformed(nsIFrame* aForFrame, nsIFrame* aTopFrame)
   return false;
 }
 
+/*static*/ CSSPoint
+nsLayoutUtils::GetCumulativeApzCallbackTransform(nsIFrame* aFrame)
+{
+  CSSPoint delta;
+  if (!aFrame) {
+    return delta;
+  }
+  nsIFrame* frame = aFrame;
+  nsCOMPtr<nsIContent> content = frame->GetContent();
+  nsCOMPtr<nsIContent> lastContent;
+  while (frame) {
+    if (content && (content != lastContent)) {
+      void* property = content->GetProperty(nsGkAtoms::apzCallbackTransform);
+      if (property) {
+        delta += *static_cast<CSSPoint*>(property);
+      }
+    }
+    frame = GetCrossDocParentFrame(frame);
+    lastContent = content;
+    content = frame ? frame->GetContent() : nullptr;
+  }
+  return delta;
+}

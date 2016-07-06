@@ -7,6 +7,7 @@
 /* container for a document and its presentation */
 
 #include "mozilla/ServoStyleSet.h"
+#include "nsAutoPtr.h"
 #include "nscore.h"
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
@@ -118,7 +119,7 @@
 #include "nsISHistory.h"
 #include "nsISHistoryInternal.h"
 #include "nsIWebNavigation.h"
-#include "nsXMLHttpRequest.h"
+#include "mozilla/dom/XMLHttpRequestMainThread.h"
 
 //paint forcing
 #include <stdio.h>
@@ -2551,7 +2552,7 @@ nsDocumentViewer::GetDocumentSelection()
     return nullptr;
   }
 
-  return mPresShell->GetCurrentSelection(nsISelectionController::SELECTION_NORMAL);
+  return mPresShell->GetCurrentSelection(SelectionType::eNormal);
 }
 
 /* ========================================================================================

@@ -4,8 +4,8 @@
 
 "use strict";
 
-const {Cu, Ci} = require("chrome");
-const promise = require("promise");
+const {Ci} = require("chrome");
+const defer = require("devtools/shared/defer");
 const {Spectrum} = require("devtools/client/shared/widgets/Spectrum");
 const {CubicBezierWidget} =
       require("devtools/client/shared/widgets/CubicBezierWidget");
@@ -16,14 +16,14 @@ const EventEmitter = require("devtools/shared/event-emitter");
 const {colorUtils} = require("devtools/client/shared/css-color");
 const Heritage = require("sdk/core/heritage");
 const {Eyedropper} = require("devtools/client/eyedropper/eyedropper");
+const {gDevTools} = require("devtools/client/framework/devtools");
 const Services = require("Services");
+const {XPCOMUtils} = require("resource://gre/modules/XPCOMUtils.jsm");
 
 loader.lazyRequireGetter(this, "beautify", "devtools/shared/jsbeautify/beautify");
 loader.lazyRequireGetter(this, "setNamedTimeout", "devtools/client/shared/widgets/view-helpers", true);
 loader.lazyRequireGetter(this, "clearNamedTimeout", "devtools/client/shared/widgets/view-helpers", true);
 loader.lazyRequireGetter(this, "setNamedTimeout", "devtools/client/shared/widgets/view-helpers", true);
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "VariablesView",
   "resource://devtools/client/shared/widgets/VariablesView.jsm");
@@ -133,7 +133,7 @@ var PanelFactory = {
  *   let t = new Tooltip(xulDoc);
  *   t.startTogglingOnHover(container, target => {
  *     if (<condition based on target>) {
- *       t.setImageContent("http://image.png");
+ *       t.content = el;
  *       return true;
  *     }
  *   });
@@ -506,84 +506,6 @@ Tooltip.prototype = {
   },
 
   /**
-   * Fill the tooltip with a message explaining the the image is missing
-   */
-  setBrokenImageContent: function () {
-    this.setTextContent({
-      messages: [
-        l10n.strings.GetStringFromName("previewTooltip.image.brokenImage")
-      ]
-    });
-  },
-
-  /**
-   * Fill the tooltip with an image and add the image dimension at the bottom.
-   *
-   * Only use this for absolute URLs that can be queried from the devtools
-   * client-side.
-   *
-   * @param {string} imageUrl
-   *        The url to load the image from
-   * @param {Object} options
-   *        The following options are supported:
-   *        - resized : whether or not the image identified by imageUrl has been
-   *        resized before this function was called.
-   *        - naturalWidth/naturalHeight : the original size of the image before
-   *        it was resized, if if was resized before this function was called.
-   *        If not provided, will be measured on the loaded image.
-   *        - maxDim : if the image should be resized before being shown, pass
-   *        a number here.
-   *        - hideDimensionLabel : if the dimension label should be appended
-   *        after the image.
-   */
-  setImageContent: function (imageUrl, options = {}) {
-    if (!imageUrl) {
-      return;
-    }
-
-    // Main container
-    let vbox = this.doc.createElement("vbox");
-    vbox.setAttribute("align", "center");
-
-    // Display the image
-    let image = this.doc.createElement("image");
-    image.setAttribute("src", imageUrl);
-    if (options.maxDim) {
-      image.style.maxWidth = options.maxDim + "px";
-      image.style.maxHeight = options.maxDim + "px";
-    }
-    vbox.appendChild(image);
-
-    if (!options.hideDimensionLabel) {
-      let label = this.doc.createElement("label");
-      label.classList.add("devtools-tooltip-caption");
-      label.classList.add("theme-comment");
-
-      if (options.naturalWidth && options.naturalHeight) {
-        label.textContent = this._getImageDimensionLabel(options.naturalWidth,
-          options.naturalHeight);
-      } else {
-        // If no dimensions were provided, load the image to get them
-        label.textContent =
-          l10n.strings.GetStringFromName("previewTooltip.image.brokenImage");
-        let imgObj = new this.doc.defaultView.Image();
-        imgObj.src = imageUrl;
-        imgObj.onload = () => {
-          imgObj.onload = null;
-          label.textContent = this._getImageDimensionLabel(imgObj.naturalWidth,
-              imgObj.naturalHeight);
-        };
-      }
-
-      vbox.appendChild(label);
-    }
-
-    this.content = vbox;
-  },
-
-  _getImageDimensionLabel: (w, h) => w + " \u00D7 " + h,
-
-  /**
    * Load a document into an iframe, and set the iframe
    * to be the tooltip's content.
    *
@@ -608,7 +530,7 @@ Tooltip.prototype = {
    * and resolves the promise with the content window.
    */
   setIFrameContent: function ({width, height}, url) {
-    let def = promise.defer();
+    let def = defer();
 
     // Create an iframe
     let iframe = this.doc.createElementNS(XHTML_NS, "iframe");
@@ -647,7 +569,7 @@ Tooltip.prototype = {
 
     function onLoaded(iframe) {
       let win = iframe.contentWindow.wrappedJSObject;
-      let def = promise.defer();
+      let def = defer();
       let container = win.document.getElementById("spectrum");
       let spectrum = new Spectrum(container, color);
 
@@ -681,7 +603,7 @@ Tooltip.prototype = {
 
     function onLoaded(iframe) {
       let win = iframe.contentWindow.wrappedJSObject;
-      let def = promise.defer();
+      let def = defer();
       let container = win.document.getElementById("container");
       let widget = new CubicBezierWidget(container, bezier);
 
@@ -711,7 +633,7 @@ Tooltip.prototype = {
 
     function onLoaded(iframe) {
       let win = iframe.contentWindow.wrappedJSObject;
-      let def = promise.defer();
+      let def = defer();
       let container = win.document.getElementById("container");
       let widget = new CSSFilterEditorWidget(container, filter);
 
@@ -999,11 +921,11 @@ Heritage.extend(SwatchBasedEditorTooltip.prototype, {
     let windowType = chromeWindow.document.documentElement
                      .getAttribute("windowtype");
     let toolboxWindow;
-    if (windowType != "navigator:browser") {
+    if (windowType != gDevTools.chromeWindowType) {
       // this means the toolbox is in a seperate window. We need to make
       // sure we'll be inspecting the browser window instead
       toolboxWindow = chromeWindow;
-      chromeWindow = Services.wm.getMostRecentWindow("navigator:browser");
+      chromeWindow = Services.wm.getMostRecentWindow(gDevTools.chromeWindowType);
       chromeWindow.focus();
     }
     let dropper = new Eyedropper(chromeWindow, { copyOnSelect: false,
@@ -1232,17 +1154,4 @@ Heritage.extend(SwatchBasedEditorTooltip.prototype, {
     this._parser = parser;
     this._options = options;
   }
-});
-
-/**
- * L10N utility class
- */
-function L10N() {}
-L10N.prototype = {};
-
-var l10n = new L10N();
-
-loader.lazyGetter(L10N.prototype, "strings", () => {
-  return Services.strings.createBundle(
-    "chrome://devtools/locale/inspector.properties");
 });

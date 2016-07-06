@@ -37,7 +37,6 @@
 #include "mozilla/gfx/Rect.h"           // for IntRect, Rect
 #include "mozilla/layers/LayersTypes.h"  // for BufferMode::BUFFER_NONE, etc
 #include "mozilla/mozalloc.h"           // for operator new
-#include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsCOMPtr.h"                   // for already_AddRefed
 #include "nsDebug.h"                    // for NS_ASSERTION, etc
 #include "nsISupportsImpl.h"            // for gfxContext::Release, etc
@@ -917,15 +916,17 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
     }
 
     IntRect bounds = visibleRegion.GetBounds();
+    // DrawTarget without the 3D transform applied:
     RefPtr<DrawTarget> untransformedDT =
       gfxPlatform::GetPlatform()->CreateOffscreenContentDrawTarget(IntSize(bounds.width, bounds.height),
                                                                    SurfaceFormat::B8G8R8A8);
     if (!untransformedDT || !untransformedDT->IsValid()) {
       return;
     }
+    untransformedDT->SetTransform(Matrix::Translation(-Point(bounds.x, bounds.y)));
 
-    RefPtr<gfxContext> groupTarget = gfxContext::CreateOrNull(untransformedDT,
-                                                              Point(bounds.x, bounds.y));
+    RefPtr<gfxContext> groupTarget =
+      gfxContext::CreatePreservingTransformOrNull(untransformedDT);
     MOZ_ASSERT(groupTarget); // already checked the target above
 
     PaintSelfOrChildren(paintLayerContext, groupTarget);
@@ -937,12 +938,7 @@ BasicLayerManager::PaintLayer(gfxContext* aTarget,
       Color color((aLayer->GetDebugColorIndex() & 1) ? 1.f : 0.f,
                   (aLayer->GetDebugColorIndex() & 2) ? 1.f : 0.f,
                   (aLayer->GetDebugColorIndex() & 4) ? 1.f : 0.f);
-
-      RefPtr<gfxContext> temp =
-        gfxContext::CreateOrNull(untransformedDT, Point(bounds.x, bounds.y));
-      MOZ_ASSERT(temp); // already checked for target above
-      temp->SetColor(color);
-      temp->Paint();
+      untransformedDT->FillRect(Rect(bounds), ColorPattern(color));
     }
 #endif
     Matrix4x4 effectiveTransform = aLayer->GetEffectiveTransform();

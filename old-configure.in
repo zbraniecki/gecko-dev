@@ -47,7 +47,7 @@ _SUBDIR_CONFIG_ARGS="$ac_configure_args"
 dnl Set the version number of the libs included with mozilla
 dnl ========================================================
 MOZJPEG=62
-MOZPNG=10621
+MOZPNG=10623
 NSPR_VERSION=4
 NSPR_MINVER=4.12
 NSS_VERSION=3
@@ -95,6 +95,10 @@ DIST="$MOZ_BUILD_ROOT/dist"
 
 MOZ_DEFAULT_COMPILER
 
+if test "$COMPILE_ENVIRONMENT"; then
+    MOZ_ANDROID_NDK
+fi # COMPILE_ENVIRONMENT
+
 if test -n "$gonkdir" ; then
     dnl export for js/src/configure. We can't pass the option down normally,
     dnl because it's a `--enable-project=b2g`-only option.
@@ -107,11 +111,6 @@ if test -n "$gonkdir" ; then
     if test -n "${PLATFORM_SDK_VERSION}"; then
         ANDROID_VERSION="${PLATFORM_SDK_VERSION}"
     fi
-
-    if ! test -e "$gonkdir/ndk/sources/cxx-stl/stlport/src/iostream.cpp"; then
-        AC_MSG_ERROR([Couldn't find path to stlport sources in the gonk tree])
-    fi
-    STLPORT_CPPFLAGS="-I$_topsrcdir/build/stlport/stlport -I$gonkdir/ndk/sources/cxx-stl/system/include"
 
     case "$ANDROID_VERSION" in
     15)
@@ -183,13 +182,11 @@ if test -n "$gonkdir" ; then
         AC_MSG_ERROR([Unsupported platform version: $ANDROID_VERSION])
         ;;
     esac
-    CPPFLAGS="-DANDROID $TARGET_C_INCLUDES -I$gonkdir/system -I$gonkdir/system/core/include -isystem $gonkdir/bionic -I$gonkdir/hardware/libhardware/include -I$gonkdir/external/valgrind/fxos-include $GONK_INCLUDES $CPPFLAGS"
-    CFLAGS="-fno-short-enums -fno-exceptions $CFLAGS"
-    CXXFLAGS="-fno-short-enums -fno-exceptions $CXXFLAGS $STLPORT_CPPFLAGS"
+
+    CPPFLAGS="-I$gonkdir/system -I$gonkdir/system/core/include -I$gonkdir/hardware/libhardware/include -I$gonkdir/external/valgrind/fxos-include $GONK_INCLUDES $CPPFLAGS"
+    LDFLAGS="-L$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib -Wl,-rpath-link=$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib $LDFLAGS"
     dnl Add -llog by default, since we use it all over the place.
     LIBS="$LIBS -llog"
-
-    LDFLAGS="-L$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib -Wl,-rpath-link=$gonkdir/out/target/product/$GONK_PRODUCT/obj/lib --sysroot=$gonkdir/out/target/product/$GONK_PRODUCT/obj/ $LDFLAGS"
 
     AC_DEFINE(ANDROID)
     AC_DEFINE_UNQUOTED(ANDROID_VERSION, $ANDROID_VERSION)
@@ -197,12 +194,8 @@ if test -n "$gonkdir" ; then
     AC_DEFINE(HAVE_SYS_UIO_H)
     AC_DEFINE(HAVE_PTHREADS)
     direct_nspr_config=1
-    android_cxx_stl=mozstlport
-else
-    if test "$COMPILE_ENVIRONMENT"; then
-        MOZ_ANDROID_NDK
-    fi # COMPILE_ENVIRONMENT
 
+else
     case "$target" in
     *-android*|*-linuxandroid*)
         ZLIB_DIR=yes
@@ -266,8 +259,6 @@ if test -n "$MOZ_WINCONSOLE"; then
 fi
 
 MOZ_TOOL_VARIABLES
-
-MOZ_RUST_SUPPORT
 
 AC_PROG_CPP
 AC_PROG_CXXCPP
@@ -1043,7 +1034,7 @@ if test -n "$MACOSX_DEPLOYMENT_TARGET" -a -n "$MOZ_RUST"; then
       [#[no_mangle]]
       pub extern fn rusty_answer() -> u8 { 42 }
 EOF
-    ac_try="$RUSTC --crate-type staticlib -o conftest.a conftest.rs >/dev/null"
+    ac_try="$RUSTC $RUST_TARGET --crate-type staticlib -o conftest.a conftest.rs >/dev/null"
     AC_TRY_EVAL(ac_try)
     save_LDFLAGS=$LDFLAGS
     LDFLAGS="$LDFLAGS conftest.a -lpthread -lm"
@@ -1377,8 +1368,8 @@ case "$target" in
         _USE_CPP_INCLUDE_FLAG=1
         _DEFINES_CFLAGS='-FI $(topobjdir)/mozilla-config.h -DMOZILLA_CLIENT'
         _DEFINES_CXXFLAGS='-FI $(topobjdir)/mozilla-config.h -DMOZILLA_CLIENT'
-        CFLAGS="$CFLAGS -W3 -Gy"
-        CXXFLAGS="$CXXFLAGS -W3 -Gy"
+        CFLAGS="$CFLAGS -W3 -Gy -Zc:inline"
+        CXXFLAGS="$CXXFLAGS -W3 -Gy -Zc:inline"
         if test "$CPU_ARCH" = "x86"; then
             dnl VS2012+ defaults to -arch:SSE2. We want to target nothing
             dnl more recent, so set that explicitly here unless another
@@ -1538,7 +1529,7 @@ case "$target" in
 
     case "$target" in
     i*86-*)
-        if test "$HAVE_64BIT_BUILD"; then
+        if test "$HAVE_64BIT_BUILD" -a -n "$COMPILE_ENVIRONMENT"; then
             AC_MSG_ERROR([You are targeting i386 but using the 64-bit compiler.])
         fi
 
@@ -1554,7 +1545,7 @@ case "$target" in
         AC_DEFINE(_X86_)
         ;;
     x86_64-*)
-        if test -z "$HAVE_64BIT_BUILD"; then
+        if test -z "$HAVE_64BIT_BUILD" -a -n "$COMPILE_ENVIRONMENT"; then
             AC_MSG_ERROR([You are targeting 64-bit but using the 32-bit compiler.])
         fi
         if test -n "$_WIN32_MSVC"; then
@@ -2466,7 +2457,7 @@ MOZ_ARG_WITH_BOOL(system-nss,
     _USE_SYSTEM_NSS=1 )
 
 if test -n "$_USE_SYSTEM_NSS"; then
-    AM_PATH_NSS(3.23, [MOZ_SYSTEM_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
+    AM_PATH_NSS(3.26, [MOZ_SYSTEM_NSS=1], [AC_MSG_ERROR([you don't have NSS installed or your version is too old])])
 fi
 
 if test -n "$MOZ_SYSTEM_NSS"; then
@@ -4389,7 +4380,7 @@ if test -n "$MOZ_CRASHREPORTER"; then
   fi
 
   if test "$OS_ARCH" = "WINNT"; then
-    if test -z "$HAVE_64BIT_BUILD"; then
+    if test -z "$HAVE_64BIT_BUILD" -a -n "$COMPILE_ENVIRONMENT"; then
       MOZ_CRASHREPORTER_INJECTOR=1
       AC_DEFINE(MOZ_CRASHREPORTER_INJECTOR)
     fi
@@ -6484,7 +6475,6 @@ AC_SUBST(BIN_FLAGS)
 AC_SUBST(MOZ_AUTH_EXTENSION)
 AC_SUBST(MOZ_PREF_EXTENSIONS)
 AC_SUBST(MOZ_DEBUG)
-AC_SUBST(MOZ_DEBUG_SYMBOLS)
 AC_SUBST(MOZ_DEBUG_LDFLAGS)
 AC_SUBST(WARNINGS_AS_ERRORS)
 AC_SUBST_SET(MOZ_EXTENSIONS)
@@ -6519,7 +6509,6 @@ AC_SUBST(MOZ_D3DCOMPILER_XP_CAB)
 AC_SUBST(MOZ_WEBSMS_BACKEND)
 AC_SUBST(MOZ_DISABLE_GECKOVIEW)
 AC_SUBST(MOZ_ANDROID_GECKOLIBS_AAR)
-AC_SUBST(MOZ_ANDROID_PACKAGE_INSTALL_BOUNCER)
 AC_SUBST(MOZ_ANDROID_APPLICATION_CLASS)
 AC_SUBST(MOZ_ANDROID_BROWSER_INTENT_CLASS)
 AC_SUBST(MOZ_ANDROID_SEARCH_INTENT_CLASS)

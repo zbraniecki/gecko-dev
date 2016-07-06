@@ -6,6 +6,8 @@
 
 #include "jit/Ion.h"
 
+#include "jscompartmentinlines.h"
+
 using namespace js;
 using namespace js::jit;
 
@@ -67,12 +69,6 @@ CompileRuntime::addressOfIonBailAfter()
 #endif
 
 const void*
-CompileRuntime::addressOfJSContext()
-{
-    return &runtime()->jitJSContext;
-}
-
-const void*
 CompileRuntime::addressOfActivation()
 {
     return runtime()->addressOfActivation();
@@ -96,6 +92,12 @@ const void*
 CompileRuntime::addressOfInterruptUint32()
 {
     return runtime()->addressOfInterruptUint32();
+}
+
+const void*
+CompileRuntime::getJSContext()
+{
+    return runtime()->unsafeContextFromAnyThread();
 }
 
 const JitRuntime*
@@ -268,6 +270,15 @@ const JitCompartment*
 CompileCompartment::jitCompartment()
 {
     return compartment()->jitCompartment();
+}
+
+const GlobalObject*
+CompileCompartment::maybeGlobal()
+{
+    // This uses unsafeUnbarrieredMaybeGlobal() so as not to trigger the read
+    // barrier on the global from off the main thread.  This is safe because we
+    // abort Ion compilation when we GC.
+    return compartment()->unsafeUnbarrieredMaybeGlobal();
 }
 
 bool

@@ -7,7 +7,7 @@
 
 "use strict";
 
-const {Cc, Cu, Ci} = require("chrome");
+const {Cc, Ci} = require("chrome");
 
 // Page size for pageup/pagedown
 const PAGE_SIZE = 10;
@@ -34,6 +34,7 @@ const {editableField, InplaceEditor} =
       require("devtools/client/shared/inplace-editor");
 const {HTMLEditor} = require("devtools/client/inspector/markup/html-editor");
 const promise = require("promise");
+const defer = require("devtools/shared/defer");
 const Services = require("Services");
 const {HTMLTooltip} = require("devtools/client/shared/widgets/HTMLTooltip");
 const {setImageTooltip, setBrokenImageTooltip} =
@@ -49,14 +50,9 @@ const {PrefObserver} = require("devtools/client/styleeditor/utils");
 const {KeyShortcuts} = require("devtools/client/shared/key-shortcuts");
 const {template} = require("devtools/shared/gcli/templater");
 const nodeConstants = require("devtools/shared/dom-node-constants");
-
-Cu.import("resource://gre/modules/XPCOMUtils.jsm");
+const {XPCOMUtils} = require("resource://gre/modules/XPCOMUtils.jsm");
 
 loader.lazyRequireGetter(this, "CSS", "CSS");
-loader.lazyGetter(this, "DOMParser", () => {
-  return Cc["@mozilla.org/xmlextras/domparser;1"]
-    .createInstance(Ci.nsIDOMParser);
-});
 loader.lazyGetter(this, "AutocompletePopup", () => {
   return require("devtools/client/shared/autocomplete-popup").AutocompletePopup;
 });
@@ -426,7 +422,7 @@ MarkupView.prototype = {
   _brieflyShowBoxModel: function (nodeFront) {
     this._clearBriefBoxModelTimer();
     let onShown = this._showBoxModel(nodeFront);
-    this._briefBoxModelPromise = promise.defer();
+    this._briefBoxModelPromise = defer();
 
     this._briefBoxModelTimer = setTimeout(() => {
       this._hideBoxModel()
@@ -1330,7 +1326,7 @@ MarkupView.prototype = {
       return promise.reject();
     }
 
-    let def = promise.defer();
+    let def = defer();
 
     container.undo.do(() => {
       this.walker.setInnerHTML(node, newValue).then(def.resolve, def.reject);
@@ -1360,7 +1356,7 @@ MarkupView.prototype = {
       return promise.reject();
     }
 
-    let def = promise.defer();
+    let def = defer();
 
     let injectedNodes = [];
     container.undo.do(() => {
@@ -3466,7 +3462,7 @@ function parseAttributeValues(attr, doc) {
   attr = attr.trim();
 
   let parseAndGetNode = str => {
-    return DOMParser.parseFromString(str, "text/html").body.childNodes[0];
+    return new DOMParser().parseFromString(str, "text/html").body.childNodes[0];
   };
 
   // Handle bad user inputs by appending a " or ' if it fails to parse without

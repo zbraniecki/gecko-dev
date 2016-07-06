@@ -13,6 +13,7 @@
 #include "nsBMPDecoder.h"
 #include "nsPNGDecoder.h"
 #include "ICOFileHeaders.h"
+#include "mozilla/gfx/2D.h"
 
 namespace mozilla {
 namespace image {
@@ -85,14 +86,16 @@ private:
   // Gets decoder state from the contained decoder so it's visible externally.
   void GetFinalStateFromContainedDecoder();
 
-  // Fixes the ICO height to match that of the BIH.
-  // and also fixes the BIH height to be /2 of what it was.
-  // See definition for explanation.
-  // Returns false if invalid information is contained within.
-  bool FixBitmapHeight(int8_t* bih);
-  // Fixes the ICO width to match that of the BIH.
-  // Returns false if invalid information is contained within.
-  bool FixBitmapWidth(int8_t* bih);
+  /**
+   * Verifies that the width and height values in @aBIH are valid and match the
+   * values we read from the ICO directory entry. If everything looks OK, the
+   * height value in @aBIH is updated to compensate for the AND mask, which the
+   * underlying BMP decoder doesn't know about.
+   *
+   * @return true if the width and height values in @aBIH are valid and correct.
+   */
+  bool CheckAndFixBitmapSize(int8_t* aBIH);
+
   // Obtains the number of colors from the BPP, mBPP must be filled in
   uint16_t GetNumColors();
 
@@ -112,8 +115,8 @@ private:
   UniquePtr<uint8_t[]> mMaskBuffer;    // A temporary buffer for the alpha mask.
   char mBIHraw[bmp::InfoHeaderLength::WIN_ICO]; // The bitmap information header.
   IconDirEntry mDirEntry;              // The dir entry for the selected resource.
-  IntSize mBiggestResourceSize;        // Used to select the intrinsic size.
-  IntSize mBiggestResourceHotSpot;     // Used to select the intrinsic size.
+  gfx::IntSize mBiggestResourceSize;   // Used to select the intrinsic size.
+  gfx::IntSize mBiggestResourceHotSpot; // Used to select the intrinsic size.
   uint16_t mBiggestResourceColorDepth; // Used to select the intrinsic size.
   int32_t mBestResourceDelta;          // Used to select the best resource.
   uint16_t mBestResourceColorDepth;    // Used to select the best resource.

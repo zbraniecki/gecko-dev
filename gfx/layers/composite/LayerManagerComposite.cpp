@@ -118,6 +118,7 @@ LayerManagerComposite::ClearCachedResources(Layer* aSubtree)
 LayerManagerComposite::LayerManagerComposite(Compositor* aCompositor)
 : mWarningLevel(0.0f)
 , mUnusedApzTransformWarning(false)
+, mDisabledApzWarning(false)
 , mCompositor(aCompositor)
 , mInTransaction(false)
 , mIsCompositorReady(false)
@@ -395,9 +396,7 @@ LayerManagerComposite::EndTransaction(const TimeStamp& aTimeStamp,
   if (mRoot && !(aFlags & END_NO_IMMEDIATE_REDRAW)) {
     MOZ_ASSERT(!aTimeStamp.IsNull());
     UpdateAndRender();
-
-    mPreviousHeldTextureHosts.Clear();
-    mPreviousHeldTextureHosts.SwapElements(mCurrentHeldTextureHosts);
+    mCompositor->FlushPendingNotifyNotUsed();
   } else {
     // Modified the layer tree.
     mGeometryChanged = true;
@@ -628,12 +627,25 @@ LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds)
       // in the top-right corner
       EffectChain effects;
       effects.mPrimaryEffect = new EffectSolidColor(gfx::Color(1, 0, 0, 1));
-      mCompositor->DrawQuad(gfx::Rect(aBounds.width - 20, 0, aBounds.width, 20),
+      mCompositor->DrawQuad(gfx::Rect(aBounds.width - 20, 0, 20, 20),
                             aBounds, effects, alpha, gfx::Matrix4x4());
 
       mUnusedApzTransformWarning = false;
       SetDebugOverlayWantsNextFrame(true);
     }
+    if (mDisabledApzWarning) {
+      // If we have a disabled APZ on this composite, draw a 20x20 yellow box
+      // in the top-right corner, to the left of the unused-apz-transform
+      // warning box
+      EffectChain effects;
+      effects.mPrimaryEffect = new EffectSolidColor(gfx::Color(1, 1, 0, 1));
+      mCompositor->DrawQuad(gfx::Rect(aBounds.width - 40, 0, 20, 20),
+                            aBounds, effects, alpha, gfx::Matrix4x4());
+
+      mDisabledApzWarning = false;
+      SetDebugOverlayWantsNextFrame(true);
+    }
+
 
     // Each frame is invalidate by the previous frame for simplicity
   } else {
@@ -723,6 +735,7 @@ LayerManagerComposite::PushGroupForLayerEffects()
       mTwoPassTmpTarget->GetOrigin() != previousTarget->GetOrigin()) {
     mTwoPassTmpTarget = mCompositor->CreateRenderTarget(rect, INIT_MODE_NONE);
   }
+  MOZ_ASSERT(mTwoPassTmpTarget);
   mCompositor->SetRenderTarget(mTwoPassTmpTarget);
   return previousTarget;
 }
@@ -809,7 +822,7 @@ LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion, const nsIntRegi
   PROFILER_LABEL("LayerManagerComposite", "Render",
     js::ProfileEntry::Category::GRAPHICS);
 
-  if (mDestroyed) {
+  if (mDestroyed || !mCompositor || mCompositor->IsDestroyed()) {
     NS_WARNING("Call on destroyed layer manager");
     return;
   }

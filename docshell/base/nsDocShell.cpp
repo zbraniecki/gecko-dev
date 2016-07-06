@@ -86,6 +86,7 @@
 #include "nsWhitespaceTokenizer.h"
 #include "nsICookieService.h"
 #include "nsIConsoleReportCollector.h"
+#include "nsObjectLoadingContent.h"
 
 // we want to explore making the document own the load group
 // so we can associate the document URI with the load group.
@@ -211,8 +212,8 @@
 #include "nsIWebBrowserFind.h"
 #include "nsIWidget.h"
 #include "mozilla/dom/EncodingUtils.h"
+#include "mozilla/dom/PerformanceNavigation.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "nsPerformance.h"
 
 #ifdef MOZ_TOOLKIT_SEARCH
 #include "nsIBrowserSearchService.h"
@@ -665,7 +666,7 @@ DispatchPings(nsIDocShell* aDocShell,
   ForEachPing(aContent, SendPing, &info);
 }
 
-static nsDOMPerformanceNavigationType
+static nsDOMNavigationTiming::Type
 ConvertLoadTypeToNavigationType(uint32_t aLoadType)
 {
   // Not initialized, assume it's normal load.
@@ -673,7 +674,7 @@ ConvertLoadTypeToNavigationType(uint32_t aLoadType)
     aLoadType = LOAD_NORMAL;
   }
 
-  auto result = dom::PerformanceNavigation::TYPE_RESERVED;
+  auto result = nsDOMNavigationTiming::TYPE_RESERVED;
   switch (aLoadType) {
     case LOAD_NORMAL:
     case LOAD_NORMAL_EXTERNAL:
@@ -685,10 +686,10 @@ ConvertLoadTypeToNavigationType(uint32_t aLoadType)
     case LOAD_LINK:
     case LOAD_STOP_CONTENT:
     case LOAD_REPLACE_BYPASS_CACHE:
-      result = dom::PerformanceNavigation::TYPE_NAVIGATE;
+      result = nsDOMNavigationTiming::TYPE_NAVIGATE;
       break;
     case LOAD_HISTORY:
-      result = dom::PerformanceNavigation::TYPE_BACK_FORWARD;
+      result = nsDOMNavigationTiming::TYPE_BACK_FORWARD;
       break;
     case LOAD_RELOAD_NORMAL:
     case LOAD_RELOAD_CHARSET_CHANGE:
@@ -696,18 +697,18 @@ ConvertLoadTypeToNavigationType(uint32_t aLoadType)
     case LOAD_RELOAD_BYPASS_PROXY:
     case LOAD_RELOAD_BYPASS_PROXY_AND_CACHE:
     case LOAD_RELOAD_ALLOW_MIXED_CONTENT:
-      result = dom::PerformanceNavigation::TYPE_RELOAD;
+      result = nsDOMNavigationTiming::TYPE_RELOAD;
       break;
     case LOAD_STOP_CONTENT_AND_REPLACE:
     case LOAD_REFRESH:
     case LOAD_BYPASS_HISTORY:
     case LOAD_ERROR_PAGE:
     case LOAD_PUSHSTATE:
-      result = dom::PerformanceNavigation::TYPE_RESERVED;
+      result = nsDOMNavigationTiming::TYPE_RESERVED;
       break;
     default:
       // NS_NOTREACHED("Unexpected load type value");
-      result = dom::PerformanceNavigation::TYPE_RESERVED;
+      result = nsDOMNavigationTiming::TYPE_RESERVED;
       break;
   }
 
@@ -790,7 +791,6 @@ nsDocShell::nsDocShell()
   , mIsPrerendered(false)
   , mIsAppTab(false)
   , mUseGlobalHistory(false)
-  , mInPrivateBrowsing(false)
   , mUseRemoteTabs(false)
   , mDeviceSizeIsPageSize(false)
   , mWindowDraggingAllowed(false)
@@ -812,6 +812,7 @@ nsDocShell::nsDocShell()
   , mDefaultLoadFlags(nsIRequest::LOAD_NORMAL)
   , mBlankTiming(false)
   , mFrameType(FRAME_TYPE_REGULAR)
+  , mPrivateBrowsingId(0)
   , mParentCharsetSource(0)
   , mJSRunToCompletionDepth(0)
 {
@@ -1255,6 +1256,7 @@ nsDocShell::LoadURI(nsIURI* aURI,
 
   nsCOMPtr<nsIURI> referrer;
   nsCOMPtr<nsIURI> originalURI;
+  bool loadReplace = false;
   nsCOMPtr<nsIInputStream> postStream;
   nsCOMPtr<nsIInputStream> headersStream;
   nsCOMPtr<nsISupports> owner;
@@ -1282,6 +1284,7 @@ nsDocShell::LoadURI(nsIURI* aURI,
   if (aLoadInfo) {
     aLoadInfo->GetReferrer(getter_AddRefs(referrer));
     aLoadInfo->GetOriginalURI(getter_AddRefs(originalURI));
+    aLoadInfo->GetLoadReplace(&loadReplace);
     nsDocShellInfoLoadType lt = nsIDocShellLoadInfo::loadNormal;
     aLoadInfo->GetLoadType(&lt);
     // Get the appropriate loadType from nsIDocShellLoadInfo type
@@ -1541,6 +1544,7 @@ nsDocShell::LoadURI(nsIURI* aURI,
 
   return InternalLoad(aURI,
                       originalURI,
+                      loadReplace,
                       referrer,
                       referrerPolicy,
                       owner,
@@ -2182,7 +2186,7 @@ nsDocShell::GetUsePrivateBrowsing(bool* aUsePrivateBrowsing)
 {
   NS_ENSURE_ARG_POINTER(aUsePrivateBrowsing);
   AssertOriginAttributesMatchPrivateBrowsing();
-  *aUsePrivateBrowsing = mInPrivateBrowsing;
+  *aUsePrivateBrowsing = mPrivateBrowsingId > 0;
   return NS_OK;
 }
 
@@ -2201,11 +2205,13 @@ nsDocShell::SetUsePrivateBrowsing(bool aUsePrivateBrowsing)
 NS_IMETHODIMP
 nsDocShell::SetPrivateBrowsing(bool aUsePrivateBrowsing)
 {
-  bool changed = aUsePrivateBrowsing != mInPrivateBrowsing;
+  bool changed = aUsePrivateBrowsing != (mPrivateBrowsingId > 0);
   if (changed) {
-    mInPrivateBrowsing = aUsePrivateBrowsing;
+    mPrivateBrowsingId = aUsePrivateBrowsing ? 1 : 0;
 
-    mOriginAttributes.SyncAttributesWithPrivateBrowsing(mInPrivateBrowsing);
+    if (mItemType != typeChrome) {
+      mOriginAttributes.SyncAttributesWithPrivateBrowsing(aUsePrivateBrowsing);
+    }
 
     if (mAffectPrivateSessionLifetime) {
       if (aUsePrivateBrowsing) {
@@ -2236,6 +2242,8 @@ nsDocShell::SetPrivateBrowsing(bool aUsePrivateBrowsing)
       }
     }
   }
+
+  AssertOriginAttributesMatchPrivateBrowsing();
   return NS_OK;
 }
 
@@ -2275,7 +2283,7 @@ NS_IMETHODIMP
 nsDocShell::SetAffectPrivateSessionLifetime(bool aAffectLifetime)
 {
   bool change = aAffectLifetime != mAffectPrivateSessionLifetime;
-  if (change && mInPrivateBrowsing) {
+  if (change && UsePrivateBrowsing()) {
     AssertOriginAttributesMatchPrivateBrowsing();
     if (aAffectLifetime) {
       IncreasePrivateDocShellCount();
@@ -2517,15 +2525,35 @@ nsDocShell::GetFullscreenAllowed(bool* aFullscreenAllowed)
   if (frameElement && !frameElement->IsXULElement()) {
     // We do not allow document inside any containing element other
     // than iframe to enter fullscreen.
-    if (!frameElement->IsHTMLElement(nsGkAtoms::iframe)) {
-      return NS_OK;
-    }
-    // If any ancestor iframe does not have allowfullscreen attribute
-    // set, then fullscreen is not allowed.
-    if (!frameElement->HasAttr(kNameSpaceID_None,
-                               nsGkAtoms::allowfullscreen) &&
-        !frameElement->HasAttr(kNameSpaceID_None,
-                               nsGkAtoms::mozallowfullscreen)) {
+    if (frameElement->IsHTMLElement(nsGkAtoms::iframe)) {
+      // If any ancestor iframe does not have allowfullscreen attribute
+      // set, then fullscreen is not allowed.
+      if (!frameElement->HasAttr(kNameSpaceID_None,
+                                 nsGkAtoms::allowfullscreen) &&
+          !frameElement->HasAttr(kNameSpaceID_None,
+                                 nsGkAtoms::mozallowfullscreen)) {
+        return NS_OK;
+      }
+    } else if (frameElement->IsHTMLElement(nsGkAtoms::embed)) {
+      // Respect allowfullscreen only if this is a rewritten YouTube embed.
+      nsCOMPtr<nsIObjectLoadingContent> objectLoadingContent =
+        do_QueryInterface(frameElement);
+      if (!objectLoadingContent) {
+        return NS_OK;
+      }
+      nsObjectLoadingContent* olc =
+        static_cast<nsObjectLoadingContent*>(objectLoadingContent.get());
+      if (!olc->IsRewrittenYoutubeEmbed()) {
+        return NS_OK;
+      }
+      // We don't have to check prefixed attributes because Flash does not
+      // support them.
+      if (!frameElement->HasAttr(kNameSpaceID_None,
+                                 nsGkAtoms::allowfullscreen)) {
+        return NS_OK;
+      }
+    } else {
+      // neither iframe nor embed
       return NS_OK;
     }
     nsIDocument* doc = frameElement->GetUncomposedDoc();
@@ -2972,11 +3000,11 @@ nsDocShell::GetSessionStorageForPrincipal(nsIPrincipal* aPrincipal,
   AssertOriginAttributesMatchPrivateBrowsing();
   if (aCreate) {
     return manager->CreateStorage(domWin->GetCurrentInnerWindow(), aPrincipal,
-                                  aDocumentURI, mInPrivateBrowsing, aStorage);
+                                  aDocumentURI, UsePrivateBrowsing(), aStorage);
   }
 
   return manager->GetStorage(domWin->GetCurrentInnerWindow(), aPrincipal,
-                             mInPrivateBrowsing, aStorage);
+                             UsePrivateBrowsing(), aStorage);
 }
 
 nsresult
@@ -3666,7 +3694,14 @@ nsDocShell::FindItemWithName(const char16_t* aName,
 
 void
 nsDocShell::AssertOriginAttributesMatchPrivateBrowsing() {
-  MOZ_ASSERT((mOriginAttributes.mPrivateBrowsingId != 0) == mInPrivateBrowsing);
+  // Chrome docshells must not have a private browsing OriginAttribute
+  // Content docshells must maintain the equality:
+  // mOriginAttributes.mPrivateBrowsingId == mPrivateBrowsingId
+  if (mItemType == typeChrome) {
+    MOZ_ASSERT(mOriginAttributes.mPrivateBrowsingId == 0);
+  } else {
+    MOZ_ASSERT(mOriginAttributes.mPrivateBrowsingId == mPrivateBrowsingId);
+  }
 }
 
 nsresult
@@ -3800,6 +3835,13 @@ nsDocShell::IsSandboxedFrom(nsIDocShell* aTargetDocShell)
 
   // Otherwise, we are sandboxed from aTargetDocShell.
   return true;
+}
+
+void
+nsDocShell::ApplySandboxAndFullscreenFlags(nsIDocument* aDoc)
+{
+  aDoc->SetSandboxFlags(mSandboxFlags);
+  aDoc->SetFullscreenEnabled(GetFullscreenAllowed());
 }
 
 NS_IMETHODIMP
@@ -4896,7 +4938,7 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI* aURI,
         // and the certificate is bad, don't allow overrides (RFC 6797 section
         // 12.1, HPKP draft spec section 2.6).
         uint32_t flags =
-          mInPrivateBrowsing ? nsISocketProvider::NO_PERMANENT_STORAGE : 0;
+          UsePrivateBrowsing() ? nsISocketProvider::NO_PERMANENT_STORAGE : 0;
         bool isStsHost = false;
         bool isPinnedHost = false;
         if (XRE_IsParentProcess()) {
@@ -5297,7 +5339,7 @@ nsDocShell::LoadErrorPage(nsIURI* aURI, const char16_t* aURL,
   rv = NS_NewURI(getter_AddRefs(errorPageURI), errorPageUrl);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  return InternalLoad(errorPageURI, nullptr, nullptr,
+  return InternalLoad(errorPageURI, nullptr, false, nullptr,
                       mozilla::net::RP_Default,
                       nullptr, INTERNAL_LOAD_FLAGS_INHERIT_OWNER, nullptr,
                       nullptr, NullString(), nullptr, nullptr, LOAD_ERROR_PAGE,
@@ -5349,6 +5391,7 @@ nsDocShell::Reload(uint32_t aReloadFlags)
     nsAutoString contentTypeHint;
     nsCOMPtr<nsIURI> baseURI;
     nsCOMPtr<nsIURI> originalURI;
+    bool loadReplace = false;
     if (doc) {
       principal = doc->NodePrincipal();
       doc->GetContentType(contentTypeHint);
@@ -5360,6 +5403,9 @@ nsDocShell::Reload(uint32_t aReloadFlags)
       }
       nsCOMPtr<nsIChannel> chan = doc->GetChannel();
       if (chan) {
+        uint32_t loadFlags;
+        chan->GetLoadFlags(&loadFlags);
+        loadReplace = loadFlags & nsIChannel::LOAD_REPLACE;
         nsCOMPtr<nsIHttpChannel> httpChan(do_QueryInterface(chan));
         if (httpChan) {
           httpChan->GetOriginalURI(getter_AddRefs(originalURI));
@@ -5369,6 +5415,7 @@ nsDocShell::Reload(uint32_t aReloadFlags)
 
     rv = InternalLoad(mCurrentURI,
                       originalURI,
+                      loadReplace,
                       mReferrerURI,
                       mReferrerPolicy,
                       principal,
@@ -5765,9 +5812,9 @@ nsDocShell::Destroy()
   // to break the cycle between us and the timers.
   CancelRefreshURITimers();
 
-  if (mInPrivateBrowsing) {
-    mInPrivateBrowsing = false;
-    mOriginAttributes.SyncAttributesWithPrivateBrowsing(mInPrivateBrowsing);
+  if (UsePrivateBrowsing()) {
+    mPrivateBrowsingId = 0;
+    mOriginAttributes.SyncAttributesWithPrivateBrowsing(false);
     if (mAffectPrivateSessionLifetime) {
       DecreasePrivateDocShellCount();
     }
@@ -6427,7 +6474,7 @@ nsDocShell::SetTitle(const char16_t* aTitle)
 
   AssertOriginAttributesMatchPrivateBrowsing();
   if (mCurrentURI && mLoadType != LOAD_ERROR_PAGE && mUseGlobalHistory &&
-      !mInPrivateBrowsing) {
+      !UsePrivateBrowsing()) {
     nsCOMPtr<IHistory> history = services::GetHistoryService();
     if (history) {
       history->SetURITitle(mCurrentURI, mTitle);
@@ -7456,7 +7503,7 @@ nsDocShell::OnRedirectStateChange(nsIChannel* aOldChannel,
         secMan->GetDocShellCodebasePrincipal(newURI, this,
                                              getter_AddRefs(principal));
         appCacheChannel->SetChooseApplicationCache(
-          NS_ShouldCheckAppCache(principal, mInPrivateBrowsing));
+          NS_ShouldCheckAppCache(principal, UsePrivateBrowsing()));
       }
     }
   }
@@ -8015,9 +8062,9 @@ nsDocShell::CreateAboutBlankContentViewer(nsIPrincipal* aPrincipal,
 
       blankDoc->SetContainer(this);
 
-      // Copy our sandbox flags to the document. These are immutable
-      // after being set here.
-      blankDoc->SetSandboxFlags(mSandboxFlags);
+      // Apply the sandbox and fullscreen enabled flags to the document.
+      // These are immutable after being set here.
+      ApplySandboxAndFullscreenFlags(blankDoc);
 
       // create a content viewer for us and the new document
       docFactory->CreateInstanceForDocument(
@@ -8812,7 +8859,7 @@ nsDocShell::RestoreFromHistory()
 
     // this.AddChild(child) calls child.SetDocLoaderParent(this), meaning that
     // the child inherits our state. Among other things, this means that the
-    // child inherits our mIsActive, mIsPrerendered and mInPrivateBrowsing,
+    // child inherits our mIsActive, mIsPrerendered and mPrivateBrowsingId,
     // which is what we want.
     AddChild(childItem);
 
@@ -9519,7 +9566,7 @@ class InternalLoadEvent : public Runnable
 {
 public:
   InternalLoadEvent(nsDocShell* aDocShell, nsIURI* aURI,
-                    nsIURI* aOriginalURI,
+                    nsIURI* aOriginalURI, bool aLoadReplace,
                     nsIURI* aReferrer, uint32_t aReferrerPolicy,
                     nsISupports* aOwner, uint32_t aFlags,
                     const char* aTypeHint, nsIInputStream* aPostData,
@@ -9531,6 +9578,7 @@ public:
     , mDocShell(aDocShell)
     , mURI(aURI)
     , mOriginalURI(aOriginalURI)
+    , mLoadReplace(aLoadReplace)
     , mReferrer(aReferrer)
     , mReferrerPolicy(aReferrerPolicy)
     , mOwner(aOwner)
@@ -9553,6 +9601,7 @@ public:
   Run()
   {
     return mDocShell->InternalLoad(mURI, mOriginalURI,
+                                   mLoadReplace,
                                    mReferrer,
                                    mReferrerPolicy,
                                    mOwner, mFlags,
@@ -9572,6 +9621,7 @@ private:
   RefPtr<nsDocShell> mDocShell;
   nsCOMPtr<nsIURI> mURI;
   nsCOMPtr<nsIURI> mOriginalURI;
+  bool mLoadReplace;
   nsCOMPtr<nsIURI> mReferrer;
   uint32_t mReferrerPolicy;
   nsCOMPtr<nsISupports> mOwner;
@@ -9638,6 +9688,7 @@ nsDocShell::IsAboutNewtab(nsIURI* aURI)
 NS_IMETHODIMP
 nsDocShell::InternalLoad(nsIURI* aURI,
                          nsIURI* aOriginalURI,
+                         bool aLoadReplace,
                          nsIURI* aReferrer,
                          uint32_t aReferrerPolicy,
                          nsISupports* aOwner,
@@ -9901,6 +9952,7 @@ nsDocShell::InternalLoad(nsIURI* aURI,
     if (NS_SUCCEEDED(rv) && targetDocShell) {
       rv = targetDocShell->InternalLoad(aURI,
                                         aOriginalURI,
+                                        aLoadReplace,
                                         aReferrer,
                                         aReferrerPolicy,
                                         owner,
@@ -9981,7 +10033,7 @@ nsDocShell::InternalLoad(nsIURI* aURI,
 
       // Do this asynchronously
       nsCOMPtr<nsIRunnable> ev =
-        new InternalLoadEvent(this, aURI, aOriginalURI,
+        new InternalLoadEvent(this, aURI, aOriginalURI, aLoadReplace,
                               aReferrer, aReferrerPolicy, aOwner, aFlags,
                               aTypeHint, aPostData, aHeadersData,
                               aLoadType, aSHEntry, aFirstParty, aSrcdoc,
@@ -10244,7 +10296,7 @@ nsDocShell::InternalLoad(nsIURI* aURI,
 
       /* Set the title for the Global History entry for this anchor url.
        */
-      if (mUseGlobalHistory && !mInPrivateBrowsing) {
+      if (mUseGlobalHistory && !UsePrivateBrowsing()) {
         nsCOMPtr<IHistory> history = services::GetHistoryService();
         if (history) {
           history->SetURITitle(aURI, mTitle);
@@ -10257,7 +10309,7 @@ nsDocShell::InternalLoad(nsIURI* aURI,
 
       // Inform the favicon service that the favicon for oldURI also
       // applies to aURI.
-      CopyFavicon(currentURI, aURI, doc->NodePrincipal(), mInPrivateBrowsing);
+      CopyFavicon(currentURI, aURI, doc->NodePrincipal(), UsePrivateBrowsing());
 
       RefPtr<nsGlobalWindow> win = mScriptGlobal ?
         mScriptGlobal->GetCurrentInnerWindowInternal() : nullptr;
@@ -10498,10 +10550,7 @@ nsDocShell::InternalLoad(nsIURI* aURI,
                         nsINetworkPredictor::PREDICT_LOAD, this, nullptr);
 
   nsCOMPtr<nsIRequest> req;
-  // At this point we will open a new channel to load data. If aOriginalURI
-  // is present, we load aOriginalURI instead of aURI because we want to load
-  // all redirects again.
-  rv = DoURILoad(aOriginalURI ? aOriginalURI : aURI, aReferrer,
+  rv = DoURILoad(aURI, aOriginalURI, aLoadReplace, aReferrer,
                  !(aFlags & INTERNAL_LOAD_FLAGS_DONT_SEND_REFERRER),
                  aReferrerPolicy,
                  owner, aTypeHint, aFileName, aPostData, aHeadersData,
@@ -10578,6 +10627,8 @@ nsDocShell::GetInheritedPrincipal(bool aConsiderCurrentDocument)
 
 nsresult
 nsDocShell::DoURILoad(nsIURI* aURI,
+                      nsIURI* aOriginalURI,
+                      bool aLoadReplace,
                       nsIURI* aReferrerURI,
                       bool aSendReferrer,
                       uint32_t aReferrerPolicy,
@@ -10744,7 +10795,7 @@ nsDocShell::DoURILoad(nsIURI* aURI,
     securityFlags |= nsILoadInfo::SEC_SANDBOXED;
   }
 
-  if (mInPrivateBrowsing) {
+  if (UsePrivateBrowsing()) {
     securityFlags |= nsILoadInfo::SEC_FORCE_PRIVATE_BROWSING;
   }
 
@@ -10842,7 +10893,7 @@ nsDocShell::DoURILoad(nsIURI* aURI,
         secMan->GetDocShellCodebasePrincipal(aURI, this,
                                              getter_AddRefs(principal));
         appCacheChannel->SetChooseApplicationCache(
-          NS_ShouldCheckAppCache(principal, mInPrivateBrowsing));
+          NS_ShouldCheckAppCache(principal, UsePrivateBrowsing()));
       }
     }
   }
@@ -10853,7 +10904,17 @@ nsDocShell::DoURILoad(nsIURI* aURI,
     NS_ADDREF(*aRequest = channel);
   }
 
-  channel->SetOriginalURI(aURI);
+  if (aOriginalURI) {
+    channel->SetOriginalURI(aOriginalURI);
+    if (aLoadReplace) {
+      uint32_t loadFlags;
+      channel->GetLoadFlags(&loadFlags);
+      NS_ENSURE_SUCCESS(rv, rv);
+      channel->SetLoadFlags(loadFlags | nsIChannel::LOAD_REPLACE);
+    }
+  } else {
+    channel->SetOriginalURI(aURI);
+  }
 
   if (aTypeHint && *aTypeHint) {
     channel->SetContentType(nsDependentCString(aTypeHint));
@@ -10990,8 +11051,8 @@ nsDocShell::DoURILoad(nsIURI* aURI,
       httpChannel->SetReferrerWithPolicy(aReferrerURI, aReferrerPolicy);
     }
     // set Content-Signature enforcing bit if aOriginalURI == about:newtab
-    if (httpChannel) {
-      if (IsAboutNewtab(aURI)) {
+    if (aOriginalURI && httpChannel) {
+      if (IsAboutNewtab(aOriginalURI)) {
         nsCOMPtr<nsILoadInfo> loadInfo = httpChannel->GetLoadInfo();
         if (loadInfo) {
           loadInfo->SetVerifySignedContent(true);
@@ -11855,6 +11916,7 @@ nsDocShell::AddState(JS::Handle<JS::Value> aData, const nsAString& aTitle,
     newSHEntry = mOSHE;
     newSHEntry->SetURI(newURI);
     newSHEntry->SetOriginalURI(newURI);
+    newSHEntry->SetLoadReplace(false);
   }
 
   // Step 4: Modify new/original session history entry and clear its POST
@@ -11925,7 +11987,7 @@ nsDocShell::AddState(JS::Handle<JS::Value> aData, const nsAString& aTitle,
 
     // AddURIVisit doesn't set the title for the new URI in global history,
     // so do that here.
-    if (mUseGlobalHistory && !mInPrivateBrowsing) {
+    if (mUseGlobalHistory && !UsePrivateBrowsing()) {
       nsCOMPtr<IHistory> history = services::GetHistoryService();
       if (history) {
         history->SetURITitle(newURI, mTitle);
@@ -11936,7 +11998,7 @@ nsDocShell::AddState(JS::Handle<JS::Value> aData, const nsAString& aTitle,
 
     // Inform the favicon service that our old favicon applies to this new
     // URI.
-    CopyFavicon(oldURI, newURI, document->NodePrincipal(), mInPrivateBrowsing);
+    CopyFavicon(oldURI, newURI, document->NodePrincipal(), UsePrivateBrowsing());
   } else {
     FireDummyOnLocationChange();
   }
@@ -12065,6 +12127,7 @@ nsDocShell::AddToSessionHistory(nsIURI* aURI, nsIChannel* aChannel,
   // Get the post data & referrer
   nsCOMPtr<nsIInputStream> inputStream;
   nsCOMPtr<nsIURI> originalURI;
+  bool loadReplace = false;
   nsCOMPtr<nsIURI> referrerURI;
   uint32_t referrerPolicy = mozilla::net::RP_Default;
   nsCOMPtr<nsISupports> cacheKey;
@@ -12095,6 +12158,7 @@ nsDocShell::AddToSessionHistory(nsIURI* aURI, nsIChannel* aChannel,
       httpChannel->GetOriginalURI(getter_AddRefs(originalURI));
       uint32_t loadFlags;
       aChannel->GetLoadFlags(&loadFlags);
+      loadReplace = loadFlags & nsIChannel::LOAD_REPLACE;
       httpChannel->GetReferrer(getter_AddRefs(referrerURI));
       httpChannel->GetReferrerPolicy(&referrerPolicy);
 
@@ -12138,6 +12202,7 @@ nsDocShell::AddToSessionHistory(nsIURI* aURI, nsIChannel* aChannel,
                 mDynamicallyCreated);
 
   entry->SetOriginalURI(originalURI);
+  entry->SetLoadReplace(loadReplace);
   entry->SetReferrerURI(referrerURI);
   entry->SetReferrerPolicy(referrerPolicy);
   nsCOMPtr<nsIInputStreamChannel> inStrmChan = do_QueryInterface(aChannel);
@@ -12237,6 +12302,7 @@ nsDocShell::LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType)
 
   nsCOMPtr<nsIURI> uri;
   nsCOMPtr<nsIURI> originalURI;
+  bool loadReplace = false;
   nsCOMPtr<nsIInputStream> postData;
   nsCOMPtr<nsIURI> referrerURI;
   uint32_t referrerPolicy;
@@ -12247,6 +12313,8 @@ nsDocShell::LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType)
 
   NS_ENSURE_SUCCESS(aEntry->GetURI(getter_AddRefs(uri)), NS_ERROR_FAILURE);
   NS_ENSURE_SUCCESS(aEntry->GetOriginalURI(getter_AddRefs(originalURI)),
+                    NS_ERROR_FAILURE);
+  NS_ENSURE_SUCCESS(aEntry->GetLoadReplace(&loadReplace),
                     NS_ERROR_FAILURE);
   NS_ENSURE_SUCCESS(aEntry->GetReferrerURI(getter_AddRefs(referrerURI)),
                     NS_ERROR_FAILURE);
@@ -12328,6 +12396,7 @@ nsDocShell::LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType)
   // first created. bug 947716 has been created to address this issue.
   rv = InternalLoad(uri,
                     originalURI,
+                    loadReplace,
                     referrerURI,
                     referrerPolicy,
                     owner,
@@ -12837,7 +12906,7 @@ nsDocShell::AddURIVisit(nsIURI* aURI,
 
   // Only content-type docshells save URI visits.  Also don't do
   // anything here if we're not supposed to use global history.
-  if (mItemType != typeContent || !mUseGlobalHistory || mInPrivateBrowsing) {
+  if (mItemType != typeContent || !mUseGlobalHistory || UsePrivateBrowsing()) {
     return;
   }
 
@@ -13374,7 +13443,7 @@ nsDocShell::IsTrackingProtectionOn(bool* aIsTrackingProtectionOn)
 {
   if (Preferences::GetBool("privacy.trackingprotection.enabled", false)) {
     *aIsTrackingProtectionOn = true;
-  } else if (mInPrivateBrowsing &&
+  } else if (UsePrivateBrowsing() &&
              Preferences::GetBool("privacy.trackingprotection.pbmode.enabled", false)) {
     *aIsTrackingProtectionOn = true;
   } else {
@@ -13829,6 +13898,7 @@ nsDocShell::OnLinkClickSync(nsIContent* aContent,
 
   nsresult rv = InternalLoad(clonedURI,                 // New URI
                              nullptr,                   // Original URI
+                             false,                     // LoadReplace
                              referer,                   // Referer URI
                              refererPolicy,             // Referer policy
                              aContent->NodePrincipal(), // Owner is our node's
@@ -14163,8 +14233,17 @@ nsDocShell::SetOriginAttributes(const DocShellOriginAttributes& aAttrs)
     }
   }
 
+  AssertOriginAttributesMatchPrivateBrowsing();
   mOriginAttributes = aAttrs;
-  SetPrivateBrowsing(mOriginAttributes.mPrivateBrowsingId > 0);
+
+  bool isPrivate = mOriginAttributes.mPrivateBrowsingId > 0;
+  // Chrome docshell can not contain OriginAttributes.mPrivateBrowsingId
+  if (mItemType == typeChrome && isPrivate) {
+    mOriginAttributes.mPrivateBrowsingId = 0;
+  }
+
+  SetPrivateBrowsing(isPrivate);
+
   return NS_OK;
 }
 
@@ -14350,7 +14429,7 @@ nsDocShell::ShouldPrepareForIntercept(nsIURI* aURI, bool aIsNonSubresourceReques
 {
   *aShouldIntercept = false;
   // No in private browsing
-  if (mInPrivateBrowsing) {
+  if (UsePrivateBrowsing()) {
     return NS_OK;
   }
 

@@ -84,12 +84,12 @@ GfxInfo::GetCleartypeParameters(nsAString & aCleartypeParams)
     ClearTypeParameterInfo& params = clearTypeParams[d];
 
     if (displayNames) {
-      outStr.AppendPrintf("%s [ ", params.displayName.get());
+      outStr.AppendPrintf("%S [ ", params.displayName.get());
     }
 
     if (params.gamma >= 0) {
       foundData = true;
-      outStr.AppendPrintf("Gamma: %d ", params.gamma);
+      outStr.AppendPrintf("Gamma: %.4g ", params.gamma / 1000.0);
     }
 
     if (params.pixelStructure >= 0) {
@@ -97,9 +97,9 @@ GfxInfo::GetCleartypeParameters(nsAString & aCleartypeParams)
       if (params.pixelStructure == PIXEL_STRUCT_RGB ||
           params.pixelStructure == PIXEL_STRUCT_BGR)
       {
-        outStr.AppendPrintf("Pixel Structure: %s ",
-                   (params.pixelStructure == PIXEL_STRUCT_RGB ?
-                      L"RGB" : L"BGR"));
+        outStr.AppendPrintf("Pixel Structure: %S ",
+                            (params.pixelStructure == PIXEL_STRUCT_RGB
+                            ? MOZ_UTF16("RGB") : MOZ_UTF16("BGR")));
       } else {
         outStr.AppendPrintf("Pixel Structure: %d ", params.pixelStructure);
       }
@@ -854,6 +854,12 @@ GfxInfo::GetGfxDriverInfo()
       (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorAMD), GfxDriverInfo::allDevices,
       GfxDriverInfo::allFeatures, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
       DRIVER_LESS_THAN, V(8,56,1,15), "FEATURE_FAILURE_AMD2", "8.56.1.15" );
+
+    // Bug 1277526
+    APPEND_TO_DRIVER_BLOCKLIST2(OperatingSystem::Windows7,
+      (nsAString&) GfxDriverInfo::GetDeviceVendor(VendorATI), GfxDriverInfo::allDevices,
+      GfxDriverInfo::allFeatures, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
+      DRIVER_EQUAL, V(8,850,0,0), "FEATURE_FAILURE_BUG_1277526");
 
     // Bug 1099252
     APPEND_TO_DRIVER_BLOCKLIST2(OperatingSystem::Windows7,

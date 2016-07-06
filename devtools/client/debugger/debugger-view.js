@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -81,8 +79,6 @@ var DebuggerView = {
 
     this._editorSource = {};
     this._editorDocuments = {};
-
-    document.title = L10N.getStr("DebuggerWindowTitle");
 
     this.editor.on("cursorActivity", this.Sources._onEditorCursorActivity);
 
@@ -453,6 +449,10 @@ var DebuggerView = {
     // Use JS mode for files with .js and .jsm extensions.
     if (SourceUtils.isJavaScript(aUrl, aContentType)) {
       return void this.editor.setMode(Editor.modes.js);
+    }
+
+    if (aContentType === "text/wasm") {
+      return void this.editor.setMode(Editor.modes.wasm);
     }
 
     // Use HTML mode for files in which the first non whitespace character is

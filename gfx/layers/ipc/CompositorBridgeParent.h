@@ -33,7 +33,6 @@
 #include "mozilla/layers/PCompositorBridgeParent.h"
 #include "mozilla/layers/ShadowLayersManager.h" // for ShadowLayersManager
 #include "mozilla/layers/APZTestData.h"
-#include "nsAutoPtr.h"                  // for nsRefPtr
 #include "nsISupportsImpl.h"
 #include "ThreadSafeRefcountingWithMainThreadDestruction.h"
 #include "mozilla/VsyncDispatcher.h"
@@ -52,7 +51,6 @@ class GPUProcessManager;
 } // namespace gfx
 
 namespace ipc {
-class GeckoChildProcessHost;
 class Shmem;
 } // namespace ipc
 
@@ -205,7 +203,7 @@ protected:
 
 class CompositorBridgeParent final : public PCompositorBridgeParent,
                                      public ShadowLayersManager,
-                                     public HostIPCAllocator,
+                                     public CompositorBridgeParentIPCAllocator,
                                      public ShmemAllocator
 {
   friend class CompositorVsyncScheduler;
@@ -217,8 +215,8 @@ public:
   explicit CompositorBridgeParent(widget::CompositorWidgetProxy* aWidget,
                                   CSSToLayoutDeviceScale aScale,
                                   bool aUseAPZ,
-                                  bool aUseExternalSurfaceSize = false,
-                                  int aSurfaceWidth = -1, int aSurfaceHeight = -1);
+                                  bool aUseExternalSurfaceSize,
+                                  const gfx::IntSize& aSurfaceSize);
 
   virtual bool RecvGetFrameUniformity(FrameUniformityData* aOutData) override;
   virtual bool RecvRequestOverfill() override;
@@ -289,7 +287,8 @@ public:
   virtual PTextureParent* AllocPTextureParent(const SurfaceDescriptor& aSharedData,
                                               const LayersBackend& aLayersBackend,
                                               const TextureFlags& aFlags,
-                                              const uint64_t& aId) override;
+                                              const uint64_t& aId,
+                                              const uint64_t& aSerial) override;
   virtual bool DeallocPTextureParent(PTextureParent* actor) override;
 
   virtual bool IsSameProcess() const override;
@@ -310,6 +309,11 @@ public:
   {
     return OtherPid();
   }
+
+  virtual void SendAsyncMessage(const InfallibleTArray<AsyncParentMessageData>& aMessage) override;
+
+  virtual CompositorBridgeParentIPCAllocator* AsCompositorBridgeParentIPCAllocator() override { return this; }
+
   /**
    * Request that the compositor be recreated due to a shared device reset.
    * This must be called on the main thread, and blocks until a task posted
@@ -377,9 +381,9 @@ public:
   void InvalidateRemoteLayers();
 
   /**
-   * Returns a pointer to the compositor corresponding to the given ID.
+   * Returns a pointer to the CompositorBridgeParent corresponding to the given ID.
    */
-  static CompositorBridgeParent* GetCompositor(uint64_t id);
+  static CompositorBridgeParent* GetCompositorBridgeParent(uint64_t id);
 
   /**
    * Set aController as the pan/zoom callback for the subtree referred
@@ -395,7 +399,7 @@ public:
    * directly to us.  Transport is to its thread context.
    */
   static PCompositorBridgeParent*
-  Create(Transport* aTransport, ProcessId aOtherProcess, mozilla::ipc::GeckoChildProcessHost* aProcessHost);
+  Create(Transport* aTransport, ProcessId aOtherProcess);
 
   struct LayerTreeState {
     LayerTreeState();
@@ -469,6 +473,11 @@ public:
   }
 
 private:
+  /**
+   * Called during destruction in order to release resources as early as possible.
+   */
+  void StopAndClearResources();
+
   /**
    * This returns a reference to the APZCTreeManager to which
    * pan/zoom-related events can be sent.

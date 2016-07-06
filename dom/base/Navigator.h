@@ -12,7 +12,6 @@
 #include "mozilla/ErrorResult.h"
 #include "nsIDOMNavigator.h"
 #include "nsIMozNavigatorNetwork.h"
-#include "nsAutoPtr.h"
 #include "nsWrapperCache.h"
 #include "nsHashKeys.h"
 #include "nsInterfaceHashtable.h"
@@ -72,6 +71,7 @@ class MobileMessageManager;
 class MozIdleObserver;
 #ifdef MOZ_GAMEPAD
 class Gamepad;
+class GamepadServiceTest;
 #endif // MOZ_GAMEPAD
 class NavigatorUserMediaSuccessCallback;
 class NavigatorUserMediaErrorCallback;
@@ -266,6 +266,7 @@ public:
 #endif // MOZ_B2G_RIL
 #ifdef MOZ_GAMEPAD
   void GetGamepads(nsTArray<RefPtr<Gamepad> >& aGamepads, ErrorResult& aRv);
+  GamepadServiceTest* RequestGamepadServiceTest();
 #endif // MOZ_GAMEPAD
   already_AddRefed<Promise> GetVRDevices(ErrorResult& aRv);
   void NotifyVRDevicesUpdated();
@@ -399,7 +400,9 @@ private:
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   RefPtr<DeviceStorageAreaListener> mDeviceStorageAreaListener;
   RefPtr<Presentation> mPresentation;
-
+#ifdef MOZ_GAMEPAD
+  RefPtr<GamepadServiceTest> mGamepadServiceTest;
+#endif
   nsTArray<RefPtr<Promise> > mVRGetDevicesPromises;
   nsTArray<uint32_t> mRequestedVibrationPattern;
 };

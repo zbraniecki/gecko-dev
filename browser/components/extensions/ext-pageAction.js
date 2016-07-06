@@ -6,6 +6,7 @@ Cu.import("resource://gre/modules/Task.jsm");
 Cu.import("resource://gre/modules/ExtensionUtils.jsm");
 var {
   EventManager,
+  IconDetails,
 } = ExtensionUtils;
 
 // WeakMap[Extension -> PageAction]
@@ -91,7 +92,7 @@ PageAction.prototype = {
       button.setAttribute("tooltiptext", title);
       button.setAttribute("aria-label", title);
 
-      let icon = IconDetails.getURL(tabData.icon, window, this.extension);
+      let {icon} = IconDetails.getURL(tabData.icon, window, this.extension);
       button.setAttribute("src", icon);
     }
 
@@ -205,7 +206,7 @@ PageAction.for = extension => {
 
 global.pageActionFor = PageAction.for;
 
-extensions.registerSchemaAPI("pageAction", null, (extension, context) => {
+extensions.registerSchemaAPI("pageAction", (extension, context) => {
   return {
     pageAction: {
       onClicked: new EventManager(context, "pageAction.onClicked", fire => {
@@ -223,11 +224,13 @@ extensions.registerSchemaAPI("pageAction", null, (extension, context) => {
       show(tabId) {
         let tab = TabManager.getTab(tabId);
         PageAction.for(extension).setProperty(tab, "show", true);
+        return Promise.resolve();
       },
 
       hide(tabId) {
         let tab = TabManager.getTab(tabId);
         PageAction.for(extension).setProperty(tab, "show", false);
+        return Promise.resolve();
       },
 
       setTitle(details) {

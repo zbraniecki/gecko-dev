@@ -532,10 +532,10 @@ class TypedArrayObjectTemplate : public TypedArrayObject
     fromBufferWithProto(JSContext* cx, HandleObject bufobj, uint32_t byteOffset, int32_t lengthInt,
                         HandleObject proto)
     {
-        ESClassValue cls;
+        ESClass cls;
         if (!GetBuiltinClass(cx, bufobj, &cls))
             return nullptr;
-        if (cls != ESClass_ArrayBuffer && cls != ESClass_SharedArrayBuffer) {
+        if (cls != ESClass::ArrayBuffer && cls != ESClass::SharedArrayBuffer) {
             JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_TYPED_ARRAY_BAD_ARGS);
             return nullptr;
         }
@@ -1664,6 +1664,12 @@ DataViewObject::write(JSContext* cx, Handle<DataViewObject*> obj,
     if (!WebIDLCast(cx, args[1], &value))
         return false;
 
+#ifdef JS_MORE_DETERMINISTIC
+    // See the comment in ElementSpecific::doubleToNative.
+    if (TypeIsFloatingPoint<NativeType>())
+        value = JS::CanonicalizeNaN(value);
+#endif
+
     bool toLittleEndian = args.length() >= 3 && ToBoolean(args[2]);
 
     if (obj->arrayBuffer().isDetached()) {
@@ -2046,6 +2052,11 @@ void
 TypedArrayObject::setElement(TypedArrayObject& obj, uint32_t index, double d)
 {
     MOZ_ASSERT(index < obj.length());
+
+#ifdef JS_MORE_DETERMINISTIC
+    // See the comment in ElementSpecific::doubleToNative.
+    d = JS::CanonicalizeNaN(d);
+#endif
 
     switch (obj.type()) {
       case Scalar::Int8:

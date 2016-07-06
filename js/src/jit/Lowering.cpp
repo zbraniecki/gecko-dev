@@ -265,22 +265,13 @@ LIRGenerator::visitNewDeclEnvObject(MNewDeclEnvObject* ins)
 void
 LIRGenerator::visitNewCallObject(MNewCallObject* ins)
 {
-    LInstruction* lir;
-    if (ins->templateObject()->isSingleton()) {
-        LNewSingletonCallObject* singletonLir = new(alloc()) LNewSingletonCallObject(temp());
-        define(singletonLir, ins);
-        lir = singletonLir;
-    } else {
-        LNewCallObject* normalLir = new(alloc()) LNewCallObject(temp());
-        define(normalLir, ins);
-        lir = normalLir;
-    }
-
+    LNewCallObject* lir = new(alloc()) LNewCallObject(temp());
+    define(lir, ins);
     assignSafepoint(lir, ins);
 }
 
 void
-LIRGenerator::visitNewRunOnceCallObject(MNewRunOnceCallObject* ins)
+LIRGenerator::visitNewSingletonCallObject(MNewSingletonCallObject* ins)
 {
     LNewSingletonCallObject* lir = new(alloc()) LNewSingletonCallObject(temp());
     define(lir, ins);
@@ -388,9 +379,10 @@ LIRGenerator::visitCreateThis(MCreateThis* ins)
 void
 LIRGenerator::visitCreateArgumentsObject(MCreateArgumentsObject* ins)
 {
-    // LAllocation callObj = useRegisterAtStart(ins->getCallObject());
     LAllocation callObj = useFixed(ins->getCallObject(), CallTempReg0);
-    LCreateArgumentsObject* lir = new(alloc()) LCreateArgumentsObject(callObj, tempFixed(CallTempReg1));
+    LCreateArgumentsObject* lir = new(alloc()) LCreateArgumentsObject(callObj, tempFixed(CallTempReg1),
+                                                                      tempFixed(CallTempReg2),
+                                                                      tempFixed(CallTempReg3));
     defineReturn(lir, ins);
     assignSafepoint(lir, ins);
 }
@@ -935,6 +927,9 @@ LIRGenerator::visitTest(MTest* test)
       case MIRType::Int32:
       case MIRType::Boolean:
         add(new(alloc()) LTestIAndBranch(useRegister(opd), ifTrue, ifFalse));
+        break;
+      case MIRType::Int64:
+        add(new(alloc()) LTestI64AndBranch(useInt64Register(opd), ifTrue, ifFalse));
         break;
       default:
         MOZ_CRASH("Bad type");

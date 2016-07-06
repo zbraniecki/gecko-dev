@@ -445,17 +445,15 @@ HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
                                             aValue, aNotify);
 }
 
-
 nsresult
 HTMLImageElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
 {
-  // If we are a map and get a mouse click, don't let it be handled by
-  // the Generic Element as this could cause a click event to fire
-  // twice, once by the image frame for the map and once by the Anchor
-  // element. (bug 39723)
+  // We handle image element with attribute ismap in its corresponding frame
+  // element. Set mMultipleActionsPrevented here to prevent the click event
+  // trigger the behaviors in Element::PostHandleEventForLinks
   WidgetMouseEvent* mouseEvent = aVisitor.mEvent->AsMouseEvent();
   if (mouseEvent && mouseEvent->IsLeftClickEvent() && IsMap()) {
-    aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
+    mouseEvent->mFlags.mMultipleActionsPrevented = true;
   }
   return nsGenericHTMLElement::PreHandleEvent(aVisitor);
 }
@@ -555,8 +553,10 @@ HTMLImageElement::SetAttr(int32_t aNameSpaceID, nsIAtom* aName,
   } else if (aName == nsGkAtoms::referrerpolicy &&
       aNameSpaceID == kNameSpaceID_None &&
       aNotify) {
-    ReferrerPolicy referrerPolicy = ReferrerPolicyFromString(aValue);
-    if (!InResponsiveMode() && referrerPolicy != GetImageReferrerPolicy()) {
+    ReferrerPolicy referrerPolicy = AttributeReferrerPolicyFromString(aValue);
+    if (!InResponsiveMode() &&
+        referrerPolicy != RP_Unset &&
+        referrerPolicy != GetImageReferrerPolicy()) {
       // XXX: Bug 1076583 - We still use the older synchronous algorithm
       // Because referrerPolicy is not treated as relevant mutations, setting
       // the attribute will neither trigger a reload nor update the referrer
