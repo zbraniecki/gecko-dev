@@ -1,7 +1,7 @@
 this.EXPORTED_SYMBOLS = [ "L10nRegistry", "ResourceBundle" ];
 
 
-const sync = false;
+const sync = true;
 
 /* SyncPromise */
 
@@ -207,12 +207,12 @@ class ResourceBundle {
     this.resources = resources;
 
 
-    let data = Array.from(resources).map(resId => {
+    let data = Object.keys(resources).map(resId => {
       return resources[resId].data;
     });
 
     if (data.every(d => d !== null)) {
-      //this.loaded = CurPromise.resolve(data);
+      this.loaded = CurPromise.resolve(data);
     }
   }
 

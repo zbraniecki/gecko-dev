@@ -27,7 +27,7 @@ L10nRegistry.getResources(['pl', 'en-US'], [
   console.log(supportedLocales);
   console.log(bundles);
 
-  const resBundleData = bundles[1];
+  const resBundleData = bundles[0];
   const resBundle = new ResourceBundle(
     resBundleData.locale,
     resBundleData.resources
