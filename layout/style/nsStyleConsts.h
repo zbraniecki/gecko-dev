@@ -13,7 +13,6 @@
 
 // XXX fold this into nsStyleContext and group by nsStyleXXX struct
 
-// Indices into border/padding/margin arrays
 namespace mozilla {
 namespace css {
 typedef mozilla::Side Side;
@@ -58,7 +57,6 @@ static inline css::Side operator++(css::Side& side, int) {
 // box-sizing
 enum class StyleBoxSizing : uint8_t {
   Content,
-  Padding,
   Border
 };
 

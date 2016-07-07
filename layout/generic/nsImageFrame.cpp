@@ -1985,7 +1985,7 @@ nsImageFrame::HandleEvent(nsPresContext* aPresContext,
 {
   NS_ENSURE_ARG_POINTER(aEventStatus);
 
-  if ((aEvent->mMessage == eMouseUp && 
+  if ((aEvent->mMessage == eMouseClick &&
        aEvent->AsMouseEvent()->button == WidgetMouseEvent::eLeftButton) ||
       aEvent->mMessage == eMouseMove) {
     nsImageMap* map = GetImageMap();
@@ -2025,8 +2025,8 @@ nsImageFrame::HandleEvent(nsPresContext* aPresContext,
           uri->SetSpec(spec);                
           
           bool clicked = false;
-          if (aEvent->mMessage == eMouseUp) {
-            *aEventStatus = nsEventStatus_eConsumeDoDefault; 
+          if (aEvent->mMessage == eMouseClick && !aEvent->DefaultPrevented()) {
+            *aEventStatus = nsEventStatus_eConsumeDoDefault;
             clicked = true;
           }
           nsContentUtils::TriggerLink(anchorNode, aPresContext, uri, target,
@@ -2207,19 +2207,13 @@ nsImageFrame::LoadIcon(const nsAString& aSpec,
   nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL;
   nsContentPolicyType contentPolicyType = nsIContentPolicy::TYPE_INTERNAL_IMAGE;
 
-  nsCOMPtr<nsIScriptSecurityManager> ssm = nsContentUtils::GetSecurityManager();
-  NS_ENSURE_TRUE(ssm, NS_ERROR_FAILURE);
-  nsCOMPtr<nsIPrincipal> systemPrincipal;
-  ssm->GetSystemPrincipal(getter_AddRefs(systemPrincipal));
-  NS_ENSURE_TRUE(systemPrincipal, NS_ERROR_FAILURE);
-
   return il->LoadImage(realURI,     /* icon URI */
                        nullptr,      /* initial document URI; this is only
                                        relevant for cookies, so does not
                                        apply to icons. */
                        nullptr,      /* referrer (not relevant for icons) */
                        mozilla::net::RP_Default,
-                       systemPrincipal, /* principal (not relevant for icons) */
+                       nullptr,      /* principal (not relevant for icons) */
                        loadGroup,
                        gIconLoad,
                        nullptr,      /* No context */

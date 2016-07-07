@@ -78,13 +78,14 @@ JSObject::finalize(js::FreeOp* fop)
 #endif
 
     const js::Class* clasp = getClass();
+    js::NativeObject* nobj = nullptr;
+    if (clasp->isNative())
+        nobj = &as<js::NativeObject>();
     if (clasp->hasFinalize())
         clasp->doFinalize(fop, this);
 
-    if (!clasp->isNative())
+    if (!nobj)
         return;
-
-    js::NativeObject* nobj = &as<js::NativeObject>();
 
     if (nobj->hasDynamicSlots())
         fop->free_(nobj->slots_);
@@ -809,19 +810,19 @@ GuessArrayGCKind(size_t numElements)
     return gc::AllocKind::OBJECT8;
 }
 
-// Returns ESClass_Other if the value isn't an object, or if the object
+// Returns ESClass::Other if the value isn't an object, or if the object
 // isn't of one of the enumerated classes.  Otherwise returns the appropriate
 // class.
 inline bool
-GetClassOfValue(JSContext* cx, HandleValue v, ESClassValue* classValue)
+GetClassOfValue(JSContext* cx, HandleValue v, ESClass* cls)
 {
     if (!v.isObject()) {
-        *classValue = ESClass_Other;
+        *cls = ESClass::Other;
         return true;
     }
 
     RootedObject obj(cx, &v.toObject());
-    return GetBuiltinClass(cx, obj, classValue);
+    return GetBuiltinClass(cx, obj, cls);
 }
 
 extern NativeObject*

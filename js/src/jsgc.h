@@ -19,11 +19,12 @@
 #include "js/GCAPI.h"
 #include "js/SliceBudget.h"
 #include "js/Vector.h"
-
+#include "threading/ConditionVariable.h"
 #include "vm/NativeObject.h"
 
 namespace js {
 
+class AutoLockHelperThreadState;
 unsigned GetCPUCount();
 
 enum ThreadType
@@ -849,7 +850,7 @@ class GCHelperState
     // Condvar for notifying the main thread when work has finished. This is
     // associated with the runtime's GC lock --- the worker thread state
     // condvars can't be used here due to lock ordering issues.
-    PRCondVar* done;
+    js::ConditionVariable done;
 
     // Activity for the helper to do, protected by the GC lock.
     State state_;
@@ -858,7 +859,7 @@ class GCHelperState
     PRThread* thread;
 
     void startBackgroundThread(State newState);
-    void waitForBackgroundThread();
+    void waitForBackgroundThread(js::AutoLockGC& lock);
 
     State state();
     void setState(State state);
@@ -879,13 +880,12 @@ class GCHelperState
   public:
     explicit GCHelperState(JSRuntime* rt)
       : rt(rt),
-        done(nullptr),
+        done(),
         state_(IDLE),
         thread(nullptr),
         shrinkFlag(false)
     { }
 
-    bool init();
     void finish();
 
     void work();
@@ -957,7 +957,7 @@ class GCParallelTask
     // If multiple tasks are to be started or joined at once, it is more
     // efficient to take the helper thread lock once and use these methods.
     bool startWithLockHeld();
-    void joinWithLockHeld();
+    void joinWithLockHeld(AutoLockHelperThreadState& locked);
 
     // Instead of dispatching to a helper, run the task on the main thread.
     void runFromMainThread(JSRuntime* rt);
@@ -976,7 +976,7 @@ class GCParallelTask
     // This should be friended to HelperThread, but cannot be because it
     // would introduce several circular dependencies.
   public:
-    virtual void runFromHelperThread();
+    virtual void runFromHelperThread(AutoLockHelperThreadState& locked);
 };
 
 typedef void (*IterateChunkCallback)(JSRuntime* rt, void* data, gc::Chunk* chunk);
@@ -1276,7 +1276,7 @@ class MOZ_RAII JS_HAZ_GC_SUPPRESSED AutoSuppressGC
   public:
     explicit AutoSuppressGC(ExclusiveContext* cx);
     explicit AutoSuppressGC(JSCompartment* comp);
-    explicit AutoSuppressGC(JSRuntime* rt);
+    explicit AutoSuppressGC(JSContext* cx);
 
     ~AutoSuppressGC()
     {

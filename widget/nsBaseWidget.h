@@ -167,8 +167,7 @@ public:
 
   virtual LayerManager*   GetLayerManager(PLayerTransactionChild* aShadowManager = nullptr,
                                           LayersBackend aBackendHint = mozilla::layers::LayersBackend::LAYERS_NONE,
-                                          LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT,
-                                          bool* aAllowRetaining = nullptr) override;
+                                          LayerManagerPersistence aPersistence = LAYER_MANAGER_CURRENT) override;
 
   mozilla::CompositorVsyncDispatcher* GetCompositorVsyncDispatcher();
   void            CreateCompositorVsyncDispatcher();
@@ -292,6 +291,10 @@ public:
   // Get the accessible for the window.
   mozilla::a11y::Accessible* GetRootAccessible();
 #endif
+
+  // Return true if this is a simple widget (that is typically not worth
+  // accelerating)
+  bool IsSmallPopup() const;
 
   nsPopupLevel PopupLevel() { return mPopupLevel; }
 
@@ -555,6 +558,7 @@ protected:
    */
   virtual void DestroyCompositor();
   void DestroyLayerManager();
+  void ReleaseContentController();
 
   void FreeShutdownObserver();
 

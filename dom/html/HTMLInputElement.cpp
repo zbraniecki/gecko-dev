@@ -11,6 +11,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/dom/Date.h"
 #include "mozilla/dom/Directory.h"
+#include "mozilla/dom/HTMLFormSubmission.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "nsAttrValueInlines.h"
 #include "nsCRTGlue.h"
@@ -21,6 +22,7 @@
 #include "nsIRadioVisitor.h"
 #include "nsIPhonetic.h"
 
+#include "HTMLFormSubmissionConstants.h"
 #include "mozilla/Telemetry.h"
 #include "nsIControllers.h"
 #include "nsIStringBundle.h"
@@ -38,9 +40,6 @@
 #include "nsPresContext.h"
 #include "nsMappedAttributes.h"
 #include "nsIFormControl.h"
-#include "nsIForm.h"
-#include "nsFormSubmission.h"
-#include "nsFormSubmissionConstants.h"
 #include "nsIDocument.h"
 #include "nsIPresShell.h"
 #include "nsIFormControlFrame.h"
@@ -113,11 +112,14 @@
 #include <limits>
 
 #include "nsIColorPicker.h"
+#include "nsIDatePicker.h"
 #include "nsIStringEnumerator.h"
 #include "HTMLSplitOnSpacesTokenizer.h"
 #include "nsIController.h"
 #include "nsIMIMEInfo.h"
 #include "nsFrameSelection.h"
+
+#include "nsIConsoleService.h"
 
 // input type=date
 #include "js/Date.h"
@@ -939,6 +941,13 @@ GetDOMFileOrDirectoryPath(const OwningFileOrDirectory& aData,
 
 } // namespace
 
+/* static */
+bool
+HTMLInputElement::ValueAsDateEnabled(JSContext* cx, JSObject* obj)
+{
+  return Preferences::GetBool("dom.experimental_forms", false) ||
+    Preferences::GetBool("dom.forms.datepicker", false);
+}
 
 NS_IMETHODIMP
 HTMLInputElement::nsFilePickerShownCallback::Done(int16_t aResult)
@@ -1142,6 +1151,59 @@ nsColorPickerShownCallback::Done(const nsAString& aColor)
 
 NS_IMPL_ISUPPORTS(nsColorPickerShownCallback, nsIColorPickerShownCallback)
 
+class DatePickerShownCallback final : public nsIDatePickerShownCallback
+{
+  ~DatePickerShownCallback() {}
+public:
+  DatePickerShownCallback(HTMLInputElement* aInput,
+                          nsIDatePicker* aDatePicker)
+    : mInput(aInput)
+    , mDatePicker(aDatePicker)
+  {}
+
+  NS_DECL_ISUPPORTS
+
+  NS_IMETHOD Done(const nsAString& aDate) override;
+  NS_IMETHOD Cancel() override;
+
+private:
+  RefPtr<HTMLInputElement> mInput;
+  nsCOMPtr<nsIDatePicker> mDatePicker;
+};
+
+NS_IMETHODIMP
+DatePickerShownCallback::Cancel()
+{
+  mInput->PickerClosed();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+DatePickerShownCallback::Done(const nsAString& aDate)
+{
+  nsAutoString oldValue;
+
+  mInput->PickerClosed();
+  mInput->GetValue(oldValue);
+
+  if(!oldValue.Equals(aDate)){
+    mInput->SetValue(aDate);
+    nsContentUtils::DispatchTrustedEvent(mInput->OwnerDoc(),
+                            static_cast<nsIDOMHTMLInputElement*>(mInput.get()),
+                            NS_LITERAL_STRING("input"), true,
+                            false);
+    return nsContentUtils::DispatchTrustedEvent(mInput->OwnerDoc(),
+                            static_cast<nsIDOMHTMLInputElement*>(mInput.get()),
+                            NS_LITERAL_STRING("change"), true,
+                            false);
+  }
+
+  return NS_OK;
+}
+
+NS_IMPL_ISUPPORTS(DatePickerShownCallback, nsIDatePickerShownCallback)
+
+
 bool
 HTMLInputElement::IsPopupBlocked() const
 {
@@ -1164,6 +1226,56 @@ HTMLInputElement::IsPopupBlocked() const
   uint32_t permission;
   pm->TestPermission(OwnerDoc()->NodePrincipal(), &permission);
   return permission == nsIPopupWindowManager::DENY_POPUP;
+}
+
+nsresult
+HTMLInputElement::InitDatePicker()
+{
+  if (!Preferences::GetBool("dom.forms.datepicker", false)) {
+    return NS_OK;
+  }
+
+  if (mPickerRunning) {
+    NS_WARNING("Just one nsIDatePicker is allowed");
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIDocument> doc = OwnerDoc();
+
+  nsCOMPtr<nsPIDOMWindowOuter> win = doc->GetWindow();
+  if (!win) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (IsPopupBlocked()) {
+    win->FirePopupBlockedEvent(doc, nullptr, EmptyString(), EmptyString());
+    return NS_OK;
+  }
+
+  // Get Loc title
+  nsXPIDLString title;
+  nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
+                                     "DatePicker", title);
+
+  nsresult rv;
+  nsCOMPtr<nsIDatePicker> datePicker = do_CreateInstance("@mozilla.org/datepicker;1", &rv);
+  if (!datePicker) {
+    return rv;
+  }
+
+  nsAutoString initialValue;
+  GetValueInternal(initialValue);
+  rv = datePicker->Init(win, title, initialValue);
+
+  nsCOMPtr<nsIDatePickerShownCallback> callback =
+    new DatePickerShownCallback(this, datePicker);
+
+  rv = datePicker->Open(callback);
+  if (NS_SUCCEEDED(rv)) {
+    mPickerRunning = true;
+  }
+
+  return rv;
 }
 
 nsresult
@@ -1668,6 +1780,10 @@ HTMLInputElement::BeforeSetAttr(int32_t aNameSpaceID, nsIAtom* aName,
         container->RadioRequiredWillChange(name, !!aValue);
       }
     }
+
+    if (aName == nsGkAtoms::webkitdirectory) {
+      Telemetry::Accumulate(Telemetry::WEBKIT_DIRECTORY_USED, true);
+    }
   }
 
   return nsGenericHTMLFormElementWithState::BeforeSetAttr(aNameSpaceID, aName,
@@ -2015,10 +2131,14 @@ HTMLInputElement::SetWidth(uint32_t aWidth)
 NS_IMETHODIMP
 HTMLInputElement::GetValue(nsAString& aValue)
 {
-  GetValueInternal(aValue);
+  nsresult rv = GetValueInternal(aValue);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   // Don't return non-sanitized value for types that are experimental on mobile.
-  if (IsExperimentalMobileType(mType)) {
+  //  or date types
+  if (IsExperimentalMobileType(mType) || mType == NS_FORM_INPUT_DATE) {
     SanitizeValue(aValue);
   }
 
@@ -2032,8 +2152,8 @@ HTMLInputElement::GetValueInternal(nsAString& aValue) const
     case VALUE_MODE_VALUE:
       if (IsSingleLineTextControl(false)) {
         mInputData.mState->GetValue(aValue, true);
-      } else {
-        aValue.Assign(mInputData.mValue);
+      } else if (!aValue.Assign(mInputData.mValue, fallible)) {
+        return NS_ERROR_OUT_OF_MEMORY;
       }
       return NS_OK;
 
@@ -2167,6 +2287,15 @@ HTMLInputElement::GetValueAsDecimal() const
 
   return !ConvertStringToNumber(stringValue, decimalValue) ? Decimal::nan()
                                                            : decimalValue;
+}
+
+void
+HTMLInputElement::GetValue(nsAString& aValue, ErrorResult& aRv)
+{
+  nsresult rv = GetValue(aValue);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
 }
 
 void
@@ -2643,6 +2772,15 @@ HTMLInputElement::ApplyStep(int32_t aStep)
   return rv;
 }
 
+/* static */
+bool
+HTMLInputElement::IsExperimentalMobileType(uint8_t aType)
+{
+  return aType == NS_FORM_INPUT_TIME ||
+    (aType == NS_FORM_INPUT_DATE &&
+     !Preferences::GetBool("dom.forms.datepicker", false));
+}
+
 NS_IMETHODIMP
 HTMLInputElement::StepDown(int32_t n, uint8_t optional_argc)
 {
@@ -2832,7 +2970,7 @@ bool
 HTMLInputElement::MozIsTextField(bool aExcludePassword)
 {
   // TODO: temporary until bug 773205 is fixed.
-  if (IsExperimentalMobileType(mType)) {
+  if (IsExperimentalMobileType(mType) || mType == NS_FORM_INPUT_DATE) {
     return false;
   }
 
@@ -3027,7 +3165,13 @@ HTMLInputElement::GetDisplayFileName(nsAString& aValue) const
   nsXPIDLString value;
 
   if (mFilesOrDirectories.IsEmpty()) {
-    if (HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)) {
+    if ((Preferences::GetBool("dom.input.dirpicker", false) &&
+         HasAttr(kNameSpaceID_None, nsGkAtoms::directory)) ||
+        (Preferences::GetBool("dom.webkitBlink.dirPicker.enabled", false) &&
+         HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory))) {
+      nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
+                                         "NoDirSelected", value);
+    } else if (HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)) {
       nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
                                          "NoFilesSelected", value);
     } else {
@@ -3864,7 +4008,7 @@ HTMLInputElement::PreHandleEvent(EventChainPreVisitor& aVisitor)
     // Experimental mobile types rely on the system UI to prevent users to not
     // set invalid values but we have to be extra-careful. Especially if the
     // option has been enabled on desktop.
-    if (IsExperimentalMobileType(mType)) {
+    if (IsExperimentalMobileType(mType) || mType == NS_FORM_INPUT_DATE) {
       nsAutoString aValue;
       GetValueInternal(aValue);
       nsresult rv =
@@ -4267,12 +4411,10 @@ HTMLInputElement::MaybeInitPickers(EventChainPostVisitor& aVisitor)
     if (target &&
         target->GetParent() == this &&
         target->IsRootOfNativeAnonymousSubtree() &&
-        (target->HasAttr(kNameSpaceID_None, nsGkAtoms::directory) ||
-         target->HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory))) {
-      MOZ_ASSERT(Preferences::GetBool("dom.input.dirpicker", false) ||
-                 Preferences::GetBool("dom.webkitBlink.dirPicker.enabled", false),
-                 "No API or UI should have been exposed to allow this code to "
-                 "be reached");
+        ((Preferences::GetBool("dom.input.dirpicker", false) &&
+          HasAttr(kNameSpaceID_None, nsGkAtoms::directory)) ||
+         (Preferences::GetBool("dom.webkitBlink.dirPicker.enabled", false) &&
+          HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory)))) {
       type = FILE_PICKER_DIRECTORY;
     }
     return InitFilePicker(type);
@@ -4280,6 +4422,10 @@ HTMLInputElement::MaybeInitPickers(EventChainPostVisitor& aVisitor)
   if (mType == NS_FORM_INPUT_COLOR) {
     return InitColorPicker();
   }
+  if (mType == NS_FORM_INPUT_DATE) {
+    return InitDatePicker();
+  }
+
   return NS_OK;
 }
 
@@ -4561,7 +4707,8 @@ HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor)
               keyEvent->mKeyCode == NS_VK_RETURN &&
                (IsSingleLineTextControl(false, mType) ||
                 mType == NS_FORM_INPUT_NUMBER ||
-                IsExperimentalMobileType(mType))) {
+                IsExperimentalMobileType(mType) ||
+                mType == NS_FORM_INPUT_DATE)) {
             FireChangeEventIfNeeded();
             rv = MaybeSubmitForm(aVisitor.mPresContext);
             NS_ENSURE_SUCCESS(rv, rv);
@@ -6170,7 +6317,7 @@ HTMLInputElement::Reset()
 }
 
 NS_IMETHODIMP
-HTMLInputElement::SubmitNamesValues(nsFormSubmission* aFormSubmission)
+HTMLInputElement::SubmitNamesValues(HTMLFormSubmission* aFormSubmission)
 {
   // Disabled elements don't submit
   // For type=reset, and type=button, we just never submit, period.
@@ -6314,13 +6461,23 @@ HTMLInputElement::SaveState()
 
       inputState = new HTMLInputElementState();
       nsAutoString value;
-      GetValue(value);
-      DebugOnly<nsresult> rv =
-        nsLinebreakConverter::ConvertStringLineBreaks(
-             value,
-             nsLinebreakConverter::eLinebreakPlatform,
-             nsLinebreakConverter::eLinebreakContent);
-      NS_ASSERTION(NS_SUCCEEDED(rv), "Converting linebreaks failed!");
+      nsresult rv = GetValue(value);
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
+
+      if (!IsSingleLineTextControl(false)) {
+        rv = nsLinebreakConverter::ConvertStringLineBreaks(
+               value,
+               nsLinebreakConverter::eLinebreakPlatform,
+               nsLinebreakConverter::eLinebreakContent);
+
+        if (NS_FAILED(rv)) {
+          NS_ERROR("Converting linebreaks failed!");
+          return rv;
+        }
+      }
+
       inputState->SetValue(value);
       break;
   }
@@ -8230,6 +8387,7 @@ HTMLInputElement::UpdateEntries(const nsTArray<OwningFileOrDirectory>& aFilesOrD
 void
 HTMLInputElement::GetWebkitEntries(nsTArray<RefPtr<Entry>>& aSequence)
 {
+  Telemetry::Accumulate(Telemetry::BLINK_FILESYSTEM_USED, true);
   aSequence.AppendElements(mEntries);
 }
 

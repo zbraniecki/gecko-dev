@@ -10,16 +10,16 @@
 #include "DecoderFlags.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/NotNull.h"
 #include "mozilla/gfx/2D.h"
 #include "nsCOMPtr.h"
 #include "SurfaceFlags.h"
-
-class nsACString;
 
 namespace mozilla {
 namespace image {
 
 class Decoder;
+class IDecodingTask;
 class RasterImage;
 class SourceBuffer;
 
@@ -64,10 +64,10 @@ public:
    * @param aSampleSize The sample size requested using #-moz-samplesize (or 0
    *                    if none).
    */
-  static already_AddRefed<Decoder>
+  static already_AddRefed<IDecodingTask>
   CreateDecoder(DecoderType aType,
-                RasterImage* aImage,
-                SourceBuffer* aSourceBuffer,
+                NotNull<RasterImage*> aImage,
+                NotNull<SourceBuffer*> aSourceBuffer,
                 const Maybe<gfx::IntSize>& aTargetSize,
                 DecoderFlags aDecoderFlags,
                 SurfaceFlags aSurfaceFlags,
@@ -86,10 +86,10 @@ public:
    * @param aSurfaceFlags Flags specifying the type of output this decoder
    *                      should produce.
    */
-  static already_AddRefed<Decoder>
+  static already_AddRefed<IDecodingTask>
   CreateAnimationDecoder(DecoderType aType,
-                         RasterImage* aImage,
-                         SourceBuffer* aSourceBuffer,
+                         NotNull<RasterImage*> aImage,
+                         NotNull<SourceBuffer*> aSourceBuffer,
                          DecoderFlags aDecoderFlags,
                          SurfaceFlags aSurfaceFlags);
 
@@ -107,10 +107,10 @@ public:
    * @param aSampleSize The sample size requested using #-moz-samplesize (or 0
    *                    if none).
    */
-  static already_AddRefed<Decoder>
+  static already_AddRefed<IDecodingTask>
   CreateMetadataDecoder(DecoderType aType,
-                        RasterImage* aImage,
-                        SourceBuffer* aSourceBuffer,
+                        NotNull<RasterImage*> aImage,
+                        NotNull<SourceBuffer*> aSourceBuffer,
                         int aSampleSize);
 
   /**
@@ -129,7 +129,7 @@ public:
    */
   static already_AddRefed<Decoder>
   CreateAnonymousDecoder(DecoderType aType,
-                         SourceBuffer* aSourceBuffer,
+                         NotNull<SourceBuffer*> aSourceBuffer,
                          const Maybe<gfx::IntSize>& aTargetSize,
                          SurfaceFlags aSurfaceFlags);
 
@@ -145,7 +145,7 @@ public:
    */
   static already_AddRefed<Decoder>
   CreateAnonymousMetadataDecoder(DecoderType aType,
-                                 SourceBuffer* aSourceBuffer);
+                                 NotNull<SourceBuffer*> aSourceBuffer);
 
 private:
   virtual ~DecoderFactory() = 0;

@@ -562,7 +562,7 @@ pref("layers.async-video.enabled", true);
 
 #ifdef MOZ_ANDROID_APZ
 pref("layers.async-pan-zoom.enabled", true);
-// APZ prefs that are different from B2G
+pref("apz.content_response_timeout", 600);
 pref("apz.allow_immediate_handoff", false);
 pref("apz.touch_start_tolerance", "0.06");
 pref("apz.axis_lock.breakout_angle", "0.7853982");    // PI / 4 (45 degrees)
@@ -893,7 +893,7 @@ pref("dom.serviceWorkers.openWindow.enabled", true);
 pref("dom.push.debug", false);
 // The upstream autopush endpoint must have the Google API key corresponding to
 // the App's sender ID; we bake this assumption directly into the URL.
-pref("dom.push.serverURL", "https://updates-autopush.stage.mozaws.net/v1/gcm/@MOZ_ANDROID_GCM_SENDERID@");
+pref("dom.push.serverURL", "https://updates.push.services.mozilla.com/v1/gcm/@MOZ_ANDROID_GCM_SENDERID@");
 pref("dom.push.maxRecentMessageIDsPerSubscription", 0);
 
 #ifdef MOZ_ANDROID_GCM

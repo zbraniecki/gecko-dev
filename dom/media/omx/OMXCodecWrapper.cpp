@@ -22,6 +22,7 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/layers/GrallocTextureClient.h"
+#include "nsAutoPtr.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -414,7 +415,7 @@ static nsresult
 ConvertSourceSurfaceToNV12(const RefPtr<SourceSurface>& aSurface, uint8_t* aDestination)
 {
   if (!aSurface) {
-    CODEC_ERROR("Getting surface %s from image failed");
+    CODEC_ERROR("Getting surface from image failed");
     return NS_ERROR_FAILURE;
   }
 

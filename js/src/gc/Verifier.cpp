@@ -79,7 +79,7 @@ typedef HashMap<void*, VerifyNode*, DefaultHasher<void*>, SystemAllocPolicy> Nod
  * The nodemap field is a hashtable that maps from the address of the GC thing
  * to the VerifyNode that represents it.
  */
-class js::VerifyPreTracer : public JS::CallbackTracer
+class js::VerifyPreTracer final : public JS::CallbackTracer
 {
     JS::AutoDisableGenerationalGC noggc;
 
@@ -526,11 +526,11 @@ CheckHeapTracer::check(AutoLockForExclusiveAccess& lock)
 }
 
 void
-js::gc::CheckHeapAfterMovingGC(JSRuntime* rt, AutoLockForExclusiveAccess& lock)
+js::gc::CheckHeapAfterMovingGC(JSRuntime* rt)
 {
-    MOZ_ASSERT(rt->isHeapCollecting());
+    AutoTraceSession session(rt, JS::HeapState::Tracing);
     CheckHeapTracer tracer(rt);
-    if (!tracer.init() || !tracer.check(lock))
+    if (!tracer.init() || !tracer.check(session.lock))
         fprintf(stderr, "OOM checking heap\n");
 }
 

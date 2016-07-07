@@ -680,6 +680,7 @@ function createObserve(obs) {
 }
 
 Components.utils.import('resource://gre/modules/Services.jsm');
+Components.utils.import('resource://gre/modules/L10nRegistry.jsm');
 Components.utils.import('resource://gre/modules/L10nService.jsm');
 Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
 
@@ -719,6 +720,13 @@ function createLocalization(name, resIds) {
   function requestBundles(requestedLangs = navigator.languages) {
     const { resBundles } = L10nService.getResources(requestedLangs, resIds);
     return Promise.resolve(resBundles);
+    /*
+    return L10nRegistry.getResources(requestedLangs, resIds).then(({bundles}) => {
+      return bundles.map(bundle => {
+        return new ResourceBundle(bundle.locale, bundle.resources);
+      });
+    });
+    */
   }
 
   const l10n = new HTMLLocalization(requestBundles, createContext);

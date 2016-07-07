@@ -11,7 +11,52 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Troubleshoot.jsm");
 Cu.import("resource://gre/modules/ResetProfile.jsm");
 Cu.import("resource://gre/modules/AppConstants.jsm");
+/*
+Cu.import('resource://gre/modules/L10nService.jsm');
+Cu.import('resource://gre/modules/L10nRegistry.jsm');
 
+
+performance.mark('l10nservice-start');
+var x = L10nService.getResources(['pl', 'en-US'], [
+  '/global/aboutSupport.ftl',
+  '/global/resetProfile.ftl'
+]);
+performance.mark('l10nservice-gotresources');
+console.log('L10nService Object:');
+console.log(x);
+console.log('L10nService bundles:');
+console.log(x.resBundles);
+x.resBundles[0].fetch().then(res => {
+  performance.mark('l10nservice-loadedfirst');
+  console.log('L10nService first bundle fetch:');
+  console.log(res);
+});
+
+performance.mark('l10nregistry-start');
+L10nRegistry.getResources(['pl', 'en-US'], [
+  '/global/aboutSupport.ftl',
+  '/global/resetProfile.ftl'
+]).then(x => {
+  performance.mark('l10nregistry-gotresources');
+  console.log('L10nRegistry Object:');
+  console.log(x);
+  let resBundles = x.bundles.map(y => {
+    return new ResourceBundle(y.locale, y.resources);
+  });
+  console.log('L10nRegistry bundles:');
+  console.log(resBundles);
+  resBundles[0].fetch().then(res => {
+    performance.mark('l10nregistry-loadedfirst');
+    console.log('L10nRegistry first bundle fetch:');
+    console.log(res);
+
+    performance.measure('service', 'l10nservice-start', 'l10nservice-loadedfirst');
+    performance.measure('registry', 'l10nregistry-start', 'l10nregistry-loadedfirst');
+    console.log('Service duration: ' + performance.getEntriesByName('service')[0].duration);
+    console.log('Registry duration: ' + performance.getEntriesByName('registry')[0].duration);
+  })
+});
+*/
 XPCOMUtils.defineLazyModuleGetter(this, "RelativeTimeFormat",
   "resource://gre/modules/IntlRelativeTimeFormat.jsm");
 

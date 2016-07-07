@@ -11,6 +11,7 @@
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FunctionBinding.h"
+#include "mozilla/dom/Performance.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/Maybe.h"
@@ -20,7 +21,6 @@
 #include "nsGlobalWindow.h"
 #include "nsJSUtils.h"
 #include "nsNetUtil.h"
-#include "nsPerformance.h"
 #include "ScriptSettings.h"
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
@@ -314,7 +314,7 @@ private:
 };
 
 class ConsoleRunnable : public Runnable
-                      , public WorkerFeature
+                      , public WorkerHolder
                       , public StructuredCloneHolderBase
 {
 public:
@@ -382,7 +382,7 @@ private:
       return false;
     }
 
-    if (NS_WARN_IF(!mWorkerPrivate->AddFeature(this))) {
+    if (NS_WARN_IF(!HoldWorker(mWorkerPrivate))) {
       return false;
     }
 
@@ -427,7 +427,7 @@ private:
         mRunnable->ReleaseData();
         mRunnable->mConsole = nullptr;
 
-        aWorkerPrivate->RemoveFeature(mRunnable);
+        mRunnable->ReleaseWorker();
         return true;
       }
 
@@ -1355,7 +1355,7 @@ Console::MethodInternal(JSContext* aCx, MethodName aMethodName,
       nsGlobalWindow *win = nsGlobalWindow::Cast(mWindow);
       MOZ_ASSERT(win);
 
-      RefPtr<nsPerformance> performance = win->GetPerformance();
+      RefPtr<Performance> performance = win->GetPerformance();
       if (!performance) {
         return;
       }

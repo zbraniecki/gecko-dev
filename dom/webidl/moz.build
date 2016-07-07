@@ -659,6 +659,7 @@ if CONFIG['MOZ_WEBSPEECH']:
 if CONFIG['MOZ_GAMEPAD']:
     WEBIDL_FILES += [
         'Gamepad.webidl',
+        'GamepadServiceTest.webidl'
     ]
 
 WEBIDL_FILES += [

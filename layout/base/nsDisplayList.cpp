@@ -1691,7 +1691,7 @@ TriggerPendingAnimations(nsIDocument* aDocument,
 }
 
 LayerManager*
-nsDisplayListBuilder::GetWidgetLayerManager(nsView** aView, bool* aAllowRetaining)
+nsDisplayListBuilder::GetWidgetLayerManager(nsView** aView)
 {
   nsView* view = RootReferenceFrame()->GetView();
   if (aView) {
@@ -1702,7 +1702,7 @@ nsDisplayListBuilder::GetWidgetLayerManager(nsView** aView, bool* aAllowRetainin
   }
   nsIWidget* window = RootReferenceFrame()->GetNearestWidget();
   if (window) {
-    return window->GetLayerManager(aAllowRetaining);
+    return window->GetLayerManager();
   }
   return nullptr;
 }
@@ -1720,11 +1720,10 @@ already_AddRefed<LayerManager> nsDisplayList::PaintRoot(nsDisplayListBuilder* aB
 
   RefPtr<LayerManager> layerManager;
   bool widgetTransaction = false;
-  bool allowRetaining = false;
   bool doBeginTransaction = true;
   nsView *view = nullptr;
   if (aFlags & PAINT_USE_WIDGET_LAYERS) {
-    layerManager = aBuilder->GetWidgetLayerManager(&view, &allowRetaining);
+    layerManager = aBuilder->GetWidgetLayerManager(&view);
     if (layerManager) {
       doBeginTransaction = !(aFlags & PAINT_EXISTING_TRANSACTION);
       widgetTransaction = true;
@@ -2089,9 +2088,10 @@ void nsDisplayList::HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
        static_cast<nsDisplayTransform*>(item)->IsParticipating3DContext()) ||
       ((itemType == nsDisplayItem::TYPE_PERSPECTIVE ||
         itemType == nsDisplayItem::TYPE_OPACITY) &&
-       static_cast<nsDisplayPerspective*>(item)->Frame()->Extend3DContext());
+       item->Frame()->Extend3DContext());
     if (same3DContext &&
-        !static_cast<nsDisplayTransform*>(item)->IsLeafOf3DContext()) {
+        (itemType != nsDisplayItem::TYPE_TRANSFORM ||
+         !static_cast<nsDisplayTransform*>(item)->IsLeafOf3DContext())) {
       if (!item->GetClip().MayIntersect(aRect)) {
         continue;
       }
@@ -4378,23 +4378,23 @@ nsDisplayOpacity::BuildLayer(nsDisplayListBuilder* aBuilder,
  * size --- but this should be good enough.
  */
 static bool
-IsItemTooSmallForActiveLayer(nsDisplayItem* aItem)
+IsItemTooSmallForActiveLayer(nsIFrame* aFrame)
 {
-  nsIntRect visibleDevPixels = aItem->Frame()->GetVisualOverflowRectRelativeToSelf().ToOutsidePixels(
-          aItem->Frame()->PresContext()->AppUnitsPerDevPixel());
+  nsIntRect visibleDevPixels = aFrame->GetVisualOverflowRectRelativeToSelf().ToOutsidePixels(
+          aFrame->PresContext()->AppUnitsPerDevPixel());
   static const int MIN_ACTIVE_LAYER_SIZE_DEV_PIXELS = 16;
   return visibleDevPixels.Size() <
     nsIntSize(MIN_ACTIVE_LAYER_SIZE_DEV_PIXELS, MIN_ACTIVE_LAYER_SIZE_DEV_PIXELS);
 }
 
 static void
-SetAnimationPerformanceWarningForTooSmallItem(nsDisplayItem* aItem,
+SetAnimationPerformanceWarningForTooSmallItem(nsIFrame* aFrame,
                                               nsCSSProperty aProperty)
 {
   // We use ToNearestPixels() here since ToOutsidePixels causes some sort of
   // errors. See https://bugzilla.mozilla.org/show_bug.cgi?id=1258904#c19
-  nsIntRect visibleDevPixels = aItem->Frame()->GetVisualOverflowRectRelativeToSelf().ToNearestPixels(
-          aItem->Frame()->PresContext()->AppUnitsPerDevPixel());
+  nsIntRect visibleDevPixels = aFrame->GetVisualOverflowRectRelativeToSelf().ToNearestPixels(
+          aFrame->PresContext()->AppUnitsPerDevPixel());
 
   // Set performance warning only if the visible dev pixels is not empty
   // because dev pixels is empty if the frame has 'preserve-3d' style.
@@ -4402,23 +4402,23 @@ SetAnimationPerformanceWarningForTooSmallItem(nsDisplayItem* aItem,
     return;
   }
 
-  EffectCompositor::SetPerformanceWarning(aItem->Frame(), aProperty,
+  EffectCompositor::SetPerformanceWarning(aFrame, aProperty,
       AnimationPerformanceWarning(
         AnimationPerformanceWarning::Type::ContentTooSmall,
         { visibleDevPixels.Width(), visibleDevPixels.Height() }));
 }
 
-bool
-nsDisplayOpacity::NeedsActiveLayer(nsDisplayListBuilder* aBuilder)
+/* static */ bool
+nsDisplayOpacity::NeedsActiveLayer(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
 {
-  if (ActiveLayerTracker::IsStyleAnimated(aBuilder, mFrame,
+  if (ActiveLayerTracker::IsStyleAnimated(aBuilder, aFrame,
                                           eCSSProperty_opacity) ||
-      EffectCompositor::HasAnimationsForCompositor(mFrame,
+      EffectCompositor::HasAnimationsForCompositor(aFrame,
                                                    eCSSProperty_opacity)) {
-    if (!IsItemTooSmallForActiveLayer(this)) {
+    if (!IsItemTooSmallForActiveLayer(aFrame)) {
       return true;
     }
-    SetAnimationPerformanceWarningForTooSmallItem(this, eCSSProperty_opacity);
+    SetAnimationPerformanceWarningForTooSmallItem(aFrame, eCSSProperty_opacity);
   }
   return false;
 }
@@ -4444,7 +4444,7 @@ nsDisplayOpacity::CanApplyOpacity() const
 bool
 nsDisplayOpacity::ShouldFlattenAway(nsDisplayListBuilder* aBuilder)
 {
-  if (NeedsActiveLayer(aBuilder) || mOpacity == 0.0) {
+  if (NeedsActiveLayer(aBuilder, mFrame) || mOpacity == 0.0) {
     // If our opacity is zero then we'll discard all descendant display items
     // except for layer event regions, so there's no point in doing this
     // optimization (and if we do do it, then invalidations of those descendants
@@ -4506,7 +4506,7 @@ nsDisplayOpacity::GetLayerState(nsDisplayListBuilder* aBuilder,
     return LAYER_INACTIVE;
   }
 
-  if (NeedsActiveLayer(aBuilder)) {
+  if (NeedsActiveLayer(aBuilder, mFrame)) {
     // Returns LAYER_ACTIVE_FORCE to avoid flatterning the layer for async
     // animations.
     return LAYER_ACTIVE_FORCE;
@@ -4716,11 +4716,13 @@ bool nsDisplayBlendContainer::TryMerge(nsDisplayItem* aItem) {
 nsDisplayOwnLayer::nsDisplayOwnLayer(nsDisplayListBuilder* aBuilder,
                                      nsIFrame* aFrame, nsDisplayList* aList,
                                      uint32_t aFlags, ViewID aScrollTarget,
-                                     float aScrollbarThumbRatio)
+                                     float aScrollbarThumbRatio,
+                                     bool aForceActive)
     : nsDisplayWrapList(aBuilder, aFrame, aList)
     , mFlags(aFlags)
     , mScrollTarget(aScrollTarget)
     , mScrollbarThumbRatio(aScrollbarThumbRatio)
+    , mForceActive(aForceActive)
 {
   MOZ_COUNT_CTOR(nsDisplayOwnLayer);
 }
@@ -4730,6 +4732,18 @@ nsDisplayOwnLayer::~nsDisplayOwnLayer() {
   MOZ_COUNT_DTOR(nsDisplayOwnLayer);
 }
 #endif
+
+LayerState
+nsDisplayOwnLayer::GetLayerState(nsDisplayListBuilder* aBuilder,
+                                 LayerManager* aManager,
+                                 const ContainerLayerParameters& aParameters)
+{
+  if (mForceActive) {
+    return mozilla::LAYER_ACTIVE_FORCE;
+  }
+
+  return RequiredLayerStateForChildren(aBuilder, aManager, aParameters, mList, mAnimatedGeometryRoot);
+}
 
 // nsDisplayOpacity uses layers for rendering
 already_AddRefed<Layer>
@@ -6021,10 +6035,10 @@ nsDisplayTransform::MayBeAnimated(nsDisplayListBuilder* aBuilder)
                                           eCSSProperty_transform) ||
       EffectCompositor::HasAnimationsForCompositor(mFrame,
                                                    eCSSProperty_transform)) {
-    if (!IsItemTooSmallForActiveLayer(this)) {
+    if (!IsItemTooSmallForActiveLayer(mFrame)) {
       return true;
     }
-    SetAnimationPerformanceWarningForTooSmallItem(this, eCSSProperty_transform);
+    SetAnimationPerformanceWarningForTooSmallItem(mFrame, eCSSProperty_transform);
   }
   return false;
 }
@@ -6572,9 +6586,11 @@ nsCharClipDisplayItem::ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
 }
 
 nsDisplaySVGEffects::nsDisplaySVGEffects(nsDisplayListBuilder* aBuilder,
-                                         nsIFrame* aFrame, nsDisplayList* aList)
-    : nsDisplayWrapList(aBuilder, aFrame, aList),
-      mEffectsBounds(aFrame->GetVisualOverflowRectRelativeToSelf())
+                                         nsIFrame* aFrame, nsDisplayList* aList,
+                                         bool aOpacityItemCreated)
+  : nsDisplayWrapList(aBuilder, aFrame, aList)
+  , mEffectsBounds(aFrame->GetVisualOverflowRectRelativeToSelf())
+  , mOpacityItemCreated(aOpacityItemCreated)
 {
   MOZ_COUNT_CTOR(nsDisplaySVGEffects);
 }
@@ -6638,7 +6654,7 @@ nsDisplaySVGEffects::PaintAsLayer(nsDisplayListBuilder* aBuilder,
   nsSVGIntegrationUtils::PaintFramesParams params(*aCtx->ThebesContext(),
                                                   mFrame,  mVisibleRect,
                                                   borderArea, aBuilder,
-                                                  aManager);
+                                                  aManager, mOpacityItemCreated);
 
   nsSVGIntegrationUtils::PaintFramesWithEffects(params);
 }

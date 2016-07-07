@@ -1367,6 +1367,23 @@
         ]]></body>
       </method>
 
+      <method name="setBrowserSharing">
+        <parameter name="aBrowser"/>
+        <parameter name="aSharingState"/>
+        <body><![CDATA[
+          let tab = this.getTabForBrowser(aBrowser);
+          if (!tab)
+            return;
+
+          if (aSharingState)
+            tab.setAttribute("sharing", aSharingState);
+          else
+            tab.removeAttribute("sharing");
+          this._tabAttrModified(tab, ["sharing"]);
+        ]]></body>
+      </method>
+
+
       <method name="setTabTitleLoading">
         <parameter name="aTab"/>
         <body>
@@ -2619,9 +2636,12 @@
               modifiedAttrs.push("soundplaying");
             }
             if (aOtherTab.hasAttribute("usercontextid")) {
-              aOurTab.setAttribute("usercontextid", aOtherTab.getAttribute("usercontextid"));
-              ContextualIdentityService.setTabStyle(aOurTab);
+              aOurTab.setUserContextId(aOtherTab.getAttribute("usercontextid"));
               modifiedAttrs.push("usercontextid");
+            }
+            if (aOtherTab.hasAttribute("sharing")) {
+              aOurTab.setAttribute("sharing", aOtherTab.getAttribute("sharing"));
+              modifiedAttrs.push("sharing");
             }
 
             // If the other tab is pending (i.e. has not been restored, yet)
@@ -5611,10 +5631,6 @@
             return;
           }
 
-          Services.telemetry.getHistogramById(aTab.closing ?
-                                              "FX_TAB_ANIM_CLOSE_MS" :
-                                              "FX_TAB_ANIM_OPEN_MS")
-                            .add(Date.now() - aTab._animStartTime);
           aTab._animStartTime = 0;
 
           // Handle tab animation smoothness telemetry/logging of frame intervals and paint times
@@ -5873,6 +5889,7 @@
           if (!this._dndPanel) {
             this._dndCanvas = canvas;
             this._dndPanel = document.createElement("panel");
+            this._dndPanel.className = "dragfeedback-tab";
             this._dndPanel.setAttribute("type", "drag");
             let wrapper = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
             wrapper.style.width = "160px";
@@ -6217,10 +6234,14 @@
                      class="tab-throbber"
                      role="presentation"
                      layer="true" />
-          <xul:image xbl:inherits="src=image,fadein,pinned,selected,visuallyselected,busy,crashed"
+          <xul:image xbl:inherits="src=image,fadein,pinned,selected,visuallyselected,busy,crashed,sharing"
                      anonid="tab-icon-image"
                      class="tab-icon-image"
                      validate="never"
+                     role="presentation"/>
+          <xul:image xbl:inherits="sharing,selected"
+                     anonid="sharing-icon"
+                     class="tab-sharing-icon-overlay"
                      role="presentation"/>
           <xul:image xbl:inherits="crashed,busy,soundplaying,pinned,muted"
                      anonid="overlay-icon"
@@ -6431,12 +6452,18 @@
         <body>
         <![CDATA[
           if (aUserContextId) {
-            this.linkedBrowser.setAttribute("usercontextid", aUserContextId);
+            if (this.linkedBrowser) {
+              this.linkedBrowser.setAttribute("usercontextid", aUserContextId);
+            }
             this.setAttribute("usercontextid", aUserContextId);
           } else {
-            this.linkedBrowser.removeAttribute("usercontextid");
+            if (this.linkedBrowser) {
+              this.linkedBrowser.removeAttribute("usercontextid");
+            }
             this.removeAttribute("usercontextid");
           }
+
+          ContextualIdentityService.setTabStyle(this);
         ]]>
         </body>
       </method>

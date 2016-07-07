@@ -68,7 +68,6 @@
 #endif
 #include "GeckoProfiler.h"
 #include "mozilla/ipc/ProtocolTypes.h"
-#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/unused.h"
 #include "mozilla/Hal.h"
 #include "mozilla/HalTypes.h"
@@ -587,13 +586,14 @@ CompositorBridgeParent::CompositorBridgeParent(widget::CompositorWidgetProxy* aW
                                                CSSToLayoutDeviceScale aScale,
                                                bool aUseAPZ,
                                                bool aUseExternalSurfaceSize,
-                                               int aSurfaceWidth, int aSurfaceHeight)
-  : mWidgetProxy(aWidget)
+                                               const gfx::IntSize& aSurfaceSize)
+  : CompositorBridgeParentIPCAllocator("CompositorBridgeParent")
+  , mWidgetProxy(aWidget)
   , mIsTesting(false)
   , mPendingTransaction(0)
   , mPaused(false)
   , mUseExternalSurfaceSize(aUseExternalSurfaceSize)
-  , mEGLSurfaceSize(aSurfaceWidth, aSurfaceHeight)
+  , mEGLSurfaceSize(aSurfaceSize)
   , mPauseCompositionMonitor("PauseCompositionMonitor")
   , mResumeCompositionMonitor("ResumeCompositionMonitor")
   , mResetCompositorMonitor("ResetCompositorMonitor")
@@ -611,7 +611,6 @@ CompositorBridgeParent::CompositorBridgeParent(widget::CompositorWidgetProxy* aW
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(CompositorThread(),
              "The compositor thread must be Initialized before instanciating a CompositorBridgeParent.");
-  MOZ_COUNT_CTOR(CompositorBridgeParent);
 
   // Always run destructor on the main thread
   SetMessageLoopToPostDestructionTo(MessageLoop::current());
@@ -652,7 +651,6 @@ CompositorBridgeParent::RootLayerTreeId()
 CompositorBridgeParent::~CompositorBridgeParent()
 {
   MOZ_ASSERT(NS_IsMainThread());
-  MOZ_COUNT_DTOR(CompositorBridgeParent);
 
   InfallibleTArray<PTextureParent*> textures;
   ManagedPTextureParent(textures);
@@ -670,11 +668,16 @@ CompositorBridgeParent::ForceIsFirstPaint()
   mCompositionManager->ForceIsFirstPaint();
 }
 
-bool
-CompositorBridgeParent::RecvWillClose()
+void
+CompositorBridgeParent::StopAndClearResources()
 {
+  CancelCurrentCompositeTask();
+  if (mForceCompositionTask) {
+    mForceCompositionTask->Cancel();
+    mForceCompositionTask = nullptr;
+  }
+
   mPaused = true;
-  RemoveCompositor(mCompositorID);
 
   // Ensure that the layer manager is destroyed before CompositorBridgeChild.
   if (mLayerManager) {
@@ -695,6 +698,14 @@ CompositorBridgeParent::RecvWillClose()
     mCompositor = nullptr;
   }
 
+  // After this point, it is no longer legal to access the widget.
+  mWidgetProxy = nullptr;
+}
+
+bool
+CompositorBridgeParent::RecvWillClose()
+{
+  StopAndClearResources();
   return true;
 }
 
@@ -849,28 +860,9 @@ CompositorBridgeParent::UpdateVisibleRegion(const VisibilityCounter& aCounter,
 void
 CompositorBridgeParent::ActorDestroy(ActorDestroyReason why)
 {
-  CancelCurrentCompositeTask();
-  if (mForceCompositionTask) {
-    mForceCompositionTask->Cancel();
-    mForceCompositionTask = nullptr;
-  }
-  mPaused = true;
+  StopAndClearResources();
+
   RemoveCompositor(mCompositorID);
-
-  if (mLayerManager) {
-    mLayerManager->Destroy();
-    mLayerManager = nullptr;
-  }
-
-  { // scope lock
-    MonitorAutoLock lock(*sIndirectLayerTreesLock);
-    sIndirectLayerTrees.erase(mRootLayerTreeID);
-  }
-
-  if (mCompositor) {
-    mCompositor->Destroy();
-    mCompositor = nullptr;
-  }
 
   mCompositionManager = nullptr;
 
@@ -880,6 +872,11 @@ CompositorBridgeParent::ActorDestroy(ActorDestroyReason why)
   }
 
   mCompositorScheduler->Destroy();
+
+  { // scope lock
+    MonitorAutoLock lock(*sIndirectLayerTreesLock);
+    sIndirectLayerTrees.erase(mRootLayerTreeID);
+  }
 
   // There are chances that the ref count reaches zero on the main thread shortly
   // after this function returns while some ipdl code still needs to run on
@@ -1562,7 +1559,7 @@ CompositorBridgeParent::DeallocPLayerTransactionParent(PLayerTransactionParent* 
   return true;
 }
 
-CompositorBridgeParent* CompositorBridgeParent::GetCompositor(uint64_t id)
+CompositorBridgeParent* CompositorBridgeParent::GetCompositorBridgeParent(uint64_t id)
 {
   CompositorMap::iterator it = sCompositorMap->find(id);
   return it != sCompositorMap->end() ? it->second : nullptr;
@@ -1815,15 +1812,15 @@ CompositorBridgeParent::RequestNotifyLayerTreeCleared(uint64_t aLayersId, Compos
  */
 class CrossProcessCompositorBridgeParent final : public PCompositorBridgeParent,
                                                  public ShadowLayersManager,
-                                                 public HostIPCAllocator,
+                                                 public CompositorBridgeParentIPCAllocator,
                                                  public ShmemAllocator
 {
   friend class CompositorBridgeParent;
 
 public:
   explicit CrossProcessCompositorBridgeParent(Transport* aTransport)
-    : mTransport(aTransport)
-    , mSubprocess(nullptr)
+    : CompositorBridgeParentIPCAllocator("CrossProcessCompositorBridgeParent")
+    , mTransport(aTransport)
     , mNotifyAfterRemotePaint(false)
     , mDestroyCalled(false)
   {
@@ -1956,7 +1953,8 @@ public:
   virtual PTextureParent* AllocPTextureParent(const SurfaceDescriptor& aSharedData,
                                               const LayersBackend& aLayersBackend,
                                               const TextureFlags& aFlags,
-                                              const uint64_t& aId) override;
+                                              const uint64_t& aId,
+                                              const uint64_t& aSerial) override;
 
   virtual bool DeallocPTextureParent(PTextureParent* actor) override;
 
@@ -1979,6 +1977,13 @@ public:
     return OtherPid();
   }
 
+  virtual void SendAsyncMessage(const InfallibleTArray<AsyncParentMessageData>& aMessage) override
+  {
+    Unused << SendParentAsyncMessages(aMessage);
+  }
+
+  virtual CompositorBridgeParentIPCAllocator* AsCompositorBridgeParentIPCAllocator() override { return this; }
+
 protected:
   void OnChannelConnected(int32_t pid) override {
     mCompositorThreadHolder = CompositorThreadHolder::GetSingleton();
@@ -1994,7 +1999,6 @@ private:
   // ourself.  This is released (deferred) in ActorDestroy().
   RefPtr<CrossProcessCompositorBridgeParent> mSelfRef;
   Transport* mTransport;
-  ipc::GeckoChildProcessHost* mSubprocess;
 
   RefPtr<CompositorThreadHolder> mCompositorThreadHolder;
   // If true, we should send a RemotePaintIsReady message when the layer transaction
@@ -2154,17 +2158,12 @@ OpenCompositor(CrossProcessCompositorBridgeParent* aCompositor,
 }
 
 /*static*/ PCompositorBridgeParent*
-CompositorBridgeParent::Create(Transport* aTransport, ProcessId aOtherPid, GeckoChildProcessHost* aProcessHost)
+CompositorBridgeParent::Create(Transport* aTransport, ProcessId aOtherPid)
 {
   gfxPlatform::InitLayersIPC();
 
   RefPtr<CrossProcessCompositorBridgeParent> cpcp =
     new CrossProcessCompositorBridgeParent(aTransport);
-
-  if (aProcessHost) {
-    cpcp->mSubprocess = aProcessHost;
-    aProcessHost->AssociateActor();
-  }
 
   cpcp->mSelfRef = cpcp;
   CompositorLoop()->PostTask(
@@ -2198,9 +2197,10 @@ PTextureParent*
 CompositorBridgeParent::AllocPTextureParent(const SurfaceDescriptor& aSharedData,
                                             const LayersBackend& aLayersBackend,
                                             const TextureFlags& aFlags,
-                                            const uint64_t& aId)
+                                            const uint64_t& aId,
+                                            const uint64_t& aSerial)
 {
-  return TextureHost::CreateIPDLActor(this, aSharedData, aLayersBackend, aFlags);
+  return TextureHost::CreateIPDLActor(this, aSharedData, aLayersBackend, aFlags, aSerial);
 }
 
 bool
@@ -2229,6 +2229,12 @@ void
 CompositorBridgeParent::DeallocShmem(ipc::Shmem& aShmem)
 {
   PCompositorBridgeParent::DeallocShmem(aShmem);
+}
+
+void
+CompositorBridgeParent::SendAsyncMessage(const InfallibleTArray<AsyncParentMessageData>& aMessage)
+{
+  Unused << SendParentAsyncMessages(aMessage);
 }
 
 bool
@@ -2265,11 +2271,6 @@ CrossProcessCompositorBridgeParent::ActorDestroy(ActorDestroyReason aWhy)
 {
   RefPtr<CompositorLRU> lru = CompositorLRU::GetSingleton();
   lru->Remove(this);
-
-  if (mSubprocess) {
-    mSubprocess->DissociateActor();
-    mSubprocess = nullptr;
-  }
 
   // We must keep this object alive untill the code handling message
   // reception is finished on this thread.
@@ -2747,7 +2748,7 @@ CrossProcessCompositorBridgeParent::CloneToplevel(
       Transport* transport = OpenDescriptor(aFds[i].fd(),
                                             Transport::MODE_SERVER);
       PCompositorBridgeParent* compositor =
-        CompositorBridgeParent::Create(transport, base::GetProcId(aPeerProcess), mSubprocess);
+        CompositorBridgeParent::Create(transport, base::GetProcId(aPeerProcess));
       compositor->CloneManagees(this, aCtx);
       compositor->IToplevelProtocol::SetTransport(transport);
       // The reference to the compositor thread is held in OnChannelConnected().
@@ -2763,7 +2764,8 @@ PTextureParent*
 CrossProcessCompositorBridgeParent::AllocPTextureParent(const SurfaceDescriptor& aSharedData,
                                                         const LayersBackend& aLayersBackend,
                                                         const TextureFlags& aFlags,
-                                                        const uint64_t& aId)
+                                                        const uint64_t& aId,
+                                                        const uint64_t& aSerial)
 {
   CompositorBridgeParent::LayerTreeState* state = nullptr;
 
@@ -2786,7 +2788,7 @@ CrossProcessCompositorBridgeParent::AllocPTextureParent(const SurfaceDescriptor&
     gfxDevCrash(gfx::LogReason::PAllocTextureBackendMismatch) << "Texture backend is wrong";
   }
 
-  return TextureHost::CreateIPDLActor(this, aSharedData, aLayersBackend, aFlags);
+  return TextureHost::CreateIPDLActor(this, aSharedData, aLayersBackend, aFlags, aSerial);
 }
 
 bool

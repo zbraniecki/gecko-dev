@@ -30,7 +30,6 @@
 #include "nsIDOMHTMLDocument.h"
 #include "nsIDOMHTMLElement.h"
 #include "nsIWeakReferenceUtils.h"
-#include "nsAutoPtr.h"
 #include "nsThreadUtils.h"
 #include "nsFrameManager.h"
 #include "nsLayoutUtils.h"
@@ -91,7 +90,7 @@
 #include "nsBidiUtils.h"
 #include "nsServiceManagerUtils.h"
 
-#include "URL.h"
+#include "mozilla/dom/URL.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

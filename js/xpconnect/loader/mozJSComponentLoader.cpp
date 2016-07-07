@@ -71,7 +71,7 @@ static const char kJSCachePrefix[] = "jsloader";
 #define XPC_SERIALIZATION_BUFFER_SIZE   (64 * 1024)
 #define XPC_DESERIALIZATION_BUFFER_SIZE (12 * 8192)
 
-// NSPR_LOG_MODULES=JSComponentLoader:5
+// MOZ_LOG=JSComponentLoader:5
 static LazyLogModule gJSCLLog("JSComponentLoader");
 
 #define LOG(args) MOZ_LOG(gJSCLLog, mozilla::LogLevel::Debug, args)
@@ -835,7 +835,8 @@ mozJSComponentLoader::ObjectForLocation(ComponentLoaderInfo& aInfo,
             rv = aInfo.EnsureScriptChannel();
             NS_ENSURE_SUCCESS(rv, rv);
             nsCOMPtr<nsIInputStream> scriptStream;
-            rv = aInfo.ScriptChannel()->Open(getter_AddRefs(scriptStream));
+            rv = NS_MaybeOpenChannelUsingOpen2(aInfo.ScriptChannel(),
+                   getter_AddRefs(scriptStream));
             NS_ENSURE_SUCCESS(rv, rv);
 
             uint64_t len64;

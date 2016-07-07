@@ -5,7 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DocAccessibleParent.h"
-#include "nsAutoPtr.h"
 #include "mozilla/a11y/Platform.h"
 #include "ProxyAccessible.h"
 #include "mozilla/dom/TabParent.h"
@@ -328,6 +327,18 @@ DocAccessibleParent::RecvSelectionEvent(const uint64_t& aID,
 }
 
 bool
+DocAccessibleParent::RecvRoleChangedEvent(const uint32_t& aRole)
+{
+ if (aRole >= roles::LAST_ROLE) {
+   NS_ERROR("child sent bad role in RoleChangedEvent");
+   return false;
+ }
+
+ mRole = static_cast<a11y::role>(aRole);
+ return true;
+}
+
+bool
 DocAccessibleParent::RecvBindChildDoc(PDocAccessibleParent* aChildDoc, const uint64_t& aID)
 {
   // One document should never directly be the child of another.
@@ -358,6 +369,14 @@ DocAccessibleParent::AddChildDoc(DocAccessibleParent* aChildDoc,
 
   ProxyAccessible* outerDoc = e->mProxy;
   MOZ_ASSERT(outerDoc);
+
+  // OuterDocAccessibles are expected to only have a document as a child.
+  // However for compatibility we tolerate replacing one document with another
+  // here.
+  if (outerDoc->ChildrenCount() > 1 ||
+      (outerDoc->ChildrenCount() == 1 && !outerDoc->ChildAt(0)->IsDoc())) {
+    return false;
+  }
 
   aChildDoc->mParent = outerDoc;
   outerDoc->SetChildDoc(aChildDoc);

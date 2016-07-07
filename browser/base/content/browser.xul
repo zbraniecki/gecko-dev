@@ -181,7 +181,6 @@
 
     <panel id="editBookmarkPanel"
            type="arrow"
-           footertype="promobox"
            orient="vertical"
            ignorekeys="true"
            hidden="true"
@@ -566,7 +565,6 @@
   <toolbox id="navigator-toolbox" mode="icons">
     <!-- Menu -->
     <toolbar type="menubar" id="toolbar-menubar" class="chromeclass-menubar" customizable="true"
-             defaultset="menubar-items"
              mode="icons" iconsize="small"
 #ifdef MENUBAR_CAN_AUTOHIDE
              toolbarname="&menubarCmd.label;"
@@ -598,7 +596,6 @@
              iconsize="small"
              aria-label="&tabsToolbar.label;"
              context="toolbar-context-menu"
-             defaultset="tabbrowser-tabs,new-tab-button,alltabs-button"
              collapsed="true">
 
 #if defined(MOZ_WIDGET_GTK) || defined(MOZ_WIDGET_QT)
@@ -680,11 +677,6 @@
              aria-label="&navbarCmd.label;"
              fullscreentoolbar="true" mode="icons" customizable="true"
              iconsize="small"
-#ifdef MOZ_DEV_EDITION
-             defaultset="urlbar-container,search-container,developer-button,bookmarks-menu-button,downloads-button,home-button,loop-button"
-#else
-             defaultset="urlbar-container,search-container,bookmarks-menu-button,downloads-button,home-button,loop-button"
-#endif
              customizationtarget="nav-bar-customization-target"
              overflowable="true"
              overflowbutton="nav-bar-overflow-button"
@@ -743,7 +735,7 @@
                        aria-label="&urlbar.passwordNotificationAnchor.label;"/>
                 <image id="plugins-notification-icon" class="notification-anchor-icon plugin-icon" role="button"
                        aria-label="&urlbar.pluginsNotificationAnchor.label;"/>
-                <image id="web-notifications-notification-icon" class="notification-anchor-icon web-notifications-icon" role="button"
+                <image id="web-notifications-notification-icon" class="notification-anchor-icon desktop-notification-icon" role="button"
                        aria-label="&urlbar.webNotsNotificationAnchor3.label;"/>
                 <image id="webRTC-shareDevices-notification-icon" class="notification-anchor-icon camera-icon" role="button"
                        aria-label="&urlbar.webRTCShareDevicesNotificationAnchor.label;"/>
@@ -757,7 +749,7 @@
                        aria-label="&urlbar.webRTCShareScreenNotificationAnchor.label;"/>
                 <image id="webRTC-sharingScreen-notification-icon" class="notification-anchor-icon screen-icon in-use" role="button"
                        aria-label="&urlbar.webRTCSharingScreenNotificationAnchor.label;"/>
-                <image id="pointerLock-notification-icon" class="notification-anchor-icon pointer-icon" role="button"
+                <image id="pointerLock-notification-icon" class="notification-anchor-icon pointerLock-icon" role="button"
                        aria-label="&urlbar.pointerLockNotificationAnchor.label;"/>
                 <image id="servicesInstall-notification-icon" class="notification-anchor-icon service-icon" role="button"
                        aria-label="&urlbar.servicesNotificationAnchor.label;"/>
@@ -985,7 +977,6 @@
              mode="icons" iconsize="small"
              class="chromeclass-directories"
              context="toolbar-context-menu"
-             defaultset="personal-bookmarks"
              toolbarname="&personalbarCmd.label;" accesskey="&personalbarCmd.accesskey;"
              collapsed="true"
              customizable="true">

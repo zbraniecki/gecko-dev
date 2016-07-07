@@ -263,9 +263,9 @@ partial interface Document {
 //http://dvcs.w3.org/hg/webcomponents/raw-file/tip/spec/custom/index.html#dfn-document-register
 partial interface Document {
     [NewObject, Throws]
-    Element createElement(DOMString localName, DOMString typeExtension);
+    Element createElement(DOMString localName, DOMString? typeExtension);
     [NewObject, Throws]
-    Element createElementNS(DOMString? namespace, DOMString qualifiedName, DOMString typeExtension);
+    Element createElementNS(DOMString? namespace, DOMString qualifiedName, DOMString? typeExtension);
 };
 
 // http://dvcs.w3.org/hg/webperf/raw-file/tip/specs/PageVisibility/Overview.html#sec-document-interface
@@ -392,6 +392,14 @@ partial interface Document {
   [ChromeOnly] readonly attribute boolean isSrcdocDocument;
 };
 
+
+// Extension to give chrome JS the ability to get the underlying
+// sandbox flag attribute
+partial interface Document {
+  [ChromeOnly] readonly attribute DOMString? sandboxFlagsAsString;
+};
+
+
 /**
  * Chrome document anonymous content management.
  * This is a Chrome-only API that allows inserting fixed positioned anonymous
@@ -420,6 +428,12 @@ partial interface Document {
 // the user has interacted with the document or not.
 partial interface Document {
   [ChromeOnly] readonly attribute boolean userHasInteracted;
+};
+
+// Extension to give chrome and XBL JS the ability to determine whether
+// the document is sandboxed without permission to run scripts.
+partial interface Document {
+  [Func="IsChromeOrXBL"] readonly attribute boolean hasScriptsBlockedBySandbox;
 };
 
 Document implements XPathEvaluator;

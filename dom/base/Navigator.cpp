@@ -20,7 +20,6 @@
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsContentPolicyUtils.h"
-#include "nsCORSListenerProxy.h"
 #include "nsISupportsPriority.h"
 #include "nsICachingChannel.h"
 #include "nsIWebContentHandlerRegistrar.h"
@@ -33,6 +32,9 @@
 #include "mozilla/Telemetry.h"
 #include "BatteryManager.h"
 #include "mozilla/dom/DeviceStorageAreaListener.h"
+#ifdef MOZ_GAMEPAD
+#include "mozilla/dom/GamepadServiceTest.h"
+#endif
 #include "mozilla/dom/PowerManager.h"
 #include "mozilla/dom/WakeLock.h"
 #include "mozilla/dom/power/PowerManagerService.h"
@@ -266,6 +268,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
 #endif
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDeviceStorageAreaListener)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPresentation)
+#ifdef MOZ_GAMEPAD
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGamepadServiceTest)
+#endif
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVRGetDevicesPromises)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE_SCRIPT_OBJECTS
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -407,6 +412,13 @@ Navigator::Invalidate()
   if (mDeviceStorageAreaListener) {
     mDeviceStorageAreaListener = nullptr;
   }
+
+#ifdef MOZ_GAMEPAD
+  if (mGamepadServiceTest) {
+    mGamepadServiceTest->Shutdown();
+    mGamepadServiceTest = nullptr;
+  }
+#endif
 
   mVRGetDevicesPromises.Clear();
 }
@@ -2021,6 +2033,15 @@ Navigator::GetGamepads(nsTArray<RefPtr<Gamepad> >& aGamepads,
   win->SetHasGamepadEventListener(true);
   win->GetGamepads(aGamepads);
 }
+
+GamepadServiceTest*
+Navigator::RequestGamepadServiceTest()
+{
+  if (!mGamepadServiceTest) {
+    mGamepadServiceTest = GamepadServiceTest::CreateTestService(mWindow);
+  }
+  return mGamepadServiceTest;
+}
 #endif
 
 already_AddRefed<Promise>
@@ -2726,18 +2747,6 @@ ToCString(const MediaKeySystemConfiguration& aConfig)
     str.Append(ToCString(aConfig.mVideoCapabilities.Value()));
   }
 
-  if (!aConfig.mAudioType.IsEmpty()) {
-    str.AppendPrintf(", audioType='%s'",
-      NS_ConvertUTF16toUTF8(aConfig.mAudioType).get());
-  }
-  if (!aConfig.mInitDataType.IsEmpty()) {
-    str.AppendPrintf(", initDataType='%s'",
-      NS_ConvertUTF16toUTF8(aConfig.mInitDataType).get());
-  }
-  if (!aConfig.mVideoType.IsEmpty()) {
-    str.AppendPrintf(", videoType='%s'",
-      NS_ConvertUTF16toUTF8(aConfig.mVideoType).get());
-  }
   str.AppendLiteral("}");
 
   return str;

@@ -44,6 +44,8 @@ XPCOMUtils.defineLazyModuleGetter(this, "AppConstants",
                                   "resource://gre/modules/AppConstants.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "UpdateUtils",
                                   "resource://gre/modules/UpdateUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "Color",
+                                  "resource://gre/modules/Color.jsm");
 XPCOMUtils.defineLazyServiceGetter(this, "Favicons",
                                    "@mozilla.org/browser/favicon-service;1",
                                    "mozIAsyncFavicons");
@@ -1011,23 +1013,10 @@ var gBrowserInit = {
 
     if (window.matchMedia("(-moz-os-version: windows-win8)").matches &&
         window.matchMedia("(-moz-windows-default-theme)").matches) {
-      let windowFrameColor = Cu.import("resource:///modules/Windows8WindowFrameColor.jsm", {})
-                               .Windows8WindowFrameColor.get();
-
-      // Formula from W3C's WCAG 2.0 spec's color ratio and relative luminance,
-      // section 1.3.4, http://www.w3.org/TR/WCAG20/ .
-      windowFrameColor = windowFrameColor.map((color) => {
-        if (color <= 10) {
-          return color / 255 / 12.92;
-        }
-        return Math.pow(((color / 255) + 0.055) / 1.055, 2.4);
-      });
-      let backgroundLuminance = windowFrameColor[0] * 0.2126 +
-                                windowFrameColor[1] * 0.7152 +
-                                windowFrameColor[2] * 0.0722;
-      let foregroundLuminance = 0; // Default to black for foreground text.
-      let contrastRatio = (backgroundLuminance + 0.05) / (foregroundLuminance + 0.05);
-      if (contrastRatio < 3) {
+      let windowFrameColor = new Color(...Cu.import("resource:///modules/Windows8WindowFrameColor.jsm", {})
+                                            .Windows8WindowFrameColor.get());
+      // Default to black for foreground text.
+      if (!windowFrameColor.isContrastRatioAcceptable(new Color(0, 0, 0))) {
         document.documentElement.setAttribute("darkwindowframe", "true");
       }
     }
@@ -1172,6 +1161,7 @@ var gBrowserInit = {
       setTimeout(function() { SafeBrowsing.init(); }, 2000);
     }
 
+    Services.obs.addObserver(gIdentityHandler, "perm-changed", false);
     Services.obs.addObserver(gSessionHistoryObserver, "browser:purge-session-history", false);
     Services.obs.addObserver(gXPInstallObserver, "addon-install-disabled", false);
     Services.obs.addObserver(gXPInstallObserver, "addon-install-started", false);
@@ -1495,6 +1485,7 @@ var gBrowserInit = {
       gBrowserThumbnails.uninit();
       FullZoom.destroy();
 
+      Services.obs.removeObserver(gIdentityHandler, "perm-changed");
       Services.obs.removeObserver(gSessionHistoryObserver, "browser:purge-session-history");
       Services.obs.removeObserver(gXPInstallObserver, "addon-install-disabled");
       Services.obs.removeObserver(gXPInstallObserver, "addon-install-started");
@@ -3913,11 +3904,6 @@ function addToUrlbarHistory(aUrlToAdd) {
     PlacesUIUtils.markPageAsTyped(aUrlToAdd);
 }
 
-function toJavaScriptConsole()
-{
-  toOpenWindowByType("global:console", "chrome://global/content/console.xul");
-}
-
 function BrowserDownloadsUI()
 {
   if (PrivateBrowsingUtils.isWindowPrivate(window)) {
@@ -4122,7 +4108,7 @@ function updateUserContextUIIndicator()
   }
 
   let label = document.getElementById("userContext-label");
-  label.value = ContextualIdentityService.getUserContextLabel(userContextId);
+  label.setAttribute('value', ContextualIdentityService.getUserContextLabel(userContextId));
   label.style.color = identity.color;
 
   let indicator = document.getElementById("userContext-indicator");
@@ -5541,6 +5527,12 @@ function handleLinkClick(event, href, linkNode) {
                  referrerURI: referrerURI,
                  referrerPolicy: referrerPolicy,
                  noReferrer: BrowserUtils.linkHasNoReferrer(linkNode) };
+
+  // The new tab/window must use the same userContextId
+  if (doc.nodePrincipal.originAttributes.userContextId) {
+    params.userContextId = doc.nodePrincipal.originAttributes.userContextId;
+  }
+
   openLinkIn(href, where, params);
   event.preventDefault();
   return true;
@@ -6583,13 +6575,25 @@ var gIdentityHandler = {
     delete this._identityBox;
     return this._identityBox = document.getElementById("identity-box");
   },
+  get _identityPopupMultiView () {
+    delete _identityPopupMultiView;
+    return document.getElementById("identity-popup-multiView");
+  },
   get _identityPopupContentHosts () {
     delete this._identityPopupContentHosts;
-    return this._identityPopupContentHosts = [...document.querySelectorAll(".identity-popup-headline.host")];
+    let selector = ".identity-popup-headline.host";
+    return this._identityPopupContentHosts = [
+      ...this._identityPopupMultiView._mainView.querySelectorAll(selector),
+      ...document.querySelectorAll(selector)
+    ];
   },
   get _identityPopupContentHostless () {
     delete this._identityPopupContentHostless;
-    return this._identityPopupContentHostless = [...document.querySelectorAll(".identity-popup-headline.hostless")];
+    let selector = ".identity-popup-headline.hostless";
+    return this._identityPopupContentHostless = [
+      ...this._identityPopupMultiView._mainView.querySelectorAll(selector),
+      ...document.querySelectorAll(selector)
+    ];
   },
   get _identityPopupContentOwner () {
     delete this._identityPopupContentOwner;
@@ -6649,7 +6653,7 @@ var gIdentityHandler = {
   },
 
   toggleSubView(name, anchor) {
-    let view = document.getElementById("identity-popup-multiView");
+    let view = this._identityPopupMultiView;
     if (view.showingSubView) {
       view.showMainView();
     } else {
@@ -6888,6 +6892,10 @@ var gIdentityHandler = {
         this._identityBox.classList.add("insecureLoginForms");
       }
       tooltip = gNavigatorBundle.getString("identity.unknown.tooltip");
+    }
+
+    if (SitePermissions.hasGrantedPermissions(this._uri)) {
+      this._identityBox.classList.add("grantedPermissions");
     }
 
     // Push the appropriate strings out to the UI
@@ -7178,6 +7186,12 @@ var gIdentityHandler = {
     }
   },
 
+  observe(subject, topic, data) {
+    if (topic == "perm-changed") {
+      this.refreshIdentityBlock();
+    }
+  },
+
   onDragStart: function (event) {
     if (gURLBar.getAttribute("pageproxystate") != "valid")
       return;
@@ -7234,8 +7248,13 @@ var gIdentityHandler = {
     label.setAttribute("control", menulist.getAttribute("id"));
     label.textContent = aPermission.label;
 
+    let img = document.createElement("image");
+    img.setAttribute("class",
+      "identity-popup-permission-icon " + aPermission.id + "-icon");
+
     let container = document.createElement("hbox");
     container.setAttribute("align", "center");
+    container.appendChild(img);
     container.appendChild(label);
     container.appendChild(menulist);
 

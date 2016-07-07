@@ -936,7 +936,6 @@ public:
   // or height), imposed by its flex container.
   NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(FlexItemMainSizeOverride, nscoord)
 
-  NS_DECLARE_FRAME_PROPERTY_RELEASABLE(CachedBackgroundImage, gfxASurface)
   NS_DECLARE_FRAME_PROPERTY_RELEASABLE(CachedBackgroundImageDT, DrawTarget)
 
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(InvalidationRect, nsRect)
@@ -1545,6 +1544,14 @@ public:
    */
   virtual nsresult  GetPointFromOffset(int32_t                  inOffset,
                                        nsPoint*                 outPoint) = 0;
+
+  /**
+   * Get a list of character rects in a given range.
+   * This is similar version of GetPointFromOffset.
+   */
+  virtual nsresult  GetCharacterRectsInRange(int32_t aInOffset,
+                                             int32_t aLength,
+                                             nsTArray<nsRect>& aRects) = 0;
   
   /**
    * Get the child frame of this frame which contains the given
@@ -3287,9 +3294,7 @@ private:
                                       DestroyPaintedPresShellList)
   
   nsTArray<nsWeakPtr>* PaintedPresShellList() {
-    nsTArray<nsWeakPtr>* list = static_cast<nsTArray<nsWeakPtr>*>(
-      Properties().Get(PaintedPresShellsProperty())
-    );
+    nsTArray<nsWeakPtr>* list = Properties().Get(PaintedPresShellsProperty());
     
     if (!list) {
       list = new nsTArray<nsWeakPtr>();

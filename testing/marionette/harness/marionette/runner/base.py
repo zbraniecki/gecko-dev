@@ -9,6 +9,7 @@ import mozinfo
 import moznetwork
 import os
 import random
+import re
 import socket
 import sys
 import time
@@ -252,7 +253,11 @@ class BaseMarionetteArguments(ArgumentParser):
         self.add_argument('tests',
                           nargs='*',
                           default=[],
-                          help='Tests to run.')
+                          help='Tests to run. '
+                               'One or more paths to test files (Python or JS), '
+                               'manifest files (.ini) or directories. '
+                               'When a directory is specified, '
+                               'all test files in the directory will be run.')
         self.add_argument('-v', '--verbose',
                         action='count',
                         help='Increase verbosity to include debug messages with -v, '
@@ -370,12 +375,12 @@ class BaseMarionetteArguments(ArgumentParser):
 
         self.argument_containers.append(container)
 
-    def parse_args(self, args=None, values=None):
-        args = ArgumentParser.parse_args(self, args, values)
+    def parse_known_args(self, args=None, namespace=None):
+        args, remainder = ArgumentParser.parse_known_args(self, args, namespace)
         for container in self.argument_containers:
             if hasattr(container, 'parse_args_handler'):
                 container.parse_args_handler(args)
-        return args
+        return (args, remainder)
 
     def _get_preferences(self, prefs_files, prefs_args):
         """
@@ -392,11 +397,15 @@ class BaseMarionetteArguments(ArgumentParser):
         separator = ':'
         cli_prefs = []
         if prefs_args:
+            misformatted = []
             for pref in prefs_args:
                 if separator not in pref:
-                    continue
-                cli_prefs.append(pref.split(separator, 1))
-
+                    misformatted.append(pref)
+                else:
+                    cli_prefs.append(pref.split(separator, 1))
+            if misformatted:
+                self._print_message("Warning: Ignoring preferences not in key{}value format: {}\n"
+                                    .format(separator, ", ".join(misformatted)))
         # string preferences
         prefs.add(cli_prefs, cast=True)
 
@@ -404,17 +413,14 @@ class BaseMarionetteArguments(ArgumentParser):
 
     def verify_usage(self, args):
         if not args.tests:
-            print 'must specify one or more test files, manifests, or directories'
-            sys.exit(1)
+            self.error('You must specify one or more test files, manifests, or directories.')
 
-        for path in args.tests:
-            if not os.path.exists(path):
-                print '{0} does not exist'.format(path)
-                sys.exit(1)
+        missing_tests = [path for path in args.tests if not os.path.exists(path)]
+        if missing_tests:
+            self.error("Test file(s) not found: " + " ".join([path for path in missing_tests]))
 
         if not args.address and not args.binary:
-            print 'must specify --binary, or --address'
-            sys.exit(1)
+            self.error('You must specify --binary, or --address')
 
         if args.total_chunks is not None and args.this_chunk is None:
             self.error('You must specify which chunk to run.')
@@ -423,7 +429,7 @@ class BaseMarionetteArguments(ArgumentParser):
             self.error('You must specify how many chunks to split the tests into.')
 
         if args.total_chunks is not None:
-            if not 1 <= args.total_chunks:
+            if not 1 < args.total_chunks:
                 self.error('Total chunks must be greater than 1.')
             if not 1 <= args.this_chunk <= args.total_chunks:
                 self.error('Chunk to run must be between 1 and %s.' % args.total_chunks)
@@ -692,9 +698,6 @@ class BaseMarionetteTestRunner(object):
             kwargs['workspace'] = self.workspace_path
         return kwargs
 
-    def start_marionette(self):
-        self.marionette = self.driverclass(**self._build_kwargs())
-
     def launch_test_container(self):
         if self.marionette.session is None:
             self.marionette.start_session()
@@ -751,22 +754,12 @@ setReq.onerror = function() {
             traceback.print_exc()
         return crash
 
-    def run_tests(self, tests):
+    def _initialize_test_run(self, tests):
         assert len(tests) > 0
         assert len(self.test_handlers) > 0
         self.reset_test_stats()
-        self.start_time = time.time()
 
-        need_external_ip = True
-        if not self.marionette:
-            self.start_marionette()
-            # if we're working against a desktop version, we usually don't need
-            # an external ip
-            if self.capabilities['device'] == "desktop":
-                need_external_ip = False
-        self.logger.info('Initial Profile Destination is '
-                         '"{}"'.format(self.marionette.profile_path))
-
+    def _set_baseurl(self, need_external_ip):
         # Gaia sets server_root and that means we shouldn't spin up our own httpd
         if not self.httpd:
             if self.server_root is None or os.path.isdir(self.server_root):
@@ -778,29 +771,22 @@ setReq.onerror = function() {
                 self.marionette.baseurl = self.server_root
                 self.logger.info("using remote content from %s" % self.marionette.baseurl)
 
-        device_info = None
-
+    def _add_tests(self, tests):
         for test in tests:
             self.add_test(test)
 
-        # ensure we have only tests files with names starting with 'test_'
-        invalid_tests = \
-            [t['filepath'] for t in self.tests
-             if not os.path.basename(t['filepath']).startswith('test_')]
+        pattern = re.compile("^test(((_.+?)+?\.((py)|(js)))|(([A-Z].*?)+?\.js))$")
+        def is_valid(test):
+            filename = os.path.basename(test['filepath'])
+            return pattern.match(filename)
+        invalid_tests = [t['filepath'] for t in self.tests if not is_valid(t)]
         if invalid_tests:
-            raise Exception("Tests file names must starts with 'test_'."
+            raise Exception("Test file names must be of the form "
+                            "'test_something.py', 'test_something.js', or 'testSomething.js'."
                             " Invalid test names:\n  %s"
                             % '\n  '.join(invalid_tests))
 
-        self.logger.info("running with e10s: {}".format(self.e10s))
-        version_info = mozversion.get_version(binary=self.bin,
-                                              sources=self.sources,
-                                              dm_type=os.environ.get('DM_TRANS', 'adb') )
-
-        self.logger.suite_start(self.tests,
-                                version_info=version_info,
-                                device_info=device_info)
-
+    def _log_skipped_tests(self):
         for test in self.manifest_skipped_tests:
             name = os.path.basename(test['path'])
             self.logger.test_start(name)
@@ -809,13 +795,40 @@ setReq.onerror = function() {
                                  message=test['disabled'])
             self.todo += 1
 
+    def run_tests(self, tests):
+        start_time = time.time()
+        self._initialize_test_run(tests)
+        self.marionette = self.driverclass(**self._build_kwargs())
+
+        # Determine if we need to bind the HTTPD to an external IP.
+        # We typically only need to do so if the remote is running
+        # on an emulated system, like Android (Fennec).
+        if self.capabilities["browserName"] == "Fennec":
+            need_external_ip = True
+        else:
+            need_external_ip = False
+
+        self._set_baseurl(need_external_ip)
+        self.logger.info("Initial profile destination is %s" % self.marionette.profile_path)
+
+        self._add_tests(tests)
+
+        self.logger.info("running with e10s: {}".format(self.e10s))
+        version_info = mozversion.get_version(binary=self.bin,
+                                              sources=self.sources,
+                                              dm_type=os.environ.get('DM_TRANS', 'adb') )
+
+        self.logger.suite_start(self.tests, version_info=version_info)
+
+        self._log_skipped_tests()
+
         interrupted = None
         try:
             counter = self.repeat
             while counter >=0:
-                round = self.repeat - counter
-                if round > 0:
-                    self.logger.info('\nREPEAT %d\n-------' % round)
+                round_num = self.repeat - counter
+                if round_num > 0:
+                    self.logger.info('\nREPEAT %d\n-------' % round_num)
                 self.run_test_sets()
                 counter -= 1
         except KeyboardInterrupt:
@@ -825,6 +838,21 @@ setReq.onerror = function() {
             interrupted = sys.exc_info()
         try:
             self._print_summary(tests)
+            self.record_crash()
+            self.elapsedtime = time.time() - start_time
+
+            if self.marionette.instance:
+                self.marionette.instance.close()
+                self.marionette.instance = None
+            self.marionette.cleanup()
+
+            for run_tests in self.mixin_run_tests:
+                run_tests(tests)
+            if self.shuffle:
+                self.logger.info("Using seed where seed is:%d" % self.shuffle_seed)
+
+            self.logger.info('mode: {}'.format('e10s' if self.e10s else 'non-e10s'))
+            self.logger.suite_end()
         except:
             # raise only the exception if we were not interrupted
             if not interrupted:
@@ -851,24 +879,6 @@ setReq.onerror = function() {
             for failed_test in self.failures:
                 self.logger.info('%s' % failed_test[0])
 
-        self.record_crash()
-        self.end_time = time.time()
-        self.elapsedtime = self.end_time - self.start_time
-
-        if self.marionette.instance:
-            self.marionette.instance.close()
-            self.marionette.instance = None
-
-        self.marionette.cleanup()
-
-        for run_tests in self.mixin_run_tests:
-            run_tests(tests)
-        if self.shuffle:
-            self.logger.info("Using seed where seed is:%d" % self.shuffle_seed)
-
-        self.logger.info('mode: {}'.format('e10s' if self.e10s else 'non-e10s'))
-        self.logger.suite_end()
-
     def start_httpd(self, need_external_ip):
         warnings.warn("start_httpd has been deprecated in favour of create_httpd",
             DeprecationWarning)
@@ -889,10 +899,15 @@ setReq.onerror = function() {
         if os.path.isdir(filepath):
             for root, dirs, files in os.walk(filepath):
                 for filename in files:
-                    if (filename.startswith('test_') and
+                    if (filename.endswith('.ini')):
+                        msg_tmpl = ("Ignoring manifest '{0}'; running all tests in '{1}'."
+                                    " See --help for details.")
+                        relpath = os.path.relpath(os.path.join(root, filename), filepath)
+                        self.logger.warning(msg_tmpl.format(relpath, filepath))
+                    elif (filename.startswith('test_') and
                         (filename.endswith('.py') or filename.endswith('.js'))):
-                        filepath = os.path.join(root, filename)
-                        self.add_test(filepath)
+                        test_file = os.path.join(root, filename)
+                        self.add_test(test_file)
             return
 
 

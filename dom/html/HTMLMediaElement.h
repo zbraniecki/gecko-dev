@@ -6,6 +6,7 @@
 #ifndef mozilla_dom_HTMLMediaElement_h
 #define mozilla_dom_HTMLMediaElement_h
 
+#include "nsAutoPtr.h"
 #include "nsIDOMHTMLMediaElement.h"
 #include "nsGenericHTMLElement.h"
 #include "MediaDecoderOwner.h"
@@ -78,7 +79,6 @@ class VideoTrackList;
 
 class HTMLMediaElement : public nsGenericHTMLElement,
                          public nsIDOMHTMLMediaElement,
-                         public nsIObserver,
                          public MediaDecoderOwner,
                          public nsIAudioChannelAgentCallback,
                          public PrincipalChangeObserver<DOMMediaStream>
@@ -112,8 +112,6 @@ public:
 
   // nsIDOMHTMLMediaElement
   NS_DECL_NSIDOMHTMLMEDIAELEMENT
-
-  NS_DECL_NSIOBSERVER
 
   NS_DECL_NSIAUDIOCHANNELAGENTCALLBACK
 
@@ -481,7 +479,7 @@ public:
 
   void FastSeek(double aTime, ErrorResult& aRv);
 
-  void SeekToNextFrame(ErrorResult& aRv);
+  already_AddRefed<Promise> SeekToNextFrame(ErrorResult& aRv);
 
   double Duration() const;
 
@@ -705,6 +703,11 @@ public:
       mTextTrackManager->NotifyCueRemoved(aCue);
     }
   }
+  void NotifyCueUpdated(TextTrackCue *aCue) {
+    if (mTextTrackManager) {
+      mTextTrackManager->NotifyCueUpdated(aCue);
+    }
+  }
 
   /**
    * A public wrapper for FinishDecoderSetup()
@@ -729,11 +732,13 @@ public:
 protected:
   virtual ~HTMLMediaElement();
 
+  class ChannelLoader;
   class MediaLoadListener;
   class MediaStreamTracksAvailableCallback;
   class MediaStreamTrackListener;
   class StreamListener;
   class StreamSizeListener;
+  class ShutdownObserver;
 
   MediaDecoderOwner::NextFrameStatus NextFrameStatus();
   void SetDecoder(MediaDecoder* aDecoder) {
@@ -982,6 +987,11 @@ protected:
   void DoRemoveSelfReference();
 
   /**
+   * Called when "xpcom-shutdown" event is received.
+   */
+  void NotifyShutdownEvent();
+
+  /**
    * Possible values of the 'preload' attribute.
    */
   enum PreloadAttrValue {
@@ -1119,7 +1129,7 @@ protected:
   // seek target, or PrevSyncPoint if a quicker but less precise seek is
   // desired, and we'll seek to the sync point (keyframe and/or start of the
   // next block of audio samples) preceeding seek target.
-  void Seek(double aTime, SeekTarget::Type aSeekType, ErrorResult& aRv);
+  already_AddRefed<Promise> Seek(double aTime, SeekTarget::Type aSeekType, ErrorResult& aRv);
 
   // A method to check if we are playing through the AudioChannel.
   bool IsPlayingThroughTheAudioChannel() const;
@@ -1234,6 +1244,8 @@ protected:
   // mSrcStream.
   RefPtr<StreamSizeListener> mMediaStreamSizeListener;
 
+  const RefPtr<ShutdownObserver> mShutdownObserver;
+
   // Holds a reference to the MediaSource, if any, referenced by the src
   // attribute on the media element.
   RefPtr<MediaSource> mSrcMediaSource;
@@ -1244,11 +1256,7 @@ protected:
   // that resolved to a MediaSource.
   RefPtr<MediaSource> mMediaSource;
 
-  // Holds a reference to the first channel we open to the media resource.
-  // Once the decoder is created, control over the channel passes to the
-  // decoder, and we null out this reference. We must store this in case
-  // we need to cancel the channel before control of it passes to the decoder.
-  nsCOMPtr<nsIChannel> mChannel;
+  RefPtr<ChannelLoader> mChannelLoader;
 
   // Error attribute
   RefPtr<MediaError> mError;
