@@ -15,14 +15,24 @@ Cu.import("resource://gre/modules/AppConstants.jsm");
 Cu.import('resource://gre/modules/L10nService.jsm');
 Cu.import('resource://gre/modules/L10nRegistry.jsm');
 
-/*
 performance.mark('l10nservice-start');
 const langs = ['pl', 'en-US'];
-var x = L10nService.getResources(langs, [
+/*
+const resources = [
+  'a',
+  'b',
+  'c',
+  'd'
+];
+*/
+/*
+const resources = [
   '/branding/brand.ftl',
   '/global/aboutSupport.ftl',
-  '/global/resetProfile.ftl'
-]);
+  '/global/resetProfile.ftl',
+];
+
+var x = L10nService.getResources(langs, resources);
 performance.mark('l10nservice-gotresources');
 console.log('L10nService Object:');
 console.log(x);
@@ -35,11 +45,7 @@ x.resBundles[0].fetch().then(res => {
 });
 
 performance.mark('l10nregistry-start');
-L10nRegistry.getResources(langs, [
-  '/branding/brand.ftl',
-  '/global/aboutSupport.ftl',
-  '/global/resetProfile.ftl'
-]).then(x => {
+L10nRegistry.getResources(langs, resources).then(x => {
   performance.mark('l10nregistry-gotresources');
   console.log('L10nRegistry Object:');
   console.log(x);
@@ -60,7 +66,6 @@ L10nRegistry.getResources(langs, [
   })
 });
 */
-
 XPCOMUtils.defineLazyModuleGetter(this, "RelativeTimeFormat",
   "resource://gre/modules/IntlRelativeTimeFormat.jsm");
 

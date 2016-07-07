@@ -213,6 +213,7 @@ class FileSource extends Source {
 
   loadResource(resId, lang) {
     const path = this.resMap[resId][lang];
+   // return Promise.resolve(resId + this.name);
     return load(path);
   }
 }
@@ -311,12 +312,15 @@ function getSource(resId, locales, sourcesPtr = 0) {
   if (!index.get(resId).has(lang)) {
     return getSource(resId, locales.slice(1));
   }
+
   if (index.get(resId).get(lang).has(source)) {
     return [lang, source];
   }
 
-  if (sourcesPtr + 1 < sources.length) {
-    return getSource(resId, locales, sourcesPtr + 1);
+  for (let i = 0; i < sources.length; i++) {
+    if (index.get(resId).get(lang).has(sources[i])) {
+      return [lang, sources[i]];
+    }
   }
 
   if (locales > 1) {
@@ -337,9 +341,6 @@ function buildResBundleData(resIds, subLocales, sources, firstLocale) {
 
     return CurPromise.all(resIds.map(resId => {
       let [lang, source] = getSource(resId, subLocales, sources.indexOf(subSources[j]));
-      if (lang === null && source === null) {
-        return null;
-      }
       return fetch ? this.fetchResource(source, resId, lang).then(data => {
         return {
           resId,
@@ -355,21 +356,13 @@ function buildResBundleData(resIds, subLocales, sources, firstLocale) {
       };
     })).then((resList) => {
       const resSources = {};
-      let missing = false;
       resList.forEach(res => {
-        if (res === null) {
-          missing = true;
-          return;
-        };
         resSources[res.resId] = {
           lang: res.lang,
           source: res.source,
           data: res.data
         }
       });
-      if (missing) {
-        return null;
-      }
       return {
         locale,
         resources: resSources
@@ -401,7 +394,7 @@ this.L10nRegistry = {
     })).then(resBundles => {
       return {
         supportedLocales: locales,
-        bundles: [].concat.apply([], resBundles).filter(res => res !== null)
+        bundles: [].concat.apply([], resBundles)
       }
     })
   },
@@ -440,7 +433,6 @@ this.L10nRegistry = {
   }
 };
 
-
 const toolkitFileSource = new FileSource('toolkit', {
   '/global/aboutSupport.ftl': {
     'en-US': 'chrome://global/locale/aboutSupport.en-US.ftl',
@@ -459,7 +451,7 @@ const browserFileSource = new FileSource('browser', {
   },
   '/browser/aboutDialog.ftl': {
     'en-US': 'chrome://browser/locale/aboutDialog.en-US.ftl',
-    'pl': 'chrome://browser/locale/aboutDialog.pl.ftl'
+    'pl': 'chrome://browser/locale3aboutDialog.pl.ftl'
   },
   '/browser/browser.ftl': {
     'en-US': 'chrome://browser/locale/browser.en-US.ftl',
@@ -473,3 +465,37 @@ const browserFileSource = new FileSource('browser', {
 
 L10nRegistry.registerSource(toolkitFileSource);
 L10nRegistry.registerSource(browserFileSource);
+
+/*
+const source1 = new FileSource('source1', {
+  'a': {
+    'en-US': 'a',
+  },
+  'b': {
+    'en-US': 'b',
+  },
+  'c': {
+    'en-US': 'c',
+  },
+});
+const source2 = new FileSource('source2', {
+  'a': {
+    'en-US': 'a',
+  },
+});
+
+const source3 = new FileSource('source3', {
+  'b': {
+    'en-US': 'b',
+  },
+  'c': {
+    'en-US': 'c',
+  },
+  'd': {
+    'en-US': 'd',
+  },
+});
+L10nRegistry.registerSource(source3);
+L10nRegistry.registerSource(source2);
+L10nRegistry.registerSource(source1);
+*/
