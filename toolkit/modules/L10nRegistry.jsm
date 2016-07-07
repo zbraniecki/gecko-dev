@@ -337,6 +337,9 @@ function buildResBundleData(resIds, subLocales, sources, firstLocale) {
 
     return CurPromise.all(resIds.map(resId => {
       let [lang, source] = getSource(resId, subLocales, sources.indexOf(subSources[j]));
+      if (lang === null && source === null) {
+        return null;
+      }
       return fetch ? this.fetchResource(source, resId, lang).then(data => {
         return {
           resId,
@@ -352,13 +355,21 @@ function buildResBundleData(resIds, subLocales, sources, firstLocale) {
       };
     })).then((resList) => {
       const resSources = {};
+      let missing = false;
       resList.forEach(res => {
+        if (res === null) {
+          missing = true;
+          return;
+        };
         resSources[res.resId] = {
           lang: res.lang,
           source: res.source,
           data: res.data
         }
       });
+      if (missing) {
+        return null;
+      }
       return {
         locale,
         resources: resSources
@@ -390,7 +401,7 @@ this.L10nRegistry = {
     })).then(resBundles => {
       return {
         supportedLocales: locales,
-        bundles: [].concat.apply([], resBundles)
+        bundles: [].concat.apply([], resBundles).filter(res => res !== null)
       }
     })
   },

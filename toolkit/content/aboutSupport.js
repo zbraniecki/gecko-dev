@@ -11,13 +11,15 @@ Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/Troubleshoot.jsm");
 Cu.import("resource://gre/modules/ResetProfile.jsm");
 Cu.import("resource://gre/modules/AppConstants.jsm");
-/*
+
 Cu.import('resource://gre/modules/L10nService.jsm');
 Cu.import('resource://gre/modules/L10nRegistry.jsm');
 
-
+/*
 performance.mark('l10nservice-start');
-var x = L10nService.getResources(['pl', 'en-US'], [
+const langs = ['pl', 'en-US'];
+var x = L10nService.getResources(langs, [
+  '/branding/brand.ftl',
   '/global/aboutSupport.ftl',
   '/global/resetProfile.ftl'
 ]);
@@ -33,7 +35,8 @@ x.resBundles[0].fetch().then(res => {
 });
 
 performance.mark('l10nregistry-start');
-L10nRegistry.getResources(['pl', 'en-US'], [
+L10nRegistry.getResources(langs, [
+  '/branding/brand.ftl',
   '/global/aboutSupport.ftl',
   '/global/resetProfile.ftl'
 ]).then(x => {
@@ -57,6 +60,7 @@ L10nRegistry.getResources(['pl', 'en-US'], [
   })
 });
 */
+
 XPCOMUtils.defineLazyModuleGetter(this, "RelativeTimeFormat",
   "resource://gre/modules/IntlRelativeTimeFormat.jsm");
 
