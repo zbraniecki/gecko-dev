@@ -45,7 +45,7 @@ const chromeMapping = {
 
 const HTTP_STATUS_CODE_OK = 200;
 
-function load2(path) {
+function load(path) {
   let url = chromeMapping[path];
 
 	return new Promise((resolve, reject) => {
@@ -78,10 +78,37 @@ function load2(path) {
 
 const GreDir = Services.dirsvc.get("GreD", Ci.nsIFile).path;
 
-function load(resPath) {
+function load3(resPath) {
   let path = OS.Path.join(GreDir, resPath);
-  //return Promise.resolve('foo = Foo');
   return OS.File.read(path, {encoding: "utf-8"});
+}
+
+function load4(resPath) {
+	return new Promise((resolve, reject) => {
+    let path = OS.Path.join(GreDir, resPath);
+		let uri = 'file://' + path;
+
+		NetUtil.asyncFetch({uri, loadUsingSystemPrincipal: true}, (inputStream, status) => {
+			if (!Components.isSuccessCode(status)) {
+				reject(new Error(status));
+				return;
+
+			}
+			try {
+				let text = NetUtil.readInputStreamToString(inputStream, inputStream.available(),
+					{charset: "utf-8"});
+
+				resolve(text);
+
+			} catch (e) {
+				reject(e);
+
+			}
+
+		});
+
+	});
+
 }
 
 class FileSource extends Source {

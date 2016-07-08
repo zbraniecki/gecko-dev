@@ -28,7 +28,7 @@ const resources = [
   '/global/aboutSupport.ftl',
   '/global/resetProfile.ftl',
 ];
-/*
+
 var x = L10nService.getResources(langs, resources);
 performance.mark('l10nservice-gotresources');
 console.log('L10nService Object:');
@@ -40,7 +40,7 @@ x.resBundles[0].fetch().then(res => {
   console.log('L10nService first bundle fetch:');
   console.log(res);
 });
-*/
+
 performance.mark('l10nregistry-start');
 L10nRegistry.getResources(langs, resources).then(x => {
   performance.mark('l10nregistry-gotresources');
