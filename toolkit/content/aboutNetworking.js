@@ -12,6 +12,7 @@ Cu.import('resource://gre/modules/L10nService.jsm');
 Cu.import('resource://gre/modules/L10nRegistry.jsm');
 Cu.import('resource://gre/modules/osfile.jsm');
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/NetUtil.jsm");
 
 performance.mark('l10nservice-start');
 const langs = ['pl', 'en-US'];
@@ -23,12 +24,12 @@ const resources = [
   'd'
 ];
 */
+/*
 const resources = [
   '/branding/brand.ftl',
   '/global/aboutSupport.ftl',
   '/global/resetProfile.ftl',
 ];
-
 var x = L10nService.getResources(langs, resources);
 performance.mark('l10nservice-gotresources');
 console.log('L10nService Object:');
@@ -65,6 +66,101 @@ setTimeout(() => {
   console.log('Service duration: ' + performance.getEntriesByName('service')[0].duration);
   console.log('Registry duration: ' + performance.getEntriesByName('registry')[0].duration);
 }, 1000);
+*/
+
+const HTTP_STATUS_CODE_OK = 200;
+
+function load1(path) {
+  let url = chromeMapping[path];
+
+	return new Promise((resolve, reject) => {
+		const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
+			.createInstance(Ci.nsIXMLHttpRequest);
+
+		req.mozBackgroundRequest = true;
+		req.overrideMimeType('text/plain');
+		req.open('GET', url, true);
+
+		req.addEventListener('load', () => {
+			if (req.status === HTTP_STATUS_CODE_OK) {
+				resolve(req.responseText);
+
+			} else {
+				reject(new Error('Not found: ' + url));
+
+			}
+
+		});
+		req.addEventListener('error', reject);
+		req.addEventListener('timeout', reject);
+
+		req.send(null);
+
+	});
+
+}
+
+
+const GreDir = Services.dirsvc.get("GreD", Ci.nsIFile).path;
+
+function load2(resPath) {
+  let path = OS.Path.join(GreDir, resPath);
+  return OS.File.read(path, {encoding: "utf-8"});
+}
+
+function load3(resPath) {
+	return new Promise((resolve, reject) => {
+		let path = OS.Path.join(GreDir, resPath);
+		let uri = 'file://' + path;
+
+		NetUtil.asyncFetch({uri, loadUsingSystemPrincipal: true}, (inputStream, status) => {
+			if (!Components.isSuccessCode(status)) {
+				reject(new Error(status));
+				return;
+
+			}
+			try {
+				let text = NetUtil.readInputStreamToString(inputStream, inputStream.available(),
+					{charset: "utf-8"});
+
+				resolve(text);
+
+			} catch (e) {
+				reject(e);
+
+			}
+
+		});
+
+	});
+
+}
+
+
+const resources = [
+  'chrome/en-US/locale/en-US/global/aboutSupport.en-US.ftl',
+  'chrome/en-US/locale/en-US/global/resetProfile.en-US.ftl',
+  'browser/chrome/en-US/locale/branding/brand.en-US.ftl',
+	'browser/chrome/en-US/locale/browser/browser.en-US.ftl',
+	'browser/chrome/en-US/locale/browser/aboutDialog.en-US.ftl',
+];
+
+const chromeMapping = {
+	'chrome/en-US/locale/en-US/global/aboutSupport.en-US.ftl': 'chrome://global/locale/aboutSupport.en-US.ftl',
+	'chrome/en-US/locale/en-US/global/resetProfile.en-US.ftl': 'chrome://global/locale/resetProfile.en-US.ftl',
+	'browser/chrome/en-US/locale/branding/brand.en-US.ftl': 'chrome://branding/locale/brand.en-US.ftl',
+  'browser/chrome/en-US/locale/browser/browser.en-US.ftl': 'chrome://browser/locale/browser.en-US.ftl',
+  'browser/chrome/en-US/locale/browser/aboutDialog.en-US.ftl': 'chrome://browser/locale/aboutDialog.en-US.ftl',
+};
+
+
+performance.mark('start');
+Promise.all(resources.map(res => load3(res))).then(resList => {
+	performance.mark('end');
+	console.log(resList);
+	performance.measure('time', 'start', 'end');
+	console.log('Duration: ' + performance.getEntriesByName('time')[0].duration);
+});
 
 const gDashboard = Cc['@mozilla.org/network/dashboard;1'].
   getService(Ci.nsIDashboard);

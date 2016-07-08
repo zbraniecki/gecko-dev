@@ -2,10 +2,7 @@ this.EXPORTED_SYMBOLS = [ "L10nRegistry", "ResourceBundle" ];
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
-Cu.import('resource://gre/modules/Services.jsm');
-Cu.import('resource://gre/modules/osfile.jsm');
 Cu.import('resource://gre/modules/SyncPromise.jsm');
-Cu.import('resource://gre/modules/NetUtil.jsm');
 
 const sync = false;
 
@@ -70,42 +67,6 @@ function load(path) {
 		req.addEventListener('timeout', reject);
 
 		req.send(null);
-
-	});
-
-}
-
-
-const GreDir = Services.dirsvc.get("GreD", Ci.nsIFile).path;
-
-function load3(resPath) {
-  let path = OS.Path.join(GreDir, resPath);
-  return OS.File.read(path, {encoding: "utf-8"});
-}
-
-function load4(resPath) {
-	return new Promise((resolve, reject) => {
-    let path = OS.Path.join(GreDir, resPath);
-		let uri = 'file://' + path;
-
-		NetUtil.asyncFetch({uri, loadUsingSystemPrincipal: true}, (inputStream, status) => {
-			if (!Components.isSuccessCode(status)) {
-				reject(new Error(status));
-				return;
-
-			}
-			try {
-				let text = NetUtil.readInputStreamToString(inputStream, inputStream.available(),
-					{charset: "utf-8"});
-
-				resolve(text);
-
-			} catch (e) {
-				reject(e);
-
-			}
-
-		});
 
 	});
 
