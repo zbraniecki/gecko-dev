@@ -23,35 +23,19 @@ class Source {
   }
 }
 
-const chromeMapping = {
-  'chrome/en-US/locale/en-US/global/aboutLocalization.en-US.ftl': 'chome://global/locale/aboutLocalization.en-US.ftl',
-  'chrome/en-US/locale/en-US/global/aboutSupport.en-US.ftl': 'chrome://global/locale/aboutSupport.en-US.ftl',
-  'chrome/en-US/locale/en-US/global/aboutSupport.pl.ftl': 'chrome://global/locale/aboutSupport.pl.ftl',
-  'chrome/en-US/locale/en-US/global/resetProfile.en-US.ftl': 'chrome://global/locale/resetProfile.en-US.ftl',
-  'chrome/en-US/locale/en-US/global/resetProfile.pl.ftl': 'chrome://global/locale/resetProfile.pl.ftl',
-  'browser/chrome/en-US/locale/branding/brand.en-US.ftl': 'chrome://branding/locale/brand.en-US.ftl',
-  'browser/chrome/en-US/locale/branding/brand.pl.ftl': 'chrome://branding/locale/brand.pl.ftl',
-  'browser/chrome/en-US/locale/browser/aboutDialog.en-US.ftl': 'chrome://browser/locale/aboutDialog.en-US.ftl',
-  'browser/chrome/en-US/locale/browser/aboutDialog.pl.ftl': 'chrome://browser/locale/aboutDialog.pl.ftl',
-  'browser/chrome/en-US/locale/browser/aboutRobots.en-US.ftl': 'chrome://browser/locale/aboutRobots.en-US.ftl',
-  'browser/chrome/en-US/locale/browser/browser.en-US.ftl': 'chrome://browser/locale/browser.en-US.ftl',
-  'browser/chrome/en-US/locale/browser/browser.pl.ftl': 'chrome://browser/locale/browser.pl.ftl',
-  'browser/chrome/en-US/locale/browser/tabbrowser.en-US.ftl': 'chrome://browser/locale/tabbrowser.en-US.ftl',
-  'browser/chrome/en-US/locale/browser/tabbrowser.pl.ftl': 'chrome://browser/locale/tabbrowser.pl.ftl',
-};
-
 const HTTP_STATUS_CODE_OK = 200;
 
+const XMLHttpRequest = '@mozilla.org/xmlextras/xmlhttprequest;1';
+ 
 function load(path) {
-  let url = chromeMapping[path];
+  let url = 'resource://' + path;
 
-	return new Promise((resolve, reject) => {
-		const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
-			.createInstance(Ci.nsIXMLHttpRequest);
+	return new CurPromise((resolve, reject) => {
+		const req = XMLHttpRequest.createInstance(Ci.nsIXMLHttpRequest);
 
 		req.mozBackgroundRequest = true;
 		req.overrideMimeType('text/plain');
-		req.open('GET', url, true);
+		req.open('GET', url, !sync);
 
 		req.addEventListener('load', () => {
 			if (req.status === HTTP_STATUS_CODE_OK) {
@@ -67,9 +51,7 @@ function load(path) {
 		req.addEventListener('timeout', reject);
 
 		req.send(null);
-
 	});
-
 }
 
 class FileSource extends Source {
@@ -90,7 +72,6 @@ class FileSource extends Source {
 
   loadResource(resId, lang) {
     const path = this.resMap[resId][lang];
-   // return Promise.resolve(resId + this.name);
     return load(path);
   }
 }
@@ -312,37 +293,37 @@ this.L10nRegistry = {
 
 const platformFileSource = new FileSource('platform', {
   'global/aboutLocalization.ftl': {
-    'en-US': 'chrome/en-US/locale/en-US/global/aboutLocalization.en-US.ftl',
+    'en-US': 'gre/chrome/en-US/locale/en-US/global/aboutLocalization.en-US.ftl',
   },
   '/global/aboutSupport.ftl': {
-    'en-US': 'chrome/en-US/locale/en-US/global/aboutSupport.en-US.ftl',
-    'pl': 'chrome/en-US/locale/en-US/global/aboutSupport.pl.ftl',
+    'en-US': 'gre/chrome/en-US/locale/en-US/global/aboutSupport.en-US.ftl',
+    'pl': 'gre/chrome/en-US/locale/en-US/global/aboutSupport.pl.ftl',
   },
   '/global/resetProfile.ftl': {
-    'en-US': 'chrome/en-US/locale/en-US/global/resetProfile.en-US.ftl',
-    'pl': 'chrome/en-US/locale/en-US/global/resetProfile.pl.ftl'
+    'en-US': 'gre/chrome/en-US/locale/en-US/global/resetProfile.en-US.ftl',
+    'pl': 'gre/chrome/en-US/locale/en-US/global/resetProfile.pl.ftl'
   }
 });
 
 const appFileSource = new FileSource('app', {
   '/branding/brand.ftl': {
-    'en-US': 'browser/chrome/en-US/locale/branding/brand.en-US.ftl',
-    'pl': 'browser/chrome/en-US/locale/branding/brand.pl.ftl'
+    'en-US': '/chrome/en-US/locale/branding/brand.en-US.ftl',
+    'pl': '/chrome/en-US/locale/branding/brand.pl.ftl'
   },
   '/browser/aboutDialog.ftl': {
-    'en-US': 'browser/chrome/en-US/locale/browser/aboutDialog.en-US.ftl',
-    'pl': 'browser/chrome/en-US/locale/browser/aboutDialog.pl.ftl'
+    'en-US': '/chrome/en-US/locale/browser/aboutDialog.en-US.ftl',
+    'pl': '/chrome/en-US/locale/browser/aboutDialog.pl.ftl'
   },
   '/browser/aboutRobots.ftl': {
-    'en-US': 'browser/chrome/en-US/locale/browser/aboutRobots.en-US.ftl',
+    'en-US': '/chrome/en-US/locale/browser/aboutRobots.en-US.ftl',
   },
   '/browser/browser.ftl': {
-    'en-US': 'browser/chrome/en-US/locale/browser/browser.en-US.ftl',
-    'pl': 'browser/chrome/en-US/locale/browser/browser.pl.ftl'
+    'en-US': '/chrome/en-US/locale/browser/browser.en-US.ftl',
+    'pl': '/chrome/en-US/locale/browser/browser.pl.ftl'
   },
   '/browser/tabbrowser.ftl': {
-    'en-US': 'browser/chrome/en-US/locale/browser/tabbrowser.en-US.ftl',
-    'pl': 'browser/chrome/en-US/locale/browser/tabbrowser.pl.ftl'
+    'en-US': '/chrome/en-US/locale/browser/tabbrowser.en-US.ftl',
+    'pl': '/chrome/en-US/locale/browser/tabbrowser.pl.ftl'
   },
 });
 

@@ -80,9 +80,9 @@ prot.then = function(cb, errBack) {
 
 prot.catch = function(cb) {
   var self = this;
-  if (self.a) { // Promise has been resolved synchronously
-    throw new Error('Cannot call `catch` on synchronously resolved promise');
-  }
+  //if (self.a) { // Promise has been resolved synchronously
+  //  throw new Error('Cannot call `catch` on synchronously resolved promise');
+  //}
   return new SyncPromise(function(resolve, reject) {
     function settle() {
       try {
