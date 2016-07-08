@@ -433,7 +433,10 @@ this.L10nRegistry = {
   }
 };
 
-const toolkitFileSource = new FileSource('toolkit', {
+const platformFileSource = new FileSource('platform', {
+  'global/aboutLocalization.ftl': {
+    'en-US': 'chrome://global/locale/aboutLocalization.en-US.ftl',
+  },
   '/global/aboutSupport.ftl': {
     'en-US': 'chrome://global/locale/aboutSupport.en-US.ftl',
     'pl': 'chrome://global/locale/aboutSupport.pl.ftl',
@@ -444,14 +447,18 @@ const toolkitFileSource = new FileSource('toolkit', {
   }
 });
 
-const browserFileSource = new FileSource('browser', {
+const appFileSource = new FileSource('app', {
   '/branding/brand.ftl': {
     'en-US': 'chrome://branding/locale/brand.en-US.ftl',
     'pl': 'chrome://branding/locale/brand.pl.ftl'
   },
   '/browser/aboutDialog.ftl': {
     'en-US': 'chrome://browser/locale/aboutDialog.en-US.ftl',
-    'pl': 'chrome://browser/locale3aboutDialog.pl.ftl'
+    'pl': 'chrome://browser/locale/aboutDialog.pl.ftl'
+  },
+  '/browser/aboutRobots.ftl': {
+    'en-US': 'chrome://browser/locale/aboutRobots.en-US.ftl',
+    'pl': 'chrome://browser/locale/aboutRobots.pl.ftl'
   },
   '/browser/browser.ftl': {
     'en-US': 'chrome://browser/locale/browser.en-US.ftl',
@@ -463,8 +470,8 @@ const browserFileSource = new FileSource('browser', {
   },
 });
 
-L10nRegistry.registerSource(toolkitFileSource);
-L10nRegistry.registerSource(browserFileSource);
+L10nRegistry.registerSource(platformFileSource);
+L10nRegistry.registerSource(appFileSource);
 
 /*
 const source1 = new FileSource('source1', {
