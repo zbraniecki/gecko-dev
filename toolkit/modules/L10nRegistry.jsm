@@ -3,155 +3,11 @@ this.EXPORTED_SYMBOLS = [ "L10nRegistry", "ResourceBundle" ];
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
 Cu.import('resource://gre/modules/Services.jsm');
+Cu.import('resource://gre/modules/osfile.jsm');
+Cu.import('resource://gre/modules/SyncPromise.jsm');
+Cu.import('resource://gre/modules/NetUtil.jsm');
 
 const sync = false;
-
-/* SyncPromise */
-
-function isPromise(p) {
-  return p && typeof p.then === 'function';
-}
-function addReject(prom, reject) {
-  prom.then(null, reject) // Use this style for sake of non-Promise thenables (e.g., jQuery Deferred)
-}
-
-// States
-var PENDING = 2,
-    FULFILLED = 0, // We later abuse these as array indices
-    REJECTED = 1;
-
-function SyncPromise(fn) {
-  var self = this;
-  self.v = 0; // Value, this will be set to either a resolved value or rejected reason
-  self.s = PENDING; // State of the promise
-  self.c = [[],[]]; // Callbacks c[0] is fulfillment and c[1] contains rejection callbacks
-  self.a = false; // Has the promise been resolved synchronously
-  var syncResolved = true;
-  function transist(val, state) {
-    self.a = syncResolved;
-    self.v = val;
-    self.s = state;
-    if (state === REJECTED && !self.c[state].length) {
-      throw val;
-    }
-    self.c[state].forEach(function(fn) { fn(val); });
-    self.c = null; // Release memory.
-  }
-  function resolve(val) {
-    if (!self.c) {
-      // Already resolved, do nothing.
-    } else if (isPromise(val)) {
-      addReject(val.then(resolve), reject);
-    } else {
-      transist(val, FULFILLED);
-    }
-  }
-  function reject(reason) {
-    if (!self.c) {
-      // Already resolved, do nothing.
-    } else if (isPromise(reason)) {
-      addReject(reason.then(reject), reject);
-    } else {
-      transist(reason, REJECTED);
-    }
-  }
-  fn(resolve, reject);
-  syncResolved = false;
-}
-
-var prot = SyncPromise.prototype;
-
-prot.then = function(cb, errBack) {
-  var self = this;
-  if (self.a) { // Promise has been resolved synchronously
-    //throw new Error('Cannot call `then` on synchronously resolved promise');
-  }
-  return new SyncPromise(function(resolve, reject) {
-    var rej = typeof errBack === 'function' ? errBack : reject;
-    function settle() {
-      try {
-        resolve(cb ? cb(self.v) : self.v);
-      } catch(e) {
-        rej(e);
-      }
-    }
-    if (self.s === FULFILLED) {
-      settle();
-    } else if (self.s === REJECTED) {
-      rej(self.v);
-    } else {
-      self.c[FULFILLED].push(settle);
-      self.c[REJECTED].push(rej);
-    }
-  });
-};
-
-prot.catch = function(cb) {
-  var self = this;
-  if (self.a) { // Promise has been resolved synchronously
-    throw new Error('Cannot call `catch` on synchronously resolved promise');
-  }
-  return new SyncPromise(function(resolve, reject) {
-    function settle() {
-      try {
-        resolve(cb(self.v));
-      } catch(e) {
-        reject(e);
-      }
-    }
-    if (self.s === REJECTED) {
-      settle();
-    } else if (self.s === FULFILLED) {
-      resolve(self.v);
-    } else {
-      self.c[REJECTED].push(settle);
-      self.c[FULFILLED].push(resolve);
-    }
-  });
-};
-
-SyncPromise.all = function(promises) {
-  return new SyncPromise(function(resolve, reject, l) {
-    l = promises.length;
-    var hasPromises = false;
-    promises.forEach(function(p, i) {
-      if (isPromise(p)) {
-        hasPromises = true;
-        addReject(p.then(function(res) {
-          promises[i] = res;
-          --l || resolve(promises);
-        }), reject);
-      } else {
-        --l || resolve(promises);
-      }
-    });
-  });
-};
-
-SyncPromise.race = function(promises) {
-  var resolved = false;
-  return new SyncPromise(function(resolve, reject) {
-    promises.some(function(p, i) {
-      if (isPromise(p)) {
-        addReject(p.then(function(res) {
-          if (resolved) {
-            return;
-          }
-          resolve(res);
-          resolved = true;
-        }), reject);
-      } else {
-        throw new Error('Must use promises within `SyncPromise.race`');
-      }
-    });
-  });
-};
-
-SyncPromise.resolve = function(f) {
-  return new SyncPromise(function(resolve, reject) {
-    resolve(f);
-  })
-}
 
 const CurPromise = sync ? SyncPromise : Promise;
 
@@ -170,29 +26,62 @@ class Source {
   }
 }
 
+const chromeMapping = {
+  'chrome/en-US/locale/en-US/global/aboutLocalization.en-US.ftl': 'chome://global/locale/aboutLocalization.en-US.ftl',
+  'chrome/en-US/locale/en-US/global/aboutSupport.en-US.ftl': 'chrome://global/locale/aboutSupport.en-US.ftl',
+  'chrome/en-US/locale/en-US/global/aboutSupport.pl.ftl': 'chrome://global/locale/aboutSupport.pl.ftl',
+  'chrome/en-US/locale/en-US/global/resetProfile.en-US.ftl': 'chrome://global/locale/resetProfile.en-US.ftl',
+  'chrome/en-US/locale/en-US/global/resetProfile.pl.ftl': 'chrome://global/locale/resetProfile.pl.ftl',
+  'browser/chrome/en-US/locale/branding/brand.en-US.ftl': 'chrome://branding/locale/brand.en-US.ftl',
+  'browser/chrome/en-US/locale/branding/brand.pl.ftl': 'chrome://branding/locale/brand.pl.ftl',
+  'browser/chrome/en-US/locale/browser/aboutDialog.en-US.ftl': 'chrome://browser/locale/aboutDialog.en-US.ftl',
+  'browser/chrome/en-US/locale/browser/aboutDialog.pl.ftl': 'chrome://browser/locale/aboutDialog.pl.ftl',
+  'browser/chrome/en-US/locale/browser/aboutRobots.en-US.ftl': 'chrome://browser/locale/aboutRobots.en-US.ftl',
+  'browser/chrome/en-US/locale/browser/browser.en-US.ftl': 'chrome://browser/locale/browser.en-US.ftl',
+  'browser/chrome/en-US/locale/browser/browser.pl.ftl': 'chrome://browser/locale/browser.pl.ftl',
+  'browser/chrome/en-US/locale/browser/tabbrowser.en-US.ftl': 'chrome://browser/locale/tabbrowser.en-US.ftl',
+  'browser/chrome/en-US/locale/browser/tabbrowser.pl.ftl': 'chrome://browser/locale/tabbrowser.pl.ftl',
+};
+
 const HTTP_STATUS_CODE_OK = 200;
 
-function load(url) {
-  return new Promise((resolve, reject) => {
-    const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
-      .createInstance(Ci.nsIXMLHttpRequest);
+function load2(path) {
+  let url = chromeMapping[path];
 
-    req.mozBackgroundRequest = true;
-    req.overrideMimeType('text/plain');
-    req.open('GET', url, true);
+	return new Promise((resolve, reject) => {
+		const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
+			.createInstance(Ci.nsIXMLHttpRequest);
 
-    req.addEventListener('load', () => {
-      if (req.status === HTTP_STATUS_CODE_OK) {
-        resolve(req.responseText);
-      } else {
-        reject(new Error('Not found: ' + url));
-      }
-    });
-    req.addEventListener('error', reject);
-    req.addEventListener('timeout', reject);
+		req.mozBackgroundRequest = true;
+		req.overrideMimeType('text/plain');
+		req.open('GET', url, true);
 
-    req.send(null);
-  });
+		req.addEventListener('load', () => {
+			if (req.status === HTTP_STATUS_CODE_OK) {
+				resolve(req.responseText);
+
+			} else {
+				reject(new Error('Not found: ' + url));
+
+			}
+
+		});
+		req.addEventListener('error', reject);
+		req.addEventListener('timeout', reject);
+
+		req.send(null);
+
+	});
+
+}
+
+
+const GreDir = Services.dirsvc.get("GreD", Ci.nsIFile).path;
+
+function load(resPath) {
+  let path = OS.Path.join(GreDir, resPath);
+  //return Promise.resolve('foo = Foo');
+  return OS.File.read(path, {encoding: "utf-8"});
 }
 
 class FileSource extends Source {
@@ -435,38 +324,37 @@ this.L10nRegistry = {
 
 const platformFileSource = new FileSource('platform', {
   'global/aboutLocalization.ftl': {
-    'en-US': 'chrome://global/locale/aboutLocalization.en-US.ftl',
+    'en-US': 'chrome/en-US/locale/en-US/global/aboutLocalization.en-US.ftl',
   },
   '/global/aboutSupport.ftl': {
-    'en-US': 'chrome://global/locale/aboutSupport.en-US.ftl',
-    'pl': 'chrome://global/locale/aboutSupport.pl.ftl',
+    'en-US': 'chrome/en-US/locale/en-US/global/aboutSupport.en-US.ftl',
+    'pl': 'chrome/en-US/locale/en-US/global/aboutSupport.pl.ftl',
   },
   '/global/resetProfile.ftl': {
-    'en-US': 'chrome://global/locale/resetProfile.en-US.ftl',
-    'pl': 'chrome://global/locale/resetProfile.pl.ftl'
+    'en-US': 'chrome/en-US/locale/en-US/global/resetProfile.en-US.ftl',
+    'pl': 'chrome/en-US/locale/en-US/global/resetProfile.pl.ftl'
   }
 });
 
 const appFileSource = new FileSource('app', {
   '/branding/brand.ftl': {
-    'en-US': 'chrome://branding/locale/brand.en-US.ftl',
-    'pl': 'chrome://branding/locale/brand.pl.ftl'
+    'en-US': 'browser/chrome/en-US/locale/branding/brand.en-US.ftl',
+    'pl': 'browser/chrome/en-US/locale/branding/brand.pl.ftl'
   },
   '/browser/aboutDialog.ftl': {
-    'en-US': 'chrome://browser/locale/aboutDialog.en-US.ftl',
-    'pl': 'chrome://browser/locale/aboutDialog.pl.ftl'
+    'en-US': 'browser/chrome/en-US/locale/browser/aboutDialog.en-US.ftl',
+    'pl': 'browser/chrome/en-US/locale/browser/aboutDialog.pl.ftl'
   },
   '/browser/aboutRobots.ftl': {
-    'en-US': 'chrome://browser/locale/aboutRobots.en-US.ftl',
-    'pl': 'chrome://browser/locale/aboutRobots.pl.ftl'
+    'en-US': 'browser/chrome/en-US/locale/browser/aboutRobots.en-US.ftl',
   },
   '/browser/browser.ftl': {
-    'en-US': 'chrome://browser/locale/browser.en-US.ftl',
-    'pl': 'chrome://browser/locale/browser.pl.ftl'
+    'en-US': 'browser/chrome/en-US/locale/browser/browser.en-US.ftl',
+    'pl': 'browser/chrome/en-US/locale/browser/browser.pl.ftl'
   },
   '/browser/tabbrowser.ftl': {
-    'en-US': 'chrome://browser/locale/tabbrowser.en-US.ftl',
-    'pl': 'chrome://browser/locale/tabbrowser.pl.ftl'
+    'en-US': 'browser/chrome/en-US/locale/browser/tabbrowser.en-US.ftl',
+    'pl': 'browser/chrome/en-US/locale/browser/tabbrowser.pl.ftl'
   },
 });
 

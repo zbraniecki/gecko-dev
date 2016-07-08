@@ -8,6 +8,64 @@ var Ci = Components.interfaces;
 var Cc = Components.classes;
 var Cu = Components.utils;
 
+Cu.import('resource://gre/modules/L10nService.jsm');
+Cu.import('resource://gre/modules/L10nRegistry.jsm');
+Cu.import('resource://gre/modules/osfile.jsm');
+Cu.import("resource://gre/modules/Services.jsm");
+
+performance.mark('l10nservice-start');
+const langs = ['pl', 'en-US'];
+/*
+const resources = [
+  'a',
+  'b',
+  'c',
+  'd'
+];
+*/
+const resources = [
+  '/branding/brand.ftl',
+  '/global/aboutSupport.ftl',
+  '/global/resetProfile.ftl',
+];
+/*
+var x = L10nService.getResources(langs, resources);
+performance.mark('l10nservice-gotresources');
+console.log('L10nService Object:');
+console.log(x);
+console.log('L10nService bundles:');
+console.log(x.resBundles);
+x.resBundles[0].fetch().then(res => {
+  performance.mark('l10nservice-loadedfirst');
+  console.log('L10nService first bundle fetch:');
+  console.log(res);
+});
+*/
+performance.mark('l10nregistry-start');
+L10nRegistry.getResources(langs, resources).then(x => {
+  performance.mark('l10nregistry-gotresources');
+  console.log('L10nRegistry Object:');
+  console.log(x);
+  let resBundles = x.bundles.map(y => {
+    return new ResourceBundle(y.locale, y.resources);
+  });
+  console.log('L10nRegistry bundles:');
+  console.log(resBundles);
+  resBundles[0].fetch().then(res => {
+    performance.mark('l10nregistry-loadedfirst');
+    console.log('L10nRegistry first bundle fetch:');
+    console.log(res);
+
+  })
+});
+
+setTimeout(() => {
+  performance.measure('service', 'l10nservice-start', 'l10nservice-loadedfirst');
+  performance.measure('registry', 'l10nregistry-start', 'l10nregistry-loadedfirst');
+  console.log('Service duration: ' + performance.getEntriesByName('service')[0].duration);
+  console.log('Registry duration: ' + performance.getEntriesByName('registry')[0].duration);
+}, 1000);
+
 const gDashboard = Cc['@mozilla.org/network/dashboard;1'].
   getService(Ci.nsIDashboard);
 const gPrefs = Cc["@mozilla.org/preferences-service;1"].

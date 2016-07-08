@@ -90,6 +90,7 @@ EXTRA_JS_MODULES += [
     'Sntp.jsm',
     'SpatialNavigation.jsm',
     'Sqlite.jsm',
+    'SyncPromise.jsm',
     'Task.jsm',
     'Timer.jsm',
     'Troubleshoot.jsm',
