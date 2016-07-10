@@ -2,6 +2,7 @@ this.EXPORTED_SYMBOLS = [ "L10nRegistry", "ResourceBundle" ];
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
+Cu.import("resource://gre/modules/Services.jsm");
 Cu.import('resource://gre/modules/SyncPromise.jsm');
 
 const sync = false;
@@ -267,12 +268,47 @@ this.L10nRegistry = {
         index.set(resId, new Map());
       }
 
+      const resLangs = index.get(resId);
+
       for (let lang of resList[resId]) {
-        if (!index.get(resId).has(lang)) {
-          index.get(resId).set(lang, new Set());
+        if (!resLangs.has(lang)) {
+          resLangs.set(lang, new Set());
         }
-        index.get(resId).get(lang).add(source.name);
+        resLangs.get(lang).add(source.name);
       }
+    }
+  },
+
+  onResourcesChanged(sourceName, resList) {
+    const changedResources = new Set();
+
+    for (let resId in resList) {
+      if (!index.has(resId)) {
+        index.set(resId, new Map());
+      }
+
+      const resLangs = index.get(resId);
+
+      for (let lang of resList[resId]) {
+        const cacheId = `${resId}-${lang}-${sourceName}`;
+
+        // invalidate the cache for this changed resource; the next 
+        // fetchResource will re-populate it
+        if (cache.has(cacheId)) {
+          cache.delete(cacheId);
+        }
+
+        if (!resLangs.has(lang)) {
+          resLangs.set(lang, new Set());
+        }
+
+        resLangs.get(lang).add(sourceName);
+        changedResources.add(resId);
+      }
+    }
+
+    if (changedResources.size) {
+      Services.obs.notifyObservers(this, 'language-registry-update', null);
     }
   },
 

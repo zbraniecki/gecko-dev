@@ -10,7 +10,7 @@ const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
 
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
-Cu.import("resource://gre/modules/L10nService.jsm");
+Cu.import("resource://gre/modules/L10nRegistry.jsm");
 
 // See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
 const PREF_LOG_LEVEL      = "browser.l20ndemo.loglevel";
@@ -26,6 +26,8 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
 });
 
 this.L20nDemo = {
+
+  name: 'l20ndemo',
 
   init: function() {
     log.debug("Initializing L20nDemo");
@@ -74,14 +76,14 @@ this.L20nDemo = {
       case "register": {
         const { resId, lang, messages } = data;
         this.updateResource(resId, lang, messages);
-        L10nService.registerSource("l20ndemo", this);
+        L10nRegistry.registerSource(this);
         this.sendPageResponse(messageManager, requestId);
         break;
       }
       case "update": {
         const { resId, lang, messages } = data;
         this.updateResource(resId, lang, messages);
-        L10nService.onResourcesChanged("l20ndemo", { [resId]: [lang] });
+        L10nRegistry.onResourcesChanged("l20ndemo", { [resId]: [lang] });
         this.sendPageResponse(messageManager, requestId);
         break;
       }
@@ -95,13 +97,13 @@ this.L20nDemo = {
       }
       case "getResources": {
         const { requestedLangs, resIds } = data;
-        const resp = L10nService.getResources(requestedLangs, resIds);
+        const resp = L10nRegistry.getResources(requestedLangs, resIds);
         this.sendPageResponse(messageManager, requestId, resp);
         break;
       }
       case "fetchResource": {
         const { resId, lang } = data;
-        L10nService.fetchResource(resId, lang).then(
+        L10nRegistry.fetchResource(resId, lang).then(
           resp => this.sendPageResponse(messageManager, requestId, resp)
         );
         break;
