@@ -25,33 +25,32 @@ class Source {
 
 const HTTP_STATUS_CODE_OK = 200;
 
-const XMLHttpRequest = '@mozilla.org/xmlextras/xmlhttprequest;1';
- 
 function load(path) {
   let url = 'resource://' + path;
 
-	return new CurPromise((resolve, reject) => {
-		const req = XMLHttpRequest.createInstance(Ci.nsIXMLHttpRequest);
+  return new CurPromise((resolve, reject) => {
+    const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
+      .createInstance(Ci.nsIXMLHttpRequest);
 
-		req.mozBackgroundRequest = true;
-		req.overrideMimeType('text/plain');
-		req.open('GET', url, !sync);
+    req.mozBackgroundRequest = true;
+    req.overrideMimeType('text/plain');
+    req.open('GET', url, !sync);
 
-		req.addEventListener('load', () => {
-			if (req.status === HTTP_STATUS_CODE_OK) {
-				resolve(req.responseText);
+    req.addEventListener('load', () => {
+      if (req.status === HTTP_STATUS_CODE_OK) {
+        resolve(req.responseText);
 
-			} else {
-				reject(new Error('Not found: ' + url));
+      } else {
+        reject(new Error('Not found: ' + url));
 
-			}
+      }
 
-		});
-		req.addEventListener('error', reject);
-		req.addEventListener('timeout', reject);
+    });
+    req.addEventListener('error', reject);
+    req.addEventListener('timeout', reject);
 
-		req.send(null);
-	});
+    req.send(null);
+  });
 }
 
 class FileSource extends Source {
