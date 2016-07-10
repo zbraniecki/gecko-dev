@@ -323,11 +323,19 @@ this.L10nRegistry = {
       cache.set(cacheId, data);
       return data;
     }).catch(e => e);
-  }
+  },
+
+  requestResourceInfo() {
+    return index;
+  },
+
+  requestCacheInfo() {
+    return cache;
+  },
 };
 
 const platformFileSource = new FileSource('platform', {
-  'global/aboutLocalization.ftl': {
+  '/global/aboutLocalization.ftl': {
     'en-US': 'gre/chrome/en-US/locale/en-US/global/aboutLocalization.en-US.ftl',
   },
   '/global/aboutSupport.ftl': {

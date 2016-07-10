@@ -6,11 +6,11 @@
 
 const { utils: Cu } = Components;
 
-Cu.import('resource://gre/modules/L10nService.jsm');
+Cu.import('resource://gre/modules/L10nRegistry.jsm');
 
 const gInfoRequests = {
-  resources: () => displayResources(L10nService.requestResourceInfo()),
-  cache: () => displayCache(L10nService.requestCacheInfo()),
+  resources: () => displayResources(L10nRegistry.requestResourceInfo()),
+  cache: () => displayCache(L10nRegistry.requestCacheInfo()),
 };
 
 function col(element, rowspan = 1) {
@@ -36,7 +36,7 @@ function displayResources(data) {
         row.appendChild(col(resId, langs.size));
       }
       row.appendChild(col(lang));
-      row.appendChild(col(sources.join(', ')));
+      row.appendChild(col(Array.from(sources).join(', ')));
       new_cont.appendChild(row);
     }
   }
