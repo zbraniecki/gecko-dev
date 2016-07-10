@@ -1402,6 +1402,7 @@
             var browser = this.getBrowserForTab(aTab);
             var crop = "end";
             var title = browser.contentTitle;
+            aTab.removeAttribute('data-l10n-id');
 
             if (!title) {
               if (browser.currentURI.spec) {
@@ -1439,7 +1440,10 @@
                 aTab.crop == crop)
               return false;
 
-            // aTab.label = title;
+            if (aTab.hasAttribute('data-l10n-id'))
+              return true;
+
+            aTab.label = title;
             aTab.crop = crop;
             this._tabAttrModified(aTab, ["label", "crop"]);
 
