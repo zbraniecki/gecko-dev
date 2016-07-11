@@ -1,4 +1,4 @@
-this.EXPORTED_SYMBOLS = [ "L10nRegistry", "ResourceBundle" ];
+this.EXPORTED_SYMBOLS = ["L10nRegistry"];
 
 const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 
@@ -73,37 +73,6 @@ class FileSource extends Source {
   loadResource(resId, lang) {
     const path = this.resMap[resId][lang];
     return load(path);
-  }
-}
-
-/* ResourceBundle */
-
-class ResourceBundle {
-  constructor(lang, resources) {
-    this.lang = lang;
-    this.loaded = undefined;
-    this.resources = resources;
-
-    const data = Object.keys(resources).map(
-      resId => resources[resId].data
-    );
-
-    if (data.every(d => d !== null)) {
-      this.loaded = CurPromise.resolve(data);
-    }
-  }
-
-  fetch() {
-    if (!this.loaded) {
-      this.loaded = CurPromise.all(
-        Object.keys(this.resources).map(resId => {
-          const { source, lang } = this.resources[resId];
-          return L10nRegistry.fetchResource(source, resId, lang);
-        })
-      );
-    }
-
-    return this.loaded;
   }
 }
 

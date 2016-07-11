@@ -632,6 +632,40 @@ class HTMLLocalization extends Localization {
 
 }
 
+class ChromeResourceBundle {
+  constructor(lang, resources) {
+    this.lang = lang;
+    this.loaded = false;
+    this.resources = resources;
+
+    // Uncomment to test sync resource loading
+    // Components.utils.import('resource://gre/modules/SyncPromise.jsm')
+    // this.Promise = SyncPromise;
+    this.Promise = Promise;
+
+    const data = Object.keys(resources).map(
+      resId => resources[resId].data
+    );
+
+    if (data.every(d => d !== null)) {
+      this.loaded = this.Promise.resolve(data);
+    }
+  }
+
+  fetch() {
+    if (!this.loaded) {
+      this.loaded = this.Promise.all(
+        Object.keys(this.resources).map(resId => {
+          const { source, lang } = this.resources[resId];
+          return L10nRegistry.fetchResource(source, resId, lang);
+        })
+      );
+    }
+
+    return this.loaded;
+  }
+}
+
 // A document.ready shim
 // https://github.com/whatwg/html/issues/127
 function documentReady() {
@@ -739,7 +773,7 @@ function createLocalization(name, resIds) {
 
     return L10nRegistry.getResources(requestedLangs, resIds).then(
       ({bundles}) => bundles.map(
-        bundle => new ResourceBundle(bundle.locale, bundle.resources)
+        bundle => new ChromeResourceBundle(bundle.locale, bundle.resources)
       )
     );
   }

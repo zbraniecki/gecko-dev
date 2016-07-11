@@ -347,6 +347,40 @@ class XULLocalization extends Localization {
   }
 }
 
+class ChromeResourceBundle {
+  constructor(lang, resources) {
+    this.lang = lang;
+    this.loaded = false;
+    this.resources = resources;
+
+    // Uncomment to test sync resource loading
+    // Components.utils.import('resource://gre/modules/SyncPromise.jsm')
+    // this.Promise = SyncPromise;
+    this.Promise = Promise;
+
+    const data = Object.keys(resources).map(
+      resId => resources[resId].data
+    );
+
+    if (data.every(d => d !== null)) {
+      this.loaded = this.Promise.resolve(data);
+    }
+  }
+
+  fetch() {
+    if (!this.loaded) {
+      this.loaded = this.Promise.all(
+        Object.keys(this.resources).map(resId => {
+          const { source, lang } = this.resources[resId];
+          return L10nRegistry.fetchResource(source, resId, lang);
+        })
+      );
+    }
+
+    return this.loaded;
+  }
+}
+
 // create nsIObserver's observe method bound to a LocalizationObserver obs
 function createObserve(obs) {
   return function observe(subject, topic, data) {
@@ -377,9 +411,10 @@ function createObserve(obs) {
   }
 }
 
-this.EXPORTED_SYMBOLS = ['createXULLocalization'];
+this.EXPORTED_SYMBOLS = ['createXULLocalization', 'ChromeResourceBundle'];
 
 Components.utils.import('resource://gre/modules/Services.jsm');
+Components.utils.import('resource://gre/modules/L10nRegistry.jsm');
 Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
 
 const functions = {
@@ -410,3 +445,5 @@ this.createXULLocalization = function(obs, requestBundles) {
   Services.obs.addObserver(l10n, 'language-registry-incremental', false);
   return l10n;
 }
+
+this.ChromeResourceBundle = ChromeResourceBundle;

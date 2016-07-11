@@ -2320,31 +2320,6 @@ class HTMLLocalization extends Localization {
 
 }
 
-// A document.ready shim
-// https://github.com/whatwg/html/issues/127
-function documentReady() {
-  if (document.readyState !== 'loading') {
-    return Promise.resolve();
-  }
-
-  return new Promise(resolve => {
-    document.addEventListener('readystatechange', function onrsc() {
-      document.removeEventListener('readystatechange', onrsc);
-      resolve();
-    });
-  });
-}
-
-function getResourceLinks(head) {
-  return Array.prototype.map.call(
-    head.querySelectorAll('link[rel="localization"]'),
-    el => [el.getAttribute('href'), el.getAttribute('name') || 'main']
-  ).reduce(
-    (seq, [href, name]) => seq.set(name, (seq.get(name) || []).concat(href)),
-    new Map()
-  );
-}
-
 function emit(action, requestId, data) {
   document.dispatchEvent(
     new CustomEvent('mozL20nDemo', {
@@ -2379,7 +2354,7 @@ function postMessage(msg, data) {
   });
 }
 
-class ResourceBundle {
+class ContentResourceBundle {
   constructor(lang, resources) {
     this.lang = lang;
     this.loaded = false;
@@ -2410,6 +2385,31 @@ class ResourceBundle {
   }
 }
 
+// A document.ready shim
+// https://github.com/whatwg/html/issues/127
+function documentReady() {
+  if (document.readyState !== 'loading') {
+    return Promise.resolve();
+  }
+
+  return new Promise(resolve => {
+    document.addEventListener('readystatechange', function onrsc() {
+      document.removeEventListener('readystatechange', onrsc);
+      resolve();
+    });
+  });
+}
+
+function getResourceLinks(head) {
+  return Array.prototype.map.call(
+    head.querySelectorAll('link[rel="localization"]'),
+    el => [el.getAttribute('href'), el.getAttribute('name') || 'main']
+  ).reduce(
+    (seq, [href, name]) => seq.set(name, (seq.get(name) || []).concat(href)),
+    new Map()
+  );
+}
+
 function createContext(lang) {
   return new Intl.MessageContext(lang);
 }
@@ -2431,7 +2431,7 @@ function createLocalization(name, resIds) {
       requestedLangs, resIds
     }).then(
       ({bundles}) => bundles.map(
-        bundle => new ResourceBundle(bundle.locale, bundle.resources)
+        bundle => new ContentResourceBundle(bundle.locale, bundle.resources)
       )
     );
   }
