@@ -680,7 +680,7 @@ function createObserve(obs) {
         const { resId, lang, messages } = JSON.parse(data);
         return this.interactive.then(bundles => {
           const bundle = bundles[0];
-          if (bundle.resIds.includes(resId) && bundle.lang === lang) {
+          if (resId in bundle.resources && bundle.locale === lang) {
             // just overwrite any existing messages in the first bundle
             const ctx = contexts.get(bundles[0]);
             ctx.addMessages(messages);
@@ -696,8 +696,8 @@ function createObserve(obs) {
 }
 
 Components.utils.import('resource://gre/modules/Services.jsm');
-Components.utils.import('resource://gre/modules/L10nRegistry.jsm');
 Components.utils.import('resource://gre/modules/L10nService.jsm');
+Components.utils.import('resource://gre/modules/L10nRegistry.jsm');
 Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
 
 const functions = {
@@ -734,13 +734,14 @@ documentReady().then(() => {
 
 function createLocalization(name, resIds) {
   function requestBundles(requestedLangs = navigator.languages) {
-    //const { resBundles } = L10nService.getResources(requestedLangs, resIds);
-    //return Promise.resolve(resBundles);
-    return L10nRegistry.getResources(requestedLangs, resIds).then(({bundles}) => {
-      return bundles.map(bundle => {
-        return new ResourceBundle(bundle.locale, bundle.resources);
-      });
-    });
+    // const { resBundles } = L10nService.getResources(requestedLangs, resIds);
+    // return Promise.resolve(resBundles);
+
+    return L10nRegistry.getResources(requestedLangs, resIds).then(
+      ({bundles}) => bundles.map(
+        bundle => new ResourceBundle(bundle.locale, bundle.resources)
+      )
+    );
   }
 
   const l10n = new HTMLLocalization(requestBundles, createContext);

@@ -97,13 +97,14 @@ this.L20nDemo = {
       }
       case "getResources": {
         const { requestedLangs, resIds } = data;
-        const resp = L10nRegistry.getResources(requestedLangs, resIds);
-        this.sendPageResponse(messageManager, requestId, resp);
+        L10nRegistry.getResources(requestedLangs, resIds).then(
+          resp => this.sendPageResponse(messageManager, requestId, resp)
+        );
         break;
       }
       case "fetchResource": {
-        const { resId, lang } = data;
-        L10nRegistry.fetchResource(resId, lang).then(
+        const { source, resId, lang } = data;
+        L10nRegistry.fetchResource(source, resId, lang).then(
           resp => this.sendPageResponse(messageManager, requestId, resp)
         );
         break;

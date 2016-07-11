@@ -84,10 +84,9 @@ class ResourceBundle {
     this.loaded = undefined;
     this.resources = resources;
 
-
-    let data = Object.keys(resources).map(resId => {
-      return resources[resId].data;
-    });
+    const data = Object.keys(resources).map(
+      resId => resources[resId].data
+    );
 
     if (data.every(d => d !== null)) {
       this.loaded = CurPromise.resolve(data);
@@ -96,18 +95,14 @@ class ResourceBundle {
 
   fetch() {
     if (!this.loaded) {
-      const resPromises = [];
-
-      for (let resId in this.resources) {
-        let {
-          source,
-          lang
-        } = this.resources[resId];
-        resPromises.push(L10nRegistry.fetchResource(source, resId, lang));;
-      }
-
-      this.loaded = CurPromise.all(resPromises);
+      this.loaded = CurPromise.all(
+        Object.keys(this.resources).map(resId => {
+          const { source, lang } = this.resources[resId];
+          return L10nRegistry.fetchResource(source, resId, lang);
+        })
+      );
     }
+
     return this.loaded;
   }
 }

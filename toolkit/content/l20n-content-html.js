@@ -2380,19 +2380,29 @@ function postMessage(msg, data) {
 }
 
 class ResourceBundle {
-  constructor(resIds, lang) {
+  constructor(lang, resources) {
     this.lang = lang;
-    this.resIds = resIds;
     this.loaded = false;
+    this.resources = resources;
+
+    const data = Object.keys(resources).map(
+      resId => resources[resId].data
+    );
+
+    if (data.every(d => d !== null)) {
+      this.loaded = Promise.resolve(data);
+    }
   }
 
   fetch() {
     if (!this.loaded) {
       this.loaded = Promise.all(
-        this.resIds.map(resId => postMessage('fetchResource', {
-          resId: resId,
-          lang: this.lang,
-        }))
+        Object.keys(this.resources).map(resId => {
+          const { source, lang } = this.resources[resId];
+          return postMessage('fetchResource', {
+            source, resId, lang: this.lang
+          });
+        })
       );
     }
 
@@ -2420,8 +2430,8 @@ function createLocalization(name, resIds) {
     return postMessage('getResources', {
       requestedLangs, resIds
     }).then(
-      ({availableLangs}) => Array.from(availableLangs).map(
-        lang => new ResourceBundle(resIds, lang)
+      ({bundles}) => bundles.map(
+        bundle => new ResourceBundle(bundle.locale, bundle.resources)
       )
     );
   }
