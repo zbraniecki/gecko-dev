@@ -112,7 +112,9 @@ class Localization {
 
     const { createContext } = properties.get(this);
     return fetchFirstBundle(bundles.slice(1), createContext).then(
-      bundles => this.formatWithFallback(bundles, keys, method, translations)
+      tailBundles => this.formatWithFallback(
+        tailBundles, keys, method, translations
+      )
     );
   }
 
@@ -315,7 +317,7 @@ class XULLocalization extends Localization {
     return overlayElement(this, element, translation);
   }
 
-  isElementAllowed(element) {
+  isElementAllowed() {
     return false;
   }
 
@@ -400,8 +402,9 @@ function createObserve(obs) {
             // just overwrite any existing messages in the first bundle
             const ctx = contexts.get(bundles[0]);
             ctx.addMessages(messages);
-            return obs.translateRoots(this);
+            obs.translateRoots(this);
           }
+          return bundles;
         });
       }
       default: {

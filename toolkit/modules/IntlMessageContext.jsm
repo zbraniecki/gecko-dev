@@ -14,6 +14,9 @@ class L10nError extends Error {
   }
 }
 
+const MAX_PLACEABLES = 100;
+
+
 class ParseContext {
   constructor(string) {
     this._source = string;
@@ -71,18 +74,19 @@ class ParseContext {
 
     if (this._source[this._index] === '#') {
       this.getComment();
-      return;
+      return null;
     }
 
     if (this._source[this._index] === '[') {
       this.getSection();
-      return;
+      return null;
     }
 
     if (this._index < this._length &&
         this._source[this._index] !== '\n') {
       return this.getEntity();
     }
+    return null;
   }
 
   getSection() {
@@ -258,9 +262,11 @@ class ParseContext {
     return this._source.slice(start, eol);
   }
 
+  /* eslint-disable complexity */
   getComplexPattern() {
     let buffer = '';
     const content = [];
+    let placeables = 0;
     let quoteDelimited = null;
     let firstLine = true;
 
@@ -318,9 +324,14 @@ class ParseContext {
         if (buffer.length) {
           content.push(buffer);
         }
+        if (placeables > MAX_PLACEABLES - 1) {
+          throw this.error(
+            `Too many placeables, maximum allowed is ${MAX_PLACEABLES}`);
+        }
         buffer = ''
         content.push(this.getPlaceable());
         ch = this._source[this._index];
+        placeables++;
         continue;
       }
 
@@ -354,6 +365,7 @@ class ParseContext {
 
     return content;
   }
+  /* eslint-enable complexity */
 
   getPlaceable() {
     this._index++;

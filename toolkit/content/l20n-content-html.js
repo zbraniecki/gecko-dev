@@ -313,7 +313,7 @@ const pluralRules = {
   },
   '13': function(n) {
     if (n % 1 !== 0) {
-        return 'other';
+      return 'other';
     }
     if ((isBetween((n % 10), 2, 4)) && !(isBetween((n % 100), 12, 14))) {
       return 'few';
@@ -467,6 +467,9 @@ class L10nError extends Error {
   }
 }
 
+const MAX_PLACEABLES = 100;
+
+
 class ParseContext {
   constructor(string) {
     this._source = string;
@@ -524,18 +527,19 @@ class ParseContext {
 
     if (this._source[this._index] === '#') {
       this.getComment();
-      return;
+      return null;
     }
 
     if (this._source[this._index] === '[') {
       this.getSection();
-      return;
+      return null;
     }
 
     if (this._index < this._length &&
         this._source[this._index] !== '\n') {
       return this.getEntity();
     }
+    return null;
   }
 
   getSection() {
@@ -711,9 +715,11 @@ class ParseContext {
     return this._source.slice(start, eol);
   }
 
+  /* eslint-disable complexity */
   getComplexPattern() {
     let buffer = '';
     const content = [];
+    let placeables = 0;
     let quoteDelimited = null;
     let firstLine = true;
 
@@ -771,9 +777,14 @@ class ParseContext {
         if (buffer.length) {
           content.push(buffer);
         }
+        if (placeables > MAX_PLACEABLES - 1) {
+          throw this.error(
+            `Too many placeables, maximum allowed is ${MAX_PLACEABLES}`);
+        }
         buffer = ''
         content.push(this.getPlaceable());
         ch = this._source[this._index];
+        placeables++;
         continue;
       }
 
@@ -807,6 +818,7 @@ class ParseContext {
 
     return content;
   }
+  /* eslint-enable complexity */
 
   getPlaceable() {
     this._index++;
@@ -2072,7 +2084,9 @@ class Localization {
 
     const { createContext } = properties.get(this);
     return fetchFirstBundle(bundles.slice(1), createContext).then(
-      bundles => this.formatWithFallback(bundles, keys, method, translations)
+      tailBundles => this.formatWithFallback(
+        tailBundles, keys, method, translations
+      )
     );
   }
 
@@ -2331,8 +2345,11 @@ function emit(action, requestId, data) {
   );
 }
 
+const HASH_RADIX = 36;
+const MOZ_EVENT_TIMEOUT = 15000;
+
 function postMessage(msg, data) {
-  const reqId = Math.random().toString(36).replace(/[^a-z]+/g, '');
+  const reqId = Math.random().toString(HASH_RADIX).replace(/[^a-z]+/g, '');
 
   return new Promise((resolve, reject) => {
     function onResponse(evt) {
@@ -2346,7 +2363,7 @@ function postMessage(msg, data) {
     const t = setTimeout(() => {
       window.removeEventListener('mozL20nDemoResponse', onResponse);
       reject();
-    }, 15000);
+    }, MOZ_EVENT_TIMEOUT);
 
     window.addEventListener('mozL20nDemoResponse', onResponse);
 
@@ -2374,9 +2391,7 @@ class ContentResourceBundle {
       this.loaded = Promise.all(
         Object.keys(this.resources).map(resId => {
           const { source, lang } = this.resources[resId];
-          return postMessage('fetchResource', {
-            source, resId, lang: this.lang
-          });
+          return postMessage('fetchResource', { source, resId, lang });
         })
       );
     }
