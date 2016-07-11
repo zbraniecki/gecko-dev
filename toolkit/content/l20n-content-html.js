@@ -1797,7 +1797,7 @@ class LocalizationObserver {
       if (roots && roots.has(root)) {
         roots.delete(root);
         if (roots.size === 0) {
-          this.delete(name);
+          this.localizations.delete(name);
           this.rootsByLocalization.delete(l10n);
         }
       }
