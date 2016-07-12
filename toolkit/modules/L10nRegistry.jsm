@@ -214,9 +214,24 @@ this.L10nRegistry = {
         sources,
         i === 0);
     })).then(resBundles => {
+      const bundles = [].concat.apply([], resBundles).filter((bundle, i, arr) => {
+        if (i === 0) return true;
+
+        const prev = arr[i - 1];
+
+        for (let resId in bundle.resources) {
+          const res = bundle.resources[resId];
+          if (!prev.resources.hasOwnProperty(resId) ||
+            prev.resources[resId].lang !== res.lang ||
+            prev.resources[resId].source !== res.source) {
+            return true;
+          }
+        }
+        return false;
+      });
       return {
         supportedLocales: locales,
-        bundles: [].concat.apply([], resBundles)
+        bundles
       }
     })
   },

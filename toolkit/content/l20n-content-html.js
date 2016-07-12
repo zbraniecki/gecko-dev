@@ -1531,7 +1531,7 @@ function* FunctionReference({name}) {
     return new FTLNone(`${name}()`);
   }
 
-  if (!(func instanceof Function)) {
+  if (typeof func !== 'function') {
     yield tell(new TypeError(`Function ${name}() is not callable`));
     return new FTLNone(`${name}()`);
   }
@@ -2079,8 +2079,9 @@ class Localization {
       return translations.map(tuple => tuple[0]);
     }
 
-    // XXX report/emit errors?
-    // errors.forEach(e => console.warn(e));
+    if (console) {
+      errors.forEach(e => console.warn(e)); // eslint-disable-line no-console
+    }
 
     const { createContext } = properties.get(this);
     return fetchFirstBundle(bundles.slice(1), createContext).then(
