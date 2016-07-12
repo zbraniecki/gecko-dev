@@ -51,7 +51,7 @@ can reach it easily. -->
 
 <!ENTITY  listAllTabs.label      "List all tabs">
 
-<!ENTITY tabCmd.label "New Tab">
+<!ENTITY tabCmd.label "New Tab (dtd)">
 <!ENTITY tabCmd.accesskey "T">
 <!ENTITY tabCmd.commandkey "t">
 <!-- LOCALIZATION NOTE (openLocationCmd.label): "Open Location" is only

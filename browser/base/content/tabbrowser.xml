@@ -4901,9 +4901,6 @@
     </resources>
 
     <content>
-      <xul:localization name="tabbrowser-l10n">
-        <xul:source src="/browser/tabbrowser.ftl"/>
-      </xul:localization>
       <xul:hbox align="end">
         <xul:image class="tab-drop-indicator" anonid="tab-drop-indicator" collapsed="true"/>
       </xul:hbox>
@@ -4952,8 +4949,20 @@
             this._tabAnimationLoggingEnabled = false;
           }
           this._browserNewtabpageEnabled = Services.prefs.getBoolPref("browser.newtabpage.enabled");
+
+          Components.utils.import("chrome://global/content/l20n-chrome-xbl.js");
+          createLocalization("tabbrowser-l10n", [
+            "/browser/tabbrowser.ftl"
+          ], this, document.l10n);
+
         ]]>
       </constructor>
+
+      <destructor>
+        <![CDATA[
+          document.l10n.disconnectRoot(this);
+        ]]>
+      </destructor>
 
       <field name="tabbrowser" readonly="true">
         document.getElementById(this.getAttribute("tabbrowser"));

@@ -74,11 +74,8 @@
 <script type="application/javascript" src="chrome://browser/content/downloads/indicator.js"/>
 <script type="application/javascript" src="chrome://browser/content/places/editBookmarkOverlay.js"/>
 
-<script type="application/javascript" src="chrome://global/content/l20n-chrome-observer.js"/>
-
-<localization>
-  <source src="/browser/browser.ftl"/>
-</localization>
+<link rel="localization" href="/browser/browser.ftl"/>
+<script type="application/javascript" src="chrome://global/content/l20n-chrome-xul.js"/>
 
 # All sets except for popupsets (commands, keys, stringbundles and broadcasters) *must* go into the
 # browser-sets.inc file for sharing with hiddenWindow.xul.

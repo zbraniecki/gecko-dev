@@ -65,7 +65,8 @@ toolkit.jar:
    content/global/nsDragAndDrop.js
    content/global/process-content.js
    content/global/l20n-chrome-html.js
-   content/global/l20n-chrome-observer.js
+   content/global/l20n-chrome-xbl.js
+   content/global/l20n-chrome-xul.js
    content/global/l20n-content-html.js
    content/global/resetProfile.css
    content/global/resetProfile.js
@@ -89,7 +90,6 @@ toolkit.jar:
    content/global/bindings/general.xml         (widgets/general.xml)
    content/global/bindings/groupbox.xml        (widgets/groupbox.xml)
    content/global/bindings/listbox.xml         (widgets/listbox.xml)
-   content/global/bindings/localization.xml    (widgets/localization.xml)
    content/global/bindings/menu.xml            (widgets/menu.xml)
    content/global/bindings/menulist.xml        (widgets/menulist.xml)
    content/global/bindings/notification.xml    (widgets/notification.xml)

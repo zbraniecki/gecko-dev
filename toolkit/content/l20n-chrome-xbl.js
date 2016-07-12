@@ -1,8 +1,4 @@
-/* vim: set ts=2 et sw=2 tw=80 filetype=javascript: */
-/* This Source Code Form is subject to the terms of the Mozilla Public
- * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-'use strict';
+{
 
 class L10nError extends Error {
   constructor(message, id, lang) {
@@ -107,8 +103,8 @@ class Localization {
       return translations.map(tuple => tuple[0]);
     }
 
-    if (console) {
-      errors.forEach(e => console.warn(e)); // eslint-disable-line no-console
+    if (typeof console !== 'undefined') {
+      errors.forEach(console.warn); // eslint-disable-line no-console
     }
 
     const { createContext } = properties.get(this);
@@ -415,7 +411,7 @@ function createObserve(obs) {
   }
 }
 
-this.EXPORTED_SYMBOLS = ['createXULLocalization', 'ChromeResourceBundle'];
+this.EXPORTED_SYMBOLS = ['createLocalization'];
 
 Components.utils.import('resource://gre/modules/Services.jsm');
 Components.utils.import('resource://gre/modules/L10nRegistry.jsm');
@@ -442,12 +438,34 @@ function createContext(lang) {
   return new MessageContext(lang, { functions });
 }
 
-this.createXULLocalization = function(obs, requestBundles) {
-  const l10n = new XULLocalization(requestBundles, createContext);
-  l10n.observe = createObserve(obs);
-  Services.obs.addObserver(l10n, 'language-registry-update', false);
-  Services.obs.addObserver(l10n, 'language-registry-incremental', false);
-  return l10n;
+function getRequestedLangs() {
+  return Services.prefs.getComplexValue(
+    'intl.accept_languages', Components.interfaces.nsIPrefLocalizedString
+  ).data.split(',').map(String.trim);
 }
 
-this.ChromeResourceBundle = ChromeResourceBundle;
+function createLocalization(name, resIds, host, obs) {
+  if (!obs.has(name)) {
+    function requestBundles(requestedLangs = getRequestedLangs()) {
+      return L10nRegistry.getResources(requestedLangs, resIds).then(
+        ({bundles}) => bundles.map(
+          bundle => new ChromeResourceBundle(bundle.locale, bundle.resources)
+        )
+      );
+    }
+
+    const l10n = new XULLocalization(requestBundles, createContext);
+    l10n.observe = createObserve(obs);
+    Services.obs.addObserver(l10n, 'language-registry-update', false);
+    Services.obs.addObserver(l10n, 'language-registry-incremental', false);
+
+    obs.set(name, l10n);
+  }
+
+  obs.observeRoot(host, obs.get(name));
+  obs.translateRoot(host);
+}
+
+this.createLocalization = createLocalization;
+
+}

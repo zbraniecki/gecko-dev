@@ -574,65 +574,52 @@ function getIndexOfType(element) {
   return index;
 }
 
+const ns = 'http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul';
+
 const allowed = {
-  elements: [
-    'a', 'em', 'strong', 'small', 's', 'cite', 'q', 'dfn', 'abbr', 'data',
-    'time', 'code', 'var', 'samp', 'kbd', 'sub', 'sup', 'i', 'b', 'u',
-    'mark', 'ruby', 'rt', 'rp', 'bdi', 'bdo', 'span', 'br', 'wbr'
-  ],
   attributes: {
-    global: ['title', 'aria-label', 'aria-valuetext', 'aria-moz-hint'],
-    a: ['download'],
-    area: ['download', 'alt'],
-    // value is special-cased in isAttrAllowed
-    input: ['alt', 'placeholder'],
-    menuitem: ['label'],
-    menu: ['label'],
-    optgroup: ['label'],
-    option: ['label'],
-    track: ['label'],
-    img: ['alt'],
-    textarea: ['placeholder'],
-    th: ['abbr']
+    global: ['aria-label', 'aria-valuetext', 'aria-moz-hint'],
+    button: ['accesskey'],
+    tab: ['label'],
+    textbox: ['placeholder'],
   }
 };
 
-class HTMLLocalization extends Localization {
+class XULLocalization extends Localization {
   overlayElement(element, translation) {
     return overlayElement(this, element, translation);
   }
 
-  // XXX the allowed list should be amendable; https://bugzil.la/922573
-  isElementAllowed(element) {
-    return allowed.elements.indexOf(element.tagName.toLowerCase()) !== -1;
+  isElementAllowed() {
+    return false;
   }
 
   isAttrAllowed(attr, element) {
-    const attrName = attr.name.toLowerCase();
-    const tagName = element.tagName.toLowerCase();
+    if (element.namespaceURI !== ns) {
+      return false;
+    }
+
+    const tagName = element.localName;
+    const attrName = attr.name;
+
     // is it a globally safe attribute?
     if (allowed.attributes.global.indexOf(attrName) !== -1) {
       return true;
     }
+
     // are there no allowed attributes for this element?
     if (!allowed.attributes[tagName]) {
       return false;
     }
+
     // is it allowed on this element?
     // XXX the allowed list should be amendable; https://bugzil.la/922573
     if (allowed.attributes[tagName].indexOf(attrName) !== -1) {
       return true;
     }
-    // special case for value on inputs with type button, reset, submit
-    if (tagName === 'input' && attrName === 'value') {
-      const type = element.type.toLowerCase();
-      if (type === 'submit' || type === 'button' || type === 'reset') {
-        return true;
-      }
-    }
+
     return false;
   }
-
 }
 
 class ChromeResourceBundle {
@@ -694,14 +681,6 @@ function getResourceLinks(head) {
   );
 }
 
-function createGetValue(bundles) {
-  return function (id, args) {
-    const ctx = contexts.get(bundles[0]);
-    const [value] = valueFromContext(ctx, id, args);
-    return value;
-  };
-}
-
 // create nsIObserver's observe method bound to a LocalizationObserver obs
 function createObserve(obs) {
   return function observe(subject, topic, data) {
@@ -734,7 +713,6 @@ function createObserve(obs) {
 }
 
 Components.utils.import('resource://gre/modules/Services.jsm');
-Components.utils.import('resource://gre/modules/L10nService.jsm');
 Components.utils.import('resource://gre/modules/L10nRegistry.jsm');
 Components.utils.import('resource://gre/modules/IntlMessageContext.jsm');
 
@@ -763,7 +741,7 @@ document.l10n = new ChromeLocalizationObserver();
 window.addEventListener('languagechange', document.l10n);
 
 documentReady().then(() => {
-  for (let [name, resIds] of getResourceLinks(document.head)) {
+  for (let [name, resIds] of getResourceLinks(document)) {
     if (!document.l10n.has(name)) {
       createLocalization(name, resIds);
     }
@@ -772,9 +750,6 @@ documentReady().then(() => {
 
 function createLocalization(name, resIds) {
   function requestBundles(requestedLangs = navigator.languages) {
-    // const { resBundles } = L10nService.getResources(requestedLangs, resIds);
-    // return Promise.resolve(resBundles);
-
     return L10nRegistry.getResources(requestedLangs, resIds).then(
       ({bundles}) => bundles.map(
         bundle => new ChromeResourceBundle(bundle.locale, bundle.resources)
@@ -782,22 +757,16 @@ function createLocalization(name, resIds) {
     );
   }
 
-  const l10n = new HTMLLocalization(requestBundles, createContext);
+  const l10n = new XULLocalization(requestBundles, createContext);
   l10n.observe = createObserve(document.l10n);
   Services.obs.addObserver(l10n, 'language-registry-update', false);
   Services.obs.addObserver(l10n, 'language-registry-incremental', false);
 
-  // XXX this is currently used by about:support; it doesn't support language 
-  // changes nor live updates
-  document.l10n.ready = l10n.interactive;
-  document.l10n.ready.then(
-    bundles => document.l10n.getValue = createGetValue(bundles)
-  );
   document.l10n.set(name, l10n);
 
   if (name === 'main') {
     const rootElem = document.documentElement;
-    document.l10n.observeRoot(rootElem, document.l10n.get(name));
+    document.l10n.observeRoot(rootElem, l10n);
     document.l10n.translateRoot(rootElem);
   }
 }

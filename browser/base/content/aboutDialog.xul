@@ -33,12 +33,10 @@
 #ifdef MOZ_UPDATER
   <script type="application/javascript" src="chrome://browser/content/aboutDialog-appUpdater.js"/>
 #endif
-  <script type="application/javascript" src="chrome://global/content/l20n-chrome-observer.js"/>
 
-  <localization>
-    <source src="/branding/brand.ftl"/>
-    <source src="/browser/aboutDialog.ftl"/>
-  </localization>
+  <link rel="localization" href="/branding/brand.ftl" />
+  <link rel="localization" href="/browser/aboutDialog.ftl" />
+  <script type="application/javascript" src="chrome://global/content/l20n-chrome-xul.js"/>
 
   <vbox id="aboutDialogContainer">
     <hbox id="clientBox">

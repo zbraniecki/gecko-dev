@@ -10,10 +10,6 @@
   line-height: 1.5;
 }
 
-localization {
-  -moz-binding: url("chrome://global/content/bindings/localization.xml#xul");
-}
-
 #rightBox {
   background-image: url("chrome://branding/content/about-wordmark.svg");
   background-repeat: no-repeat;
