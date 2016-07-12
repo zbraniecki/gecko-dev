@@ -10,10 +10,8 @@ aboutSupport-pageSubtitle =
   | pytania dotyczące programu { brandShortName }, sprawdź naszą
   | <a id='supportLink'>stronę wsparcia technicznego</a>. 
 
-# XXX removed for demo
-# aboutSupport-safeModeTitle = Spróbuj trybu bezpiecznego
-# XXX broken for demo
-aboutSupport-restartInSafeMode = Uruchom { brandShort } ponownie z wyłączonymi dodatkami…
+aboutSupport-safeModeTitle = Spróbuj trybu bezpiecznego
+aboutSupport-restartInSafeMode = Uruchom { brandShortName } ponownie z wyłączonymi dodatkami…
 
 aboutSupport-copyRawDataToClipboard = Skopiuj nieprzetworzone dane do schowka
 aboutSupport-rawDataCopied = Raw data copied to clipboard

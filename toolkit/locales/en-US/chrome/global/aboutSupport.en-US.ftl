@@ -1,7 +1,6 @@
 # This file is used to localize about:support in Firefox.
 
-# XXX removed for demo
-# aboutSupport-pageTitle = Troubleshooting Information
+aboutSupport-pageTitle = Troubleshooting Information
 
 # Don’t translate “supportLink”, it’s an ID used for CSS.
 # The link points to https://support.mozilla.org
