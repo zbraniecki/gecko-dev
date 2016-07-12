@@ -776,10 +776,11 @@ function createLocalization(name, resIds) {
     // return Promise.resolve(resBundles);
 
     return L10nRegistry.getResources(requestedLangs, resIds).then(
-      ({bundles}) => bundles.map(
-        bundle => new ChromeResourceBundle(bundle.locale, bundle.resources)
-      )
-    );
+      ({bundles}) => {
+        return bundles.map(
+          bundle => new ChromeResourceBundle(bundle.locale, bundle.resources)
+        )
+      });
   }
 
   const l10n = new HTMLLocalization(requestBundles, createContext);
