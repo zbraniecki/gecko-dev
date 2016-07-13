@@ -5,10 +5,6 @@ const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import('resource://gre/modules/SyncPromise.jsm');
 
-const sync = false;
-
-const CurPromise = sync ? SyncPromise : Promise;
-
 /* Sources */
 class Source {
   constructor(name) {
@@ -25,13 +21,17 @@ const HTTP_STATUS_CODE_OK = 200;
 function load(path) {
   let url = 'resource://' + path;
 
-  return new CurPromise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
       .createInstance(Ci.nsIXMLHttpRequest);
 
     req.mozBackgroundRequest = true;
     req.overrideMimeType('text/plain');
-    req.open('GET', url, !sync);
+    try {
+      req.open('GET', url, true);
+    } catch (e) {
+      reject(e);
+    }
 
     req.addEventListener('load', () => {
       if (req.status === HTTP_STATUS_CODE_OK) {
@@ -48,7 +48,7 @@ function load(path) {
 
     try {
       req.send(null);
-    } catch (e) {
+    } catch(e) {
       reject(e);
     }
   });
@@ -121,7 +121,7 @@ function fetchFirstBundle(bundles) {
 this.L10nRegistry = {
   getResources(requestedLangs, resIds) {
     const defaultLang = 'en-US';
-    const supportedLocales = new Set(['pl', 'en-US']);
+    const supportedLocales = new Set(requestedLangs);
 
     const sources = Array.from(sourcesOrder);
     const locales = Array.from(supportedLocales);
@@ -199,18 +199,18 @@ this.L10nRegistry = {
     if (cache.has(cacheId)) {
       let val = cache.get(cacheId);
       if (val === null) {
-        return CurPromise.reject();
+        return Promise.reject();
       } else {
-        return CurPromise.resolve(val);
+        return Promise.resolve(val);
       }
     }
 
     return sources.get(source).loadResource(resId, lang).then(data => {
-      cache.set(cacheId, data);
+      //cache.set(cacheId, data);
       return data;
     }, err => {
-      cache.set(cacheId, null);
-      return CurPromise.reject(err);
+      //cache.set(cacheId, null);
+      return Promise.reject();
     });
   },
 

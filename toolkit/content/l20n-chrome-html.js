@@ -762,6 +762,13 @@ function createContext(lang) {
 document.l10n = new ChromeLocalizationObserver();
 window.addEventListener('languagechange', document.l10n);
 
+
+let readyResolve;
+
+document.l10n.ready = new Promise(function(resolve, reject) {
+  readyResolve = resolve;
+});
+
 documentReady().then(() => {
   for (let [name, resIds] of getResourceLinks(document.head)) {
     if (!document.l10n.has(name)) {
@@ -790,7 +797,7 @@ function createLocalization(name, resIds) {
 
   // XXX this is currently used by about:support; it doesn't support language 
   // changes nor live updates
-  document.l10n.ready = l10n.interactive;
+  l10n.interactive.then(readyResolve);
   document.l10n.ready.then(
     bundles => document.l10n.getValue = createGetValue(bundles)
   );
