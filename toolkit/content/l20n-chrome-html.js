@@ -85,6 +85,8 @@ class LocalizationObserver {
   }
 
   disconnectRoot(root) {
+    let wasLast = false;
+
     this.pause();
     this.localizationsByRoot.delete(root);
     for (let [name, l10n] of this.localizations) {
@@ -92,12 +94,15 @@ class LocalizationObserver {
       if (roots && roots.has(root)) {
         roots.delete(root);
         if (roots.size === 0) {
+          wasLast = true;
           this.localizations.delete(name);
           this.rootsByLocalization.delete(l10n);
         }
       }
     }
     this.resume();
+
+    return wasLast;
   }
 
   pause() {
@@ -784,8 +789,16 @@ function createLocalization(name, resIds) {
 
   const l10n = new HTMLLocalization(requestBundles, createContext);
   l10n.observe = createObserve(document.l10n);
-  Services.obs.addObserver(l10n, 'language-registry-update', false);
-  Services.obs.addObserver(l10n, 'language-registry-incremental', false);
+
+  window.addEventListener('pageshow', () => {
+    Services.obs.addObserver(l10n, 'language-registry-update', false);
+    Services.obs.addObserver(l10n, 'language-registry-incremental', false);
+  });
+
+  window.addEventListener('pagehide', () => {
+    Services.obs.removeObserver(l10n, 'language-registry-update');
+    Services.obs.removeObserver(l10n, 'language-registry-incremental');
+  });
 
   // XXX this is currently used by about:support; it doesn't support language 
   // changes nor live updates

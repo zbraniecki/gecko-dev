@@ -4960,7 +4960,8 @@
 
       <destructor>
         <![CDATA[
-          document.l10n.disconnectRoot(this);
+          Components.utils.import("chrome://global/content/l20n-chrome-xbl.js");
+          destroyLocalization("tabbrowser-l10n", this, document.l10n);
         ]]>
       </destructor>
 
