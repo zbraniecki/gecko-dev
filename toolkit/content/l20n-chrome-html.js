@@ -1,5 +1,9 @@
 {
 
+Components.utils.import('resource://gre/modules/SyncPromise.jsm')
+
+const CurPromise = SyncPromise;
+
 function getDirection(code) {
   const tag = code.split('-')[0];
   return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
@@ -53,7 +57,7 @@ class LocalizationObserver {
 
   requestLanguages(requestedLangs) {
     const localizations = Array.from(this.localizations.values());
-    return Promise.all(
+    return CurPromise.all(
       localizations.map(l10n => l10n.requestLanguages(requestedLangs))
     ).then(
       () => this.translateAllRoots()
@@ -116,7 +120,7 @@ class LocalizationObserver {
 
   translateAllRoots() {
     const localizations = Array.from(this.localizations.values());
-    return Promise.all(
+    return CurPromise.all(
       localizations.map(
         l10n => this.translateRoots(l10n)
       )
@@ -125,11 +129,11 @@ class LocalizationObserver {
 
   translateRoots(l10n) {
     if (!this.rootsByLocalization.has(l10n)) {
-      return Promise.resolve();
+      return CurPromise.resolve();
     }
 
     const roots = Array.from(this.rootsByLocalization.get(l10n));
-    return Promise.all(
+    return CurPromise.all(
       roots.map(root => this.translateRoot(root, l10n))
     );
   }
@@ -249,7 +253,7 @@ class LocalizationObserver {
   }
 
   getElementsTranslation(elemsByL10n) {
-    return Promise.all(
+    return CurPromise.all(
       Array.from(elemsByL10n).map(
         ([l10n, elems]) => l10n.formatEntities(this.getKeysForElements(elems))
       )
@@ -270,7 +274,7 @@ class ChromeLocalizationObserver extends LocalizationObserver {
       return this.translateFragment(root);
     }
 
-    return Promise.all(
+    return CurPromise.all(
       [root, ...anonChildren].map(node => this.translateFragment(node))
     );
   }
@@ -426,7 +430,7 @@ function fetchFirstBundle(bundles, createContext) {
   const [bundle] = bundles;
 
   if (!bundle) {
-    return Promise.resolve(bundles);
+    return CurPromise.resolve(bundles);
   }
 
   return createContextFromBundle(bundle, createContext).then(
@@ -641,23 +645,18 @@ class ChromeResourceBundle {
     this.loaded = false;
     this.resources = resources;
 
-    // Uncomment to test sync resource loading
-    // Components.utils.import('resource://gre/modules/SyncPromise.jsm')
-    // this.Promise = SyncPromise;
-    this.Promise = Promise;
-
     const data = Object.keys(resources).map(
       resId => resources[resId].data
     );
 
     if (data.every(d => d !== null)) {
-      this.loaded = this.Promise.resolve(data);
+      this.loaded = CurPromise.resolve(data);
     }
   }
 
   fetch() {
     if (!this.loaded) {
-      this.loaded = this.Promise.all(
+      this.loaded = CurPromise.all(
         Object.keys(this.resources).map(resId => {
           const { source, lang } = this.resources[resId];
           return L10nRegistry.fetchResource(source, resId, lang);
@@ -673,10 +672,10 @@ class ChromeResourceBundle {
 // https://github.com/whatwg/html/issues/127
 function documentReady() {
   if (document.readyState !== 'loading') {
-    return Promise.resolve();
+    return CurPromise.resolve();
   }
 
-  return new Promise(resolve => {
+  return new CurPromise(resolve => {
     document.addEventListener('readystatechange', function onrsc() {
       document.removeEventListener('readystatechange', onrsc);
       resolve();
@@ -763,12 +762,6 @@ document.l10n = new ChromeLocalizationObserver();
 window.addEventListener('languagechange', document.l10n);
 
 
-let readyResolve;
-
-document.l10n.ready = new Promise(function(resolve, reject) {
-  readyResolve = resolve;
-});
-
 documentReady().then(() => {
   for (let [name, resIds] of getResourceLinks(document.head)) {
     if (!document.l10n.has(name)) {
@@ -780,7 +773,7 @@ documentReady().then(() => {
 function createLocalization(name, resIds) {
   function requestBundles(requestedLangs = navigator.languages) {
     // const { resBundles } = L10nService.getResources(requestedLangs, resIds);
-    // return Promise.resolve(resBundles);
+    // return CurPromise.resolve(resBundles);
 
     return L10nRegistry.getResources(requestedLangs, resIds).then(
       ({bundles}) => {
@@ -795,19 +788,16 @@ function createLocalization(name, resIds) {
   Services.obs.addObserver(l10n, 'language-registry-update', false);
   Services.obs.addObserver(l10n, 'language-registry-incremental', false);
 
-  // XXX this is currently used by about:support; it doesn't support language 
-  // changes nor live updates
-  l10n.interactive.then(readyResolve);
-  document.l10n.ready.then(
-    bundles => document.l10n.getValue = createGetValue(bundles)
-  );
   document.l10n.set(name, l10n);
-
   if (name === 'main') {
     const rootElem = document.documentElement;
     document.l10n.observeRoot(rootElem, document.l10n.get(name));
     document.l10n.translateRoot(rootElem);
   }
+  document.l10n.ready = l10n.interactive;
+  document.l10n.ready.then(
+    bundles => document.l10n.getValue = createGetValue(bundles)
+  );
 }
 
 }
