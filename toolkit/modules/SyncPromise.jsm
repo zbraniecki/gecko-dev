@@ -1,146 +1,103 @@
 this.EXPORTED_SYMBOLS = [ "SyncPromise" ];
 
 function isPromise(p) {
-  return p && typeof p.then === 'function';
-}
-function addReject(prom, reject) {
-  prom.then(null, reject) // Use this style for sake of non-Promise thenables (e.g., jQuery Deferred)
+  return p && p.then ? true : false;
 }
 
-// States
-var PENDING = 2,
-    FULFILLED = 0, // We later abuse these as array indices
-    REJECTED = 1;
-
-function SyncPromise(fn) {
-  var self = this;
-  self.v = 0; // Value, this will be set to either a resolved value or rejected reason
-  self.s = PENDING; // State of the promise
-  self.c = [[],[]]; // Callbacks c[0] is fulfillment and c[1] contains rejection callbacks
-  self.a = false; // Has the promise been resolved synchronously
-  var syncResolved = true;
-  function transist(val, state) {
-    self.a = syncResolved;
-    self.v = val;
-    self.s = state;
-    if (state === REJECTED && !self.c[state].length) {
-      throw val;
-    }
-    self.c[state].forEach(function(fn) { fn(val); });
-    self.c = null; // Release memory.
-  }
-  function resolve(val) {
-    if (!self.c) {
-      // Already resolved, do nothing.
-    } else if (isPromise(val)) {
-      addReject(val.then(resolve), reject);
-    } else {
-      transist(val, FULFILLED);
-    }
-  }
-  function reject(reason) {
-    if (!self.c) {
-      // Already resolved, do nothing.
-    } else if (isPromise(reason)) {
-      addReject(reason.then(reject), reject);
-    } else {
-      transist(reason, REJECTED);
-    }
-  }
-  fn(resolve, reject);
-  syncResolved = false;
-}
-
-var prot = SyncPromise.prototype;
-
-prot.then = function(cb, errBack) {
-  var self = this;
-  if (self.a) { // Promise has been resolved synchronously
-    //throw new Error('Cannot call `then` on synchronously resolved promise');
-  }
-  return new SyncPromise(function(resolve, reject) {
-    var rej = typeof errBack === 'function' ? errBack : reject;
-    function settle() {
-      try {
-        resolve(cb ? cb(self.v) : self.v);
-      } catch(e) {
-        rej(e);
-      }
-    }
-    if (self.s === FULFILLED) {
-      settle();
-    } else if (self.s === REJECTED) {
-      rej(self.v);
-    } else {
-      self.c[FULFILLED].push(settle);
-      self.c[REJECTED].push(rej);
-    }
-  });
+const STATE = {
+  PENDING: 'pending',
+  FULFILLED: 'fulfilled',
+  REJECTED: 'rejected'
 };
 
-prot.catch = function(cb) {
-  var self = this;
-  //if (self.a) { // Promise has been resolved synchronously
-  //  throw new Error('Cannot call `catch` on synchronously resolved promise');
-  //}
-  return new SyncPromise(function(resolve, reject) {
-    function settle() {
-      try {
-        resolve(cb(self.v));
-      } catch(e) {
-        reject(e);
+class SyncPromise {
+  constructor(fn = null, silenceRepetitiveResolutions = false) {
+    if (fn === null) {
+      throw new TypeError('Not enough arguments to Promise.');
+    }
+    if (typeof fn !== 'function') {
+      throw new TypeError('Argument 1 of Promise.constructor is not callable.')
+    }
+    this.state = STATE.PENDING;
+
+    let resolve = val => {
+      if (this.state !== STATE.PENDING && !silenceRepetitiveResolutions) {
+        throw new Error('Cannot call resolve on already resolved promise.');
       }
+      this.state = STATE.FULFILLED;
+      this.value = val;
+    };
+    let reject = err => {
+      if (this.state !== STATE.PENDING && !silenceRepetitiveResolutions) {
+        throw new Error('Cannot call reject on already resolved promise.');
+      }
+      this.state = STATE.REJECTED;
+      this.reason = err;
+    };
+    fn(resolve, reject);
+    if (this.state === STATE.PENDING) {
+      throw new Error('Callback must resolve the promise before returning.');
     }
-    if (self.s === REJECTED) {
-      settle();
-    } else if (self.s === FULFILLED) {
-      resolve(self.v);
+  }
+
+  then(fn = null, err = null) {
+    const cb =
+      this.state === STATE.FULFILLED ? fn : err;
+    if (cb === null) {
+      return this;
+    }
+    const arg = this.state === STATE.FULFILLED ? this.value : this.reason;
+
+    const ret = cb(arg);
+    if (isPromise(ret)) {
+      return ret;
+    }
+    if (this.state === STATE.FULFILLED) {
+      this.value = ret;
     } else {
-      self.c[REJECTED].push(settle);
-      self.c[FULFILLED].push(resolve);
+      this.reason = ret;
     }
+    return this;
+  }
+}
+
+SyncPromise.resolve = function(val) {
+  return new SyncPromise((resolve, reject) => {
+    resolve(val);
   });
-};
+}
+
+SyncPromise.reject = function(err) {
+  return new SyncPromise((resolve, reject) => {
+    reject(err);
+  });
+}
 
 SyncPromise.all = function(promises) {
-  return new SyncPromise(function(resolve, reject, l) {
-    l = promises.length;
-    var hasPromises = false;
-    promises.forEach(function(p, i) {
+  return new SyncPromise((resolve, reject) => {
+    let l = promises.length;
+    const result = [];
+
+    promises.every((p, i) => {
       if (isPromise(p)) {
-        hasPromises = true;
-        addReject(p.then(function(res) {
-          promises[i] = res;
-          --l || resolve(promises);
-        }), reject);
+        let didError = false;
+
+        p.then(res => {
+          result[i] = res;
+          --l || resolve(result);
+        }, err => {
+          reject(err);
+          didError = true;
+        });
+
+        if (didError) {
+          return false;
+        }
       } else {
-        --l || resolve(promises);
+        result[i] = p;
+        --l || resolve(result);
       }
+      return true;
     });
   });
-};
-
-SyncPromise.race = function(promises) {
-  var resolved = false;
-  return new SyncPromise(function(resolve, reject) {
-    promises.some(function(p, i) {
-      if (isPromise(p)) {
-        addReject(p.then(function(res) {
-          if (resolved) {
-            return;
-          }
-          resolve(res);
-          resolved = true;
-        }), reject);
-      } else {
-        throw new Error('Must use promises within `SyncPromise.race`');
-      }
-    });
-  });
-};
-
-SyncPromise.resolve = function(f) {
-  return new SyncPromise(function(resolve, reject) {
-    resolve(f);
-  })
 }

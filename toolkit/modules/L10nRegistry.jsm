@@ -5,6 +5,11 @@ const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import('resource://gre/modules/SyncPromise.jsm');
 
+
+let sync = true;
+
+let CurPromise = sync ? SyncPromise : Promise;
+
 /* Sources */
 class Source {
   constructor(name) {
@@ -21,14 +26,15 @@ const HTTP_STATUS_CODE_OK = 200;
 function load(path) {
   let url = 'resource://' + path;
 
-  return new Promise((resolve, reject) => {
+  return new CurPromise((resolve, reject) => {
     const req = Cc['@mozilla.org/xmlextras/xmlhttprequest;1']
       .createInstance(Ci.nsIXMLHttpRequest);
 
     req.mozBackgroundRequest = true;
     req.overrideMimeType('text/plain');
+
     try {
-      req.open('GET', url, true);
+      req.open('GET', url, !sync);
     } catch (e) {
       reject(e);
     }
@@ -36,13 +42,11 @@ function load(path) {
     req.addEventListener('load', () => {
       if (req.status === HTTP_STATUS_CODE_OK) {
         resolve(req.responseText);
-
       } else {
         reject(new Error('Not found: ' + url));
-
       }
-
     });
+
     req.addEventListener('error', reject);
     req.addEventListener('timeout', reject);
 
@@ -51,7 +55,7 @@ function load(path) {
     } catch(e) {
       reject(e);
     }
-  });
+  }, true);
 }
 
 class FileSource extends Source {
@@ -107,7 +111,7 @@ function fetchFirstBundle(bundles) {
     let res = bundles[0].resources[resId];
     fetchList.push(this.fetchResource(res.source, resId, res.locale));
   }
-  return Promise.all(fetchList).then(resData => {
+  return CurPromise.all(fetchList).then(resData => {
     let resIds = Object.keys(bundles[0].resources);
     resData.forEach((data, i) => {
       bundles[0].resources[resIds[i]].data = data;
@@ -199,9 +203,9 @@ this.L10nRegistry = {
     if (cache.has(cacheId)) {
       let val = cache.get(cacheId);
       if (val === null) {
-        return Promise.reject();
+        return CurPromise.reject();
       } else {
-        return Promise.resolve(val);
+        return CurPromise.resolve(val);
       }
     }
 
@@ -210,7 +214,7 @@ this.L10nRegistry = {
       return data;
     }, err => {
       //cache.set(cacheId, null);
-      return Promise.reject();
+      return CurPromise.reject();
     });
   },
 
