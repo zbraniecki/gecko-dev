@@ -13086,6 +13086,39 @@ nsDocument::ReportUseCounters()
   }
 }
 
+void
+nsDocument::AddLayoutStartBlocker()
+{
+  if (++mLayoutBlockerCount == 1) {
+    if (mParser) {
+      mLayoutStartingSink = do_QueryInterface(mParser->GetContentSink());
+    } else {
+      mLayoutStartingSink = do_QueryReferent(mWeakSink);
+    }
+
+    if (mLayoutStartingSink) {
+      mLayoutStartingSink->AddLayoutStartBlocker();
+    }
+  }
+}
+
+void
+nsDocument::RemoveLayoutStartBlocker()
+{
+  if (mLayoutBlockerCount == 0) {
+    // Bogus call
+    return;
+  }
+
+  if (mLayoutStartingSink) {
+    mLayoutStartingSink->RemoveLayoutStartBlocker();
+  }
+
+  if (--mLayoutBlockerCount == 0) {
+    mLayoutStartingSink = nullptr;
+  }
+}
+
 XPathEvaluator*
 nsIDocument::XPathEvaluator()
 {

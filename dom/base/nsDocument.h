@@ -69,6 +69,7 @@
 #include "ImportManager.h"
 #include "mozilla/LinkedList.h"
 #include "CustomElementsRegistry.h"
+#include "nsILayoutStartingContentSink.h"
 
 #define XML_DECLARATION_BITS_DECLARATION_EXISTS   (1 << 0)
 #define XML_DECLARATION_BITS_ENCODING_EXISTS      (1 << 1)
@@ -887,6 +888,9 @@ public:
 
   void ReportUseCounters();
 
+  virtual void AddLayoutStartBlocker() override;
+  virtual void RemoveLayoutStartBlocker() override;
+
 private:
   void AddOnDemandBuiltInUASheet(mozilla::StyleSheetHandle aSheet);
   nsRadioGroupStruct* GetRadioGroupInternal(const nsAString& aName) const;
@@ -1472,6 +1476,13 @@ protected:
   // will allow us to flush out any pending stuff from the sink even if
   // EndLoad() has already happened.
   nsWeakPtr mWeakSink;
+
+  // Strong reference to our sink that is required to do undo a layout start
+  // blocker we have set up.
+  nsCOMPtr<nsILayoutStartingContentSink> mLayoutStartingSink;
+
+  // Number of times we've had layout blocked on us.
+  uint32_t mLayoutBlockerCount;
 
   nsTArray<mozilla::StyleSheetHandle::RefPtr> mStyleSheets;
   nsTArray<mozilla::StyleSheetHandle::RefPtr> mOnDemandBuiltInUASheets;

@@ -12,6 +12,8 @@ toolkit.jar:
    content/global/about.xhtml
    content/global/aboutAbout.js
    content/global/aboutAbout.xhtml
+   content/global/aboutLocalization.js
+   content/global/aboutLocalization.xhtml
 #ifdef MOZILLA_OFFICIAL
    content/global/aboutRights.xhtml
 #else
@@ -30,6 +32,12 @@ toolkit.jar:
    content/global/aboutwebrtc/aboutWebrtc.html (aboutwebrtc/aboutWebrtc.html)
    content/global/aboutSupport.js
 *  content/global/aboutSupport.xhtml
+   content/global/aboutSupport-master.js
+*  content/global/aboutSupport-master.xhtml
+*  content/global/aboutSupport-nodtd.xhtml
+*  content/global/aboutSupport-mo.xhtml
+   content/global/l20n-perf-monitor.js
+   content/global/l20n-mo.js
    content/global/aboutTelemetry.js
    content/global/aboutTelemetry.xhtml
    content/global/aboutTelemetry.css
@@ -57,6 +65,10 @@ toolkit.jar:
    content/global/globalOverlay.js
    content/global/mozilla.xhtml
    content/global/process-content.js
+   content/global/l20n-chrome-html.js
+   content/global/l20n-chrome-xbl.js
+   content/global/l20n-chrome-xul.js
+   content/global/l20n-content-html.js
    content/global/resetProfile.css
    content/global/resetProfile.js
    content/global/resetProfile.xul

@@ -16,6 +16,7 @@
   skin/classic/mozapps/extensions/alerticon-info-negative.svg (../../shared/extensions/alerticon-info-negative.svg)
   skin/classic/mozapps/formautofill/requestAutocomplete.css  (../../shared/formautofill/requestAutocomplete.css)
   skin/classic/mozapps/plugins/pluginProblem.css             (../../shared/plugins/pluginProblem.css)
+  skin/classic/mozapps/aboutLocalization.css                 (../../shared/aboutLocalization.css)
   skin/classic/mozapps/aboutNetworking.css                   (../../shared/aboutNetworking.css)
 #ifndef ANDROID
   skin/classic/mozapps/aboutProfiles.css                     (../../shared/aboutProfiles.css)

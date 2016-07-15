@@ -65,6 +65,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsContentSink)
   NS_INTERFACE_MAP_ENTRY(nsIDocumentObserver)
   NS_INTERFACE_MAP_ENTRY(nsIMutationObserver)
   NS_INTERFACE_MAP_ENTRY(nsITimerCallback)
+  NS_INTERFACE_MAP_ENTRY(nsILayoutStartingContentSink)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIDocumentObserver)
 NS_INTERFACE_MAP_END
 
@@ -213,32 +214,43 @@ nsContentSink::StyleSheetLoaded(StyleSheetHandle aSheet,
 {
   NS_ASSERTION(!mRunsToCompletion, "How come a fragment parser observed sheets?");
   if (!aWasAlternate) {
-    NS_ASSERTION(mPendingSheetCount > 0, "How'd that happen?");
-    --mPendingSheetCount;
-
-    if (mPendingSheetCount == 0 &&
-        (mDeferredLayoutStart || mDeferredFlushTags)) {
-      if (mDeferredFlushTags) {
-        FlushTags();
-      }
-      if (mDeferredLayoutStart) {
-        // We might not have really started layout, since this sheet was still
-        // loading.  Do it now.  Probably doesn't matter whether we do this
-        // before or after we unblock scripts, but before feels saner.  Note
-        // that if mDeferredLayoutStart is true, that means any subclass
-        // StartLayout() stuff that needs to happen has already happened, so we
-        // don't need to worry about it.
-        StartLayout(false);
-      }
-
-      // Go ahead and try to scroll to our ref if we have one
-      ScrollToRef();
-    }
-    
+    // We might not have really started layout, since this sheet was still
+    // loading.  Do it now.  Probably doesn't matter whether we do this
+    // before or after we unblock scripts, but before feels saner.
+    RemoveLayoutStartBlocker();
     mScriptLoader->RemoveParserBlockingScriptExecutionBlocker();
   }
 
   return NS_OK;
+}
+
+void
+nsContentSink::AddLayoutStartBlocker()
+{
+  ++mLayoutStartBlockerCount;
+}
+
+void
+nsContentSink::RemoveLayoutStartBlocker()
+{
+  NS_ASSERTION(mLayoutStartBlockerCount > 0, "How'd that happen?");
+  --mLayoutStartBlockerCount;
+
+  if (mLayoutStartBlockerCount == 0 &&
+      (mDeferredLayoutStart || mDeferredFlushTags)) {
+    if (mDeferredFlushTags) {
+      FlushTags();
+    }
+    if (mDeferredLayoutStart) {
+      // Note that if mDeferredLayoutStart is true, that means any subclass
+      // StartLayout() stuff that needs to happen has already happened, so we
+      // don't need to worry about it.
+      StartLayout(false);
+    }
+
+    // Go ahead and try to scroll to our ref if we have one
+    ScrollToRef();
+  }
 }
 
 nsresult
@@ -771,7 +783,7 @@ nsContentSink::ProcessStyleLink(nsIContent* aElement,
   NS_ENSURE_SUCCESS(rv, rv);
   
   if (!isAlternate && !mRunsToCompletion) {
-    ++mPendingSheetCount;
+    ++mLayoutStartBlockerCount;
     mScriptLoader->AddParserBlockingScriptExecutionBlocker();
   }
 
@@ -1170,7 +1182,7 @@ nsContentSink::ScrollToRef()
 }
 
 void
-nsContentSink::StartLayout(bool aIgnorePendingSheets)
+nsContentSink::StartLayout(bool aIgnoreLayoutStartBlockers)
 {
   if (mLayoutStarted) {
     // Nothing to do here
@@ -1179,7 +1191,7 @@ nsContentSink::StartLayout(bool aIgnorePendingSheets)
   
   mDeferredLayoutStart = true;
 
-  if (!aIgnorePendingSheets && WaitForPendingSheets()) {
+  if (!aIgnoreLayoutStartBlockers && WaitForLayoutBlockers()) {
     // Bail out; we'll start layout when the sheets load
     return;
   }
@@ -1251,7 +1263,7 @@ nsContentSink::Notify(nsITimer *timer)
     return NS_OK;
   }
   
-  if (WaitForPendingSheets()) {
+  if (WaitForLayoutBlockers()) {
     mDeferredFlushTags = true;
   } else {
     FlushTags();
@@ -1273,7 +1285,7 @@ nsContentSink::IsTimeToNotify()
     return false;
   }
 
-  if (WaitForPendingSheets()) {
+  if (WaitForLayoutBlockers()) {
     mDeferredFlushTags = true;
     return false;
   }
@@ -1300,7 +1312,7 @@ nsContentSink::WillInterruptImpl()
              SINK_TRACE_CALLS,
              ("nsContentSink::WillInterrupt: this=%p", this));
 #ifndef SINK_NO_INCREMENTAL
-  if (WaitForPendingSheets()) {
+  if (WaitForLayoutBlockers()) {
     mDeferredFlushTags = true;
   } else if (sNotifyOnTimer && mLayoutStarted) {
     if (mBackoffCount && !mInMonolithicContainer) {

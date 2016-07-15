@@ -68,6 +68,10 @@ static RedirEntry kRedirMap[] = {
       nsIAboutModule::MAKE_LINKABLE
   },
   {
+    "localization", "chrome://global/content/aboutLocalization.xhtml",
+    nsIAboutModule::ALLOW_SCRIPT
+  },
+  {
     "logo", "chrome://branding/content/about.png",
     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
     // Linkable for testing reasons.

@@ -54,8 +54,11 @@ function init(aEvent)
     let defaults = Services.prefs.getDefaultBranch("");
     let channelLabel = document.getElementById("currentChannel");
     let currentChannelText = document.getElementById("currentChannelText");
-    channelLabel.value = UpdateUtils.UpdateChannel;
-    if (/^release($|\-)/.test(channelLabel.value))
+    let channelName = UpdateUtils.UpdateChannel;
+    document.l10n.setAttributes(currentChannelText, 'aboutDialog-channel-description', {
+      channelName
+    });
+    if (/^release($|\-)/.test(channelName))
         currentChannelText.hidden = true;
   }
 

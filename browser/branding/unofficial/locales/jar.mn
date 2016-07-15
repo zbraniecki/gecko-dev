@@ -9,4 +9,6 @@
 # Unofficial branding only exists in en-US
   locale/branding/brand.dtd        (en-US/brand.dtd)
   locale/branding/brand.properties (en-US/brand.properties)
+  locale/branding/brand.en-US.ftl  (en-US/brand.en-US.ftl)
+  locale/branding/brand.pl.ftl     (en-US/brand.pl.ftl)
   locale/branding/browserconfig.properties

@@ -443,6 +443,15 @@ partial interface Document {
   [Func="IsChromeOrXBL"] readonly attribute boolean hasScriptsBlockedBySandbox;
 };
 
+// Extension to give chrome JS the ability to add/remove layout start
+// blockers.
+partial interface Document {
+  [ChromeOnly]
+  void addLayoutStartBlocker();
+  [ChromeOnly]
+  void removeLayoutStartBlocker();
+};
+
 Document implements XPathEvaluator;
 Document implements GlobalEventHandlers;
 Document implements TouchEventHandlers;

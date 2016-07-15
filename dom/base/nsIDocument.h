@@ -1827,6 +1827,11 @@ public:
     mMayStartLayout = aMayStartLayout;
   }
 
+  // API to allow adding/removing layout start blockers.  These will only really
+  // do something if we still have a parser when the first blocker is added.
+  virtual void AddLayoutStartBlocker() = 0;
+  virtual void RemoveLayoutStartBlocker() = 0;
+
   already_AddRefed<nsIDocumentEncoder> GetCachedEncoder();
 
   void SetCachedEncoder(already_AddRefed<nsIDocumentEncoder> aEncoder);

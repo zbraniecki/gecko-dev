@@ -302,7 +302,7 @@ nsXMLContentSink::DidBuildModel(bool aTerminated)
     bool startLayout = true;
 
     if (mPrettyPrinting) {
-      NS_ASSERTION(!mPendingSheetCount, "Shouldn't have pending sheets here!");
+      NS_ASSERTION(!mLayoutStartBlockerCount, "Shouldn't have pending layout blockers here!");
 
       // We're pretty-printing now.  See whether we should wait up on
       // stylesheet loads
@@ -591,7 +591,7 @@ nsXMLContentSink::CloseElement(nsIContent* aContent)
                                   &willNotify,
                                   &isAlternate);
       if (NS_SUCCEEDED(rv) && willNotify && !isAlternate && !mRunsToCompletion) {
-        ++mPendingSheetCount;
+        ++mLayoutStartBlockerCount;
         mScriptLoader->AddParserBlockingScriptExecutionBlocker();
       }
     }
@@ -1215,7 +1215,7 @@ nsXMLContentSink::HandleProcessingInstruction(const char16_t *aTarget,
     if (willNotify) {
       // Successfully started a stylesheet load
       if (!isAlternate && !mRunsToCompletion) {
-        ++mPendingSheetCount;
+        ++mLayoutStartBlockerCount;
         mScriptLoader->AddParserBlockingScriptExecutionBlocker();
       }
 

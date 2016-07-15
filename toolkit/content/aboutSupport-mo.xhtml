@@ -6,6 +6,9 @@
 
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
+  <script type="application/javascript" src="chrome://global/content/l20n-perf-monitor.js"></script>
+  <script type="application/javascript" src="chrome://global/content/l20n-mo.js"></script>
+
     <title data-l10n-id="aboutSupport-pageTitle"></title>
 
     <link rel="icon" type="image/png" id="favicon"
@@ -15,30 +18,6 @@
     <link rel="stylesheet" href="chrome://global/skin/aboutSupport.css"
           type="text/css"/>
 
-    <link rel="localization"
-          href="/branding/brand.ftl"/>
-    <link rel="localization"
-          href="/global/resetProfile.ftl"/>
-    <link rel="localization"
-          href="/global/aboutSupport.ftl"/>
-
-   <script type="application/javascript" src="chrome://global/content/l20n-perf-monitor.js"></script>
-    <script type="application/javascript"
-            src="chrome://global/content/l20n-chrome-html.js"/>
-
-    <script defer="defer" type="application/javascript;version=1.7"
-            src="chrome://global/content/aboutSupport.js"/>
-    <script defer="defer" type="application/javascript;version=1.7"
-            src="chrome://global/content/resetProfile.js"/>
-<!--
-    <script defer="defer" type="application/javascript"
-            src="chrome://global/content/l20n-chrome-html.js"/>
-
-    <script defer="defer" type="application/javascript;version=1.7"
-            src="chrome://global/content/aboutSupport.js"/>
-    <script defer="defer" type="application/javascript;version=1.7"
-            src="chrome://global/content/resetProfile.js"/>
--->
   </head>
 
   <body>
@@ -493,7 +472,7 @@
       </table>
       <!-- - - - - - - - - - - - - - - - - - - - - -->
 
-#if defined(MOZ_SANDBOX)
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
       <h2 class="major-section" id="sandbox"
         data-l10n-id="aboutSupport-sandboxTitle">
       </h2>

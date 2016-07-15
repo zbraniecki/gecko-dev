@@ -1,0 +1,542 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <title></title>
+
+    <link rel="icon" type="image/png" id="favicon"
+          href="chrome://branding/content/icon32.png"/>
+    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css"
+          type="text/css"/>
+    <link rel="stylesheet" href="chrome://global/skin/aboutSupport.css"
+          type="text/css"/>
+
+   <script type="application/javascript" src="chrome://global/content/l20n-perf-monitor.js"></script>
+  </head>
+
+  <body dir="">
+
+    <div id="action-box">
+      <div id="reset-box">
+        <h3></h3>
+        <button id="reset-box-button">
+          
+        </button>
+      </div>
+      <div id="safe-mode-box">
+        <h3></h3>
+        <button id="restart-in-safe-mode-button">
+          
+        </button>
+      </div>
+
+    </div>
+    <h1>
+      
+    </h1>
+
+    <div class="page-subtitle">
+        
+    </div>
+
+    <div>
+      <button id="copy-raw-data-to-clipboard">
+        
+      </button>
+      <button id="copy-to-clipboard">
+        
+      </button>
+    </div>
+
+    <div id="contents">
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table>
+        <tbody>
+          <tr>
+            <th class="column">
+              
+            </th>
+
+            <td id="application-box">
+            </td>
+          </tr>
+
+          <tr>
+            <th class="column">
+              
+            </th>
+
+            <td id="version-box">
+            </td>
+          </tr>
+
+          <tr>
+            <th class="column">
+              
+              </th>
+            <td id="buildid-box"></td>
+          </tr>
+
+#ifndef ANDROID
+          <tr class="no-copy">
+            <th class="column">
+              
+            </th>
+
+            <td>
+              <button id="show-update-history-button">
+                
+              </button>
+            </td>
+          </tr>
+#endif
+
+#ifdef MOZ_UPDATER
+          <tr>
+            <th class="column">
+              
+            </th>
+            <td id="updatechannel-box"></td>
+          </tr>
+#endif
+
+          <tr>
+            <th class="column">
+              
+            </th>
+
+            <td id="useragent-box">
+            </td>
+          </tr>
+
+          <tr>
+            <th class="column">
+              
+            </th>
+
+            <td id="os-box">
+            </td>
+          </tr>
+
+          <tr id="profile-row" class="no-copy">
+            <th class="column">
+#ifdef XP_WIN
+              
+#else
+#ifdef XP_MACOSX
+              
+#else
+              
+#endif
+#endif
+            </th>
+
+            <td>
+              <button id="profile-dir-button">
+#ifdef XP_WIN
+                
+#else
+#ifdef XP_MACOSX
+                
+#else
+                
+#endif
+#endif
+               </button>
+            </td>
+          </tr>
+
+          <tr class="no-copy">
+            <th class="column">
+              
+            </th>
+
+            <td>
+              <a href="about:plugins">about:plugins</a>
+            </td>
+          </tr>
+
+          <tr class="no-copy">
+            <th class="column">
+              
+            </th>
+
+            <td>
+              <a href="about:buildconfig">about:buildconfig</a>
+            </td>
+          </tr>
+
+          <tr class="no-copy">
+            <th class="column">
+              
+            </th>
+
+            <td>
+              <a href="about:memory">about:memory</a>
+            </td>
+          </tr>
+
+          <tr class="no-copy">
+            <th class="column">
+              
+            </th>
+
+            <td>
+              <a href="about:performance">about:performance</a>
+            </td>
+          </tr>
+
+          <tr class="no-copy">
+            <th class="column">
+              
+            </th>
+
+            <td>
+              <a href="about:serviceworkers">about:serviceworkers</a>
+            </td>
+          </tr>
+
+          <tr>
+            <th class="column">
+              
+            </th>
+
+            <td id="multiprocess-box">
+            </td>
+          </tr>
+
+          <tr>
+            <th class="column">
+              
+            </th>
+
+            <td id="safemode-box">
+            </td>
+          </tr>
+
+          <tr class="no-copy">
+            <th class="column">
+              
+            </th>
+
+            <td>
+              <a href="about:profiles">about:profiles</a>
+            </td>
+          </tr>
+
+        </tbody>
+      </table>
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+#ifdef MOZ_CRASHREPORTER
+
+      <h2 class="major-section" id="crashes-title">
+        
+      </h2>
+
+      <table id="crashes-table">
+        <thead>
+          <tr>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+          </tr>
+        </thead>
+        <tbody id="crashes-tbody">
+        </tbody>
+      </table>
+      <p id="crashes-allReports" class="hidden no-copy">
+        <a href="about:crashes" id="crashes-allReportsWithPending" class="block"></a>
+      </p>
+      <p id="crashes-noConfig" class="hidden no-copy"></p>
+
+#endif
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+          </tr>
+        </thead>
+        <tbody id="extensions-tbody">
+        </tbody>
+      </table>
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table>
+        <tbody id="graphics-features-tbody">
+          <tr>
+            <th colspan="2" class="title-column">
+              
+            </th>
+          </tr>
+        </tbody>
+
+        <tbody id="graphics-tbody">
+        </tbody>
+
+        <tbody id="graphics-gpu-1-tbody">
+          <tr>
+            <th colspan="2" class="title-column">
+              
+            </th>
+          </tr>
+        </tbody>
+
+        <tbody id="graphics-gpu-2-tbody">
+          <tr>
+            <th colspan="2" class="title-column">
+              
+            </th>
+          </tr>
+        </tbody>
+
+        <tbody id="graphics-diagnostics-tbody">
+          <tr>
+            <th colspan="2" class="title-column">
+              
+            </th>
+          </tr>
+        </tbody>
+
+        <tbody id="graphics-decisions-tbody">
+          <tr>
+            <th colspan="2" class="title-column">
+              
+            </th>
+          </tr>
+        </tbody>
+
+        <tbody id="graphics-crashguards-tbody">
+          <tr>
+            <th colspan="2" class="title-column">
+              
+            </th>
+          </tr>
+        </tbody>
+
+        <tbody id="graphics-workarounds-tbody">
+          <tr>
+            <th colspan="2" class="title-column">
+              
+            </th>
+          </tr>
+        </tbody>
+
+        <tbody id="graphics-failures-tbody">
+          <tr>
+            <th colspan="2" class="title-column">
+              
+            </th>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table class="prefs-table">
+        <thead class="no-copy">
+          <th class="name">
+            
+          </th>
+
+          <th class="value">
+            
+          </th>
+        </thead>
+
+        <tbody id="prefs-tbody">
+        </tbody>
+      </table>
+
+      <section id="prefs-user-js-section" class="hidden no-copy">
+        <h3></h3>
+        <p></p>
+      </section>
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table class="prefs-table">
+        <thead class="no-copy">
+          <th class="name">
+            
+          </th>
+
+          <th class="value">
+            
+          </th>
+        </thead>
+
+        <tbody id="locked-prefs-tbody">
+        </tbody>
+      </table>
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table>
+        <tr class="no-copy">
+          <th class="column">
+            
+          </th>
+
+          <td>
+            <button id="verify-place-integrity-button">
+              
+            </button>
+            <pre id="verify-place-result" class="hidden no-copy"></pre>
+          </td>
+        </tr>
+      </table>
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table>
+        <tbody>
+          <tr>
+            <th class="column">
+              
+            </th>
+
+            <td id="javascript-incremental-gc">
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table>
+        <tbody>
+          <tr>
+            <th class="column">
+              
+            </th>
+
+            <td id="a11y-activated">
+            </td>
+          </tr>
+          <tr>
+            <th class="column">
+              
+            </th>
+
+            <td id="a11y-force-disabled">
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table>
+        <tbody id="libversions-tbody">
+        </tbody>
+      </table>
+
+
+      <h2 class="major-section">
+        
+      </h2>
+
+      <table>
+        <thead>
+          <tr>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+            <th>
+              
+            </th>
+          </tr>
+        </thead>
+        <tbody id="experiments-tbody">
+        </tbody>
+      </table>
+      <!-- - - - - - - - - - - - - - - - - - - - - -->
+
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+      <h2 class="major-section" id="sandbox">
+	
+      </h2>
+
+      <table>
+	<tbody id="sandbox-tbody">
+	</tbody>
+      </table>
+#endif
+
+    </div>
+
+  </body>
+
+</html>

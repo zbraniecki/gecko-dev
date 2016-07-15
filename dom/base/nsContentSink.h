@@ -27,6 +27,7 @@
 #include "mozilla/Logging.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsThreadUtils.h"
+#include "nsILayoutStartingContentSink.h"
 
 class nsIDocument;
 class nsIURI;
@@ -76,7 +77,8 @@ extern mozilla::LazyLogModule gContentSinkLogModuleInfo;
 class nsContentSink : public nsICSSLoaderObserver,
                       public nsSupportsWeakReference,
                       public nsStubDocumentObserver,
-                      public nsITimerCallback
+                      public nsITimerCallback,
+                      public nsILayoutStartingContentSink
 {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsContentSink,
@@ -106,6 +108,10 @@ class nsContentSink : public nsICSSLoaderObserver,
   // nsIDocumentObserver
   NS_DECL_NSIDOCUMENTOBSERVER_BEGINUPDATE
   NS_DECL_NSIDOCUMENTOBSERVER_ENDUPDATE
+
+  // nsILayoutStartingContentSink
+  virtual void AddLayoutStartBlocker() override;
+  virtual void RemoveLayoutStartBlocker() override;
 
   virtual void UpdateChildCounts() = 0;
 
@@ -232,11 +238,11 @@ protected:
   // done that, further calls to this method will be ignored.
   void ScrollToRef();
 
-  // Start layout.  If aIgnorePendingSheets is true, this will happen even if
-  // we still have stylesheet loads pending.  Otherwise, we'll wait until the
-  // stylesheets are all done loading.
+  // Start layout.  If aIgnoreLayoutStartBlockers is true, this will happen even
+  // if we still have layout start blockers.  Otherwise, we'll wait until the
+  // layout start blockers are all gone.
 public:
-  void StartLayout(bool aIgnorePendingSheets);
+  void StartLayout(bool aIgnoreLayoutStartBlockers);
 
   static void NotifyDocElementCreated(nsIDocument* aDoc);
 
@@ -257,7 +263,7 @@ protected:
 
   // Later on we might want to make this more involved somehow
   // (e.g. stop waiting after some timeout or whatnot).
-  bool WaitForPendingSheets() { return mPendingSheetCount > 0; }
+  bool WaitForLayoutBlockers() { return mLayoutStartBlockerCount > 0; }
 
   void DoProcessLinkHeader();
 
@@ -333,7 +339,9 @@ protected:
   int32_t mInNotification;
   uint32_t mUpdatesInNotification;
 
-  uint32_t mPendingSheetCount;
+  // A counter of the number of layout start blockers: things that prevent us
+  // calling StartLayout.
+  uint32_t mLayoutStartBlockerCount;
 
   nsRevocableEventPtr<nsRunnableMethod<nsContentSink, void, false> >
     mProcessLinkHeaderEvent;
