@@ -1,13 +1,5 @@
 {
 
-Components.utils.import('resource://gre/modules/SyncPromise.jsm');
-
-const sync = false;
-
-if (sync) {
-  Promise = SyncPromise;
-}
-
 function getDirection(code) {
   const tag = code.split('-')[0];
   return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
