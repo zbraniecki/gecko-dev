@@ -5,7 +5,7 @@ const { classes: Cc, interfaces: Ci, utils: Cu } = Components;
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import('resource://gre/modules/SyncPromise.jsm');
 
-const sync = false;
+const sync = true;
 
 const CurPromise = sync ? SyncPromise : Promise;
 
@@ -35,23 +35,30 @@ function load(path) {
 
     req.mozBackgroundRequest = true;
     req.overrideMimeType('text/plain');
-    req.open('GET', url, !sync);
+
+    try {
+      req.open('GET', url, !sync);
+    } catch (e) {
+      reject(e);
+    }
 
     req.addEventListener('load', () => {
       if (req.status === HTTP_STATUS_CODE_OK) {
         resolve(req.responseText);
-
       } else {
         reject(new Error('Not found: ' + url));
-
       }
-
     });
+
     req.addEventListener('error', reject);
     req.addEventListener('timeout', reject);
 
-    req.send(null);
-  });
+    try {
+      req.send(null);
+    } catch(e) {
+      reject(e);
+    }
+  }, true);
 }
 
 class FileSource extends Source {
@@ -301,7 +308,7 @@ this.L10nRegistry = {
     return sources.get(source).loadResource(resId, lang).then(data => {
       cache.set(cacheId, data);
       return data;
-    }).catch(e => e);
+    });
   },
 
   requestResourceInfo() {

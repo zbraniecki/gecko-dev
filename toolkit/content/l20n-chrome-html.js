@@ -1,5 +1,11 @@
 {
 
+Components.utils.import('resource://gre/modules/SyncPromise.jsm');
+
+const sync = true;
+
+const CurPromise = sync ? SyncPromise : Promise;
+
 function getDirection(code) {
   const tag = code.split('-')[0];
   return ['ar', 'he', 'fa', 'ps', 'ur'].indexOf(tag) >= 0 ?
@@ -53,7 +59,7 @@ class LocalizationObserver {
 
   requestLanguages(requestedLangs) {
     const localizations = Array.from(this.localizations.values());
-    return Promise.all(
+    return CurPromise.all(
       localizations.map(l10n => l10n.requestLanguages(requestedLangs))
     ).then(
       () => this.translateAllRoots()
@@ -121,7 +127,7 @@ class LocalizationObserver {
 
   translateAllRoots() {
     const localizations = Array.from(this.localizations.values());
-    return Promise.all(
+    return CurPromise.all(
       localizations.map(
         l10n => this.translateRoots(l10n)
       )
@@ -130,11 +136,11 @@ class LocalizationObserver {
 
   translateRoots(l10n) {
     if (!this.rootsByLocalization.has(l10n)) {
-      return Promise.resolve();
+      return CurPromise.resolve();
     }
 
     const roots = Array.from(this.rootsByLocalization.get(l10n));
-    return Promise.all(
+    return CurPromise.all(
       roots.map(root => this.translateRoot(root, l10n))
     );
   }
@@ -275,7 +281,7 @@ class ChromeLocalizationObserver extends LocalizationObserver {
       return this.translateFragment(root);
     }
 
-    return Promise.all(
+    return CurPromise.all(
       [root, ...anonChildren].map(node => this.translateFragment(node))
     );
   }
@@ -431,7 +437,7 @@ function fetchFirstBundle(bundles, createContext) {
   const [bundle] = bundles;
 
   if (!bundle) {
-    return Promise.resolve(bundles);
+    return CurPromise.resolve(bundles);
   }
 
   return createContextFromBundle(bundle, createContext).then(
@@ -646,23 +652,18 @@ class ChromeResourceBundle {
     this.loaded = false;
     this.resources = resources;
 
-    // Uncomment to test sync resource loading
-    // Components.utils.import('resource://gre/modules/SyncPromise.jsm')
-    // this.Promise = SyncPromise;
-    this.Promise = Promise;
-
     const data = Object.keys(resources).map(
       resId => resources[resId].data
     );
 
     if (data.every(d => d !== null)) {
-      this.loaded = this.Promise.resolve(data);
+      this.loaded = CurPromise.resolve(data);
     }
   }
 
   fetch() {
     if (!this.loaded) {
-      this.loaded = this.Promise.all(
+      this.loaded = CurPromise.all(
         Object.keys(this.resources).map(resId => {
           const { source, lang } = this.resources[resId];
           return L10nRegistry.fetchResource(source, resId, lang);
@@ -678,10 +679,10 @@ class ChromeResourceBundle {
 // https://github.com/whatwg/html/issues/127
 function documentReady() {
   if (document.readyState !== 'loading') {
-    return Promise.resolve();
+    return CurPromise.resolve();
   }
 
-  return new Promise(resolve => {
+  return new CurPromise(resolve => {
     document.addEventListener('readystatechange', function onrsc() {
       document.removeEventListener('readystatechange', onrsc);
       resolve();
@@ -777,9 +778,6 @@ documentReady().then(() => {
 
 function createLocalization(name, resIds) {
   function requestBundles(requestedLangs = navigator.languages) {
-    // const { resBundles } = L10nService.getResources(requestedLangs, resIds);
-    // return Promise.resolve(resBundles);
-
     return L10nRegistry.getResources(requestedLangs, resIds).then(
       ({bundles}) => bundles.map(
         bundle => new ChromeResourceBundle(bundle.locale, bundle.resources)
