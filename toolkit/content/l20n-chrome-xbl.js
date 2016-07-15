@@ -104,7 +104,7 @@ class Localization {
     }
 
     if (typeof console !== 'undefined') {
-      errors.forEach(console.warn); // eslint-disable-line no-console
+      errors.forEach(e => console.warn(e)); // eslint-disable-line no-console
     }
 
     const { createContext } = properties.get(this);
@@ -352,23 +352,18 @@ class ChromeResourceBundle {
     this.loaded = false;
     this.resources = resources;
 
-    // Uncomment to test sync resource loading
-    // Components.utils.import('resource://gre/modules/SyncPromise.jsm')
-    // this.Promise = SyncPromise;
-    this.Promise = Promise;
-
     const data = Object.keys(resources).map(
       resId => resources[resId].data
     );
 
     if (data.every(d => d !== null)) {
-      this.loaded = this.Promise.resolve(data);
+      this.loaded = Promise.resolve(data);
     }
   }
 
   fetch() {
     if (!this.loaded) {
-      this.loaded = this.Promise.all(
+      this.loaded = Promise.all(
         Object.keys(this.resources).map(resId => {
           const { source, lang } = this.resources[resId];
           return L10nRegistry.fetchResource(source, resId, lang);
@@ -462,8 +457,9 @@ function createLocalization(name, resIds, host, obs) {
     obs.set(name, l10n);
   }
 
-  obs.observeRoot(host, obs.get(name));
-  obs.translateRoot(host);
+  const l10n = obs.get(name);
+  obs.observeRoot(host, l10n);
+  obs.translateRoot(host, l10n);
 }
 
 function destroyLocalization(name, host, obs) {
