@@ -2882,3 +2882,21 @@ function Intl_getCanonicalLocales(locales) {
   }
   return result;
 }
+
+function Intl_getFirstDayOfWeek(locales) {
+  const requestedLocales = CanonicalizeLocaleList(locales);
+
+  const DateTimeFormat = dateTimeFormatInternalProperties;
+  const localeData = DateTimeFormat.localeData;
+
+  const localeOpt = new Record();
+  localeOpt.localeMatcher = "best fit";
+
+  const r = ResolveLocale(callFunction(DateTimeFormat.availableLocales, DateTimeFormat),
+                        requestedLocales,
+                        localeOpt,
+                        DateTimeFormat.relevantExtensionKeys,
+                        localeData);
+
+  return intl_GetFirstDayOfWeek(r.locale);
+}

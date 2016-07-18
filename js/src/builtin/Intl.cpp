@@ -2329,6 +2329,22 @@ js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+bool
+js::intl_GetFirstDayOfWeek(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 1);
+
+    JSAutoByteString locale(cx, args[0].toString());
+
+    UErrorCode status = U_ZERO_ERROR;
+    UCalendar* cal = ucal_open(nullptr, 0, locale.ptr(), UCAL_DEFAULT, &status);
+    int32_t val = ucal_getAttribute(cal, UCAL_FIRST_DAY_OF_WEEK);
+    RootedValue result(cx, NumberValue(val));
+    args.rval().set(result);
+    ucal_close(cal);
+    return true;
+}
 
 /******************** Intl ********************/
 
@@ -2352,6 +2368,7 @@ static const JSFunctionSpec intl_static_methods[] = {
     JS_FN(js_toSource_str,  intl_toSource,        0, 0),
 #endif
     JS_SELF_HOSTED_FN("getCanonicalLocales", "Intl_getCanonicalLocales", 1, 0),
+    JS_SELF_HOSTED_FN("getFirstDayOfWeek", "Intl_getFirstDayOfWeek", 1, 0),
     JS_FS_END
 };
 

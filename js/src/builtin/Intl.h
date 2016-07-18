@@ -180,6 +180,15 @@ extern MOZ_MUST_USE bool
 intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp);
 
 /**
+ * Returns a Number representing the day of the week
+ * on which the week begings.
+ *
+ * Usage: day = intl_GetFirstDayOfWeek(locale)
+ */
+extern MOZ_MUST_USE bool
+intl_GetFirstDayOfWeek(JSContext* cx, unsigned argc, Value* vp);
+
+/**
  * Cast char16_t* strings to UChar* strings used by ICU.
  */
 inline const UChar*
