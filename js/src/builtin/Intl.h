@@ -180,13 +180,18 @@ extern MOZ_MUST_USE bool
 intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp);
 
 /**
- * Returns a Number representing the day of the week
- * on which the week begings.
+ * Returns an Object with calendar infromation for a given locale.
  *
- * Usage: day = intl_GetFirstDayOfWeek(locale)
+ * Usage: info = intl_GetCalendarInfo(locale)
+ *
+ * Returns: {
+ *   firstDayOfWeek: 1,
+ *   weekendStart: 6,
+ *   weekendEnd: 1
+ * }
  */
 extern MOZ_MUST_USE bool
-intl_GetFirstDayOfWeek(JSContext* cx, unsigned argc, Value* vp);
+intl_GetCalendarInfo(JSContext* cx, unsigned argc, Value* vp);
 
 /**
  * Cast char16_t* strings to UChar* strings used by ICU.

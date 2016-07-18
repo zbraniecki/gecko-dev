@@ -2883,7 +2883,7 @@ function Intl_getCanonicalLocales(locales) {
   return result;
 }
 
-function Intl_getFirstDayOfWeek(locales) {
+function Intl_getCalendarInfo(locales) {
   const requestedLocales = CanonicalizeLocaleList(locales);
 
   const DateTimeFormat = dateTimeFormatInternalProperties;
@@ -2898,5 +2898,9 @@ function Intl_getFirstDayOfWeek(locales) {
                         DateTimeFormat.relevantExtensionKeys,
                         localeData);
 
-  return intl_GetFirstDayOfWeek(r.locale);
+  const result = intl_GetCalendarInfo(r.locale);
+  result.calendar = r.ca;
+  result.locale = r.locale;
+
+  return result;
 }

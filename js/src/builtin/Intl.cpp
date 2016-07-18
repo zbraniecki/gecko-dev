@@ -2330,7 +2330,7 @@ js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp)
 }
 
 bool
-js::intl_GetFirstDayOfWeek(JSContext* cx, unsigned argc, Value* vp)
+js::intl_GetCalendarInfo(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     MOZ_ASSERT(args.length() == 1);
@@ -2339,9 +2339,48 @@ js::intl_GetFirstDayOfWeek(JSContext* cx, unsigned argc, Value* vp)
 
     UErrorCode status = U_ZERO_ERROR;
     UCalendar* cal = ucal_open(nullptr, 0, locale.ptr(), UCAL_DEFAULT, &status);
-    int32_t val = ucal_getAttribute(cal, UCAL_FIRST_DAY_OF_WEEK);
-    RootedValue result(cx, NumberValue(val));
-    args.rval().set(result);
+    int32_t firstDayOfWeek = ucal_getAttribute(cal, UCAL_FIRST_DAY_OF_WEEK);
+
+    RootedObject info(cx, JS_NewPlainObject(cx));
+    if (!info)
+        return false;
+
+    RootedValue firstDayOfWeekVal(cx, NumberValue(firstDayOfWeek));
+    RootedValue weekendStartVal(cx);
+    RootedValue weekendEndVal(cx);
+
+    if (!JS_DefineProperty(cx, info, "firstDayOfWeek", firstDayOfWeekVal, JSPROP_ENUMERATE))
+        return false;
+
+    UCalendarWeekdayType prevDayType = ucal_getDayOfWeekType(cal, UCAL_SATURDAY, &status);
+
+    for (int i = UCAL_SUNDAY; i <= UCAL_SATURDAY; i++) {
+        UCalendarDaysOfWeek dayOfWeek = (UCalendarDaysOfWeek) i;
+        UCalendarWeekdayType type = ucal_getDayOfWeekType(cal, dayOfWeek, &status);
+
+        if (prevDayType != type) {
+            switch (type) {
+                case UCAL_WEEKDAY:
+                    weekendEndVal = NumberValue(i);
+                    break;
+                case UCAL_WEEKEND:
+                    weekendStartVal = NumberValue(i);
+                    break;
+                default:
+                    MOZ_ASSERT_UNREACHABLE("unhandled dayOfWeek type");
+            }
+        }
+
+        prevDayType = type;
+    }
+
+    if (!JS_DefineProperty(cx, info, "weekendStart", weekendStartVal, JSPROP_ENUMERATE))
+        return false;
+
+    if (!JS_DefineProperty(cx, info, "weekendEnd", weekendEndVal, JSPROP_ENUMERATE))
+        return false;
+
+    args.rval().setObject(*info);
     ucal_close(cal);
     return true;
 }
@@ -2368,7 +2407,7 @@ static const JSFunctionSpec intl_static_methods[] = {
     JS_FN(js_toSource_str,  intl_toSource,        0, 0),
 #endif
     JS_SELF_HOSTED_FN("getCanonicalLocales", "Intl_getCanonicalLocales", 1, 0),
-    JS_SELF_HOSTED_FN("getFirstDayOfWeek", "Intl_getFirstDayOfWeek", 1, 0),
+    JS_SELF_HOSTED_FN("getCalendarInfo", "Intl_getCalendarInfo", 1, 0),
     JS_FS_END
 };
 
