@@ -2329,6 +2329,80 @@ js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+bool
+js::intl_GetDisplayNames(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 2);
+
+    JSAutoByteString locale(cx, args[0].toString());
+    JSAutoByteString type(cx, args[1].toString());
+
+    UErrorCode status = U_ZERO_ERROR;
+
+    UDateFormat* fmt = udat_open(
+        UDAT_DEFAULT,
+        UDAT_DEFAULT,
+        locale.ptr(),
+        NULL,
+        -1, NULL, -1, &status);
+
+    UDateFormatSymbolType symbolType;
+
+    if (equal(type, "weekday")) {
+      symbolType = UDAT_WEEKDAYS;
+    }
+    if (equal(type, "month")) {
+      symbolType = UDAT_STANDALONE_MONTHS;
+    }
+
+    Vector<char16_t, INITIAL_CHAR_BUFFER_SIZE> chars(cx);
+    if (!chars.resize(INITIAL_CHAR_BUFFER_SIZE))
+        return false;
+
+    RootedObject result(cx, JS_NewPlainObject(cx));
+    if (!result)
+        return false;
+
+    RootedArrayObject names(cx, NewDenseEmptyArray(cx));
+    if (!names)
+        return false;
+
+    int firstIndex;
+    int lastIndex;
+    int v = 0;
+
+    switch (symbolType) {
+        case UDAT_WEEKDAYS:
+            firstIndex = UCAL_SUNDAY;
+            lastIndex = UCAL_SATURDAY;
+            v = -1;
+            break;
+        case UDAT_STANDALONE_MONTHS:
+            firstIndex = UCAL_JANUARY;
+            lastIndex = UCAL_DECEMBER;
+            break;
+        case UDAT_AM_PMS:
+            firstIndex = UCAL_AM;
+            lastIndex = UCAL_PM;
+            break;
+    }
+    for (int i = firstIndex; i <= lastIndex; i++) {
+        int resultSize = udat_getSymbols(fmt, symbolType, i, Char16ToUChar(chars.begin()), INITIAL_CHAR_BUFFER_SIZE, &status);
+        RootedString word(cx, NewStringCopyN<CanGC>(cx, chars.begin(), resultSize));
+        RootedValue wordVal(cx, StringValue(word));
+        if (!DefineElement(cx, names, i + v, wordVal))
+            return false;
+    }
+
+    if (!JS_DefineProperty(cx, result, "names", names, JSPROP_ENUMERATE))
+        return false;
+
+
+    args.rval().setObject(*result);
+    udat_close(fmt);
+    return true;
+}
 
 /******************** Intl ********************/
 
@@ -2352,6 +2426,7 @@ static const JSFunctionSpec intl_static_methods[] = {
     JS_FN(js_toSource_str,  intl_toSource,        0, 0),
 #endif
     JS_SELF_HOSTED_FN("getCanonicalLocales", "Intl_getCanonicalLocales", 1, 0),
+    JS_SELF_HOSTED_FN("getDisplayNames", "Intl_getDisplayNames", 2, 0),
     JS_FS_END
 };
 
