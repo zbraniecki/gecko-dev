@@ -2355,6 +2355,9 @@ js::intl_GetDisplayNames(JSContext* cx, unsigned argc, Value* vp)
     if (equal(type, "month")) {
       symbolType = UDAT_STANDALONE_MONTHS;
     }
+    if (equal(type, "dayperiod")) {
+      symbolType = UDAT_AM_PMS;
+    }
 
     Vector<char16_t, INITIAL_CHAR_BUFFER_SIZE> chars(cx);
     if (!chars.resize(INITIAL_CHAR_BUFFER_SIZE))
