@@ -2883,7 +2883,7 @@ function Intl_getCanonicalLocales(locales) {
   return result;
 }
 
-function Intl_getDisplayNames(locales, options) {
+function Intl_getDisplayNames(locales, options = {}) {
   const requestedLocales = CanonicalizeLocaleList(locales);
 
   const DateTimeFormat = dateTimeFormatInternalProperties;
@@ -2898,9 +2898,15 @@ function Intl_getDisplayNames(locales, options) {
                         DateTimeFormat.relevantExtensionKeys,
                         localeData);
 
-  const result = intl_GetDisplayNames(r.locale, options.type);
+  const resolvedOptions = {
+    style: options.style || 'long',
+    type: options.type
+  }
+
+  const result = intl_GetDisplayNames(r.locale, resolvedOptions);
   result.calendar = r.ca;
   result.locale = r.locale;
+  result.style = resolvedOptions.style;
 
   return result;
 }

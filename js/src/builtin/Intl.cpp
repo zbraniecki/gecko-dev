@@ -2334,9 +2334,24 @@ js::intl_GetDisplayNames(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
     MOZ_ASSERT(args.length() == 2);
+    MOZ_ASSERT(args[0].isString());
+    MOZ_ASSERT(args[1].isObject());
 
     JSAutoByteString locale(cx, args[0].toString());
-    JSAutoByteString type(cx, args[1].toString());
+    RootedObject options(cx, &args[1].toObject());
+
+    RootedValue value(cx);
+    if (!GetProperty(cx, options, options, cx->names().type, &value))
+        return false;
+    JSAutoByteString type(cx, value.toString());
+    if (!type)
+        return false;
+
+    if (!GetProperty(cx, options, options, cx->names().style, &value))
+        return false;
+    JSAutoByteString style(cx, value.toString());
+    if (!style)
+        return false;
 
     UErrorCode status = U_ZERO_ERROR;
 
@@ -2350,10 +2365,24 @@ js::intl_GetDisplayNames(JSContext* cx, unsigned argc, Value* vp)
     UDateFormatSymbolType symbolType;
 
     if (equal(type, "weekday")) {
-      symbolType = UDAT_WEEKDAYS;
+        if (equal(style, "narrow")) {
+            symbolType = UDAT_STANDALONE_NARROW_WEEKDAYS;
+        } else if (equal(style, "shorter")) {
+            symbolType = UDAT_STANDALONE_SHORTER_WEEKDAYS;
+        } else if (equal(style, "short")) {
+            symbolType = UDAT_STANDALONE_SHORT_WEEKDAYS;
+        } else {
+            symbolType = UDAT_STANDALONE_WEEKDAYS;
+        }
     }
     if (equal(type, "month")) {
-      symbolType = UDAT_STANDALONE_MONTHS;
+        if (equal(style, "narrow")) {
+            symbolType = UDAT_STANDALONE_NARROW_MONTHS;
+        } else if (equal(style, "short")) {
+            symbolType = UDAT_STANDALONE_SHORT_MONTHS;
+        } else {
+            symbolType = UDAT_STANDALONE_MONTHS;
+        }
     }
     if (equal(type, "dayperiod")) {
       symbolType = UDAT_AM_PMS;
@@ -2376,12 +2405,17 @@ js::intl_GetDisplayNames(JSContext* cx, unsigned argc, Value* vp)
     int v = 0;
 
     switch (symbolType) {
-        case UDAT_WEEKDAYS:
+        case UDAT_STANDALONE_WEEKDAYS:
+        case UDAT_STANDALONE_SHORTER_WEEKDAYS:
+        case UDAT_STANDALONE_SHORT_WEEKDAYS:
+        case UDAT_STANDALONE_NARROW_WEEKDAYS:
             firstIndex = UCAL_SUNDAY;
             lastIndex = UCAL_SATURDAY;
             v = -1;
             break;
         case UDAT_STANDALONE_MONTHS:
+        case UDAT_STANDALONE_SHORT_MONTHS:
+        case UDAT_STANDALONE_NARROW_MONTHS:
             firstIndex = UCAL_JANUARY;
             lastIndex = UCAL_DECEMBER;
             break;
