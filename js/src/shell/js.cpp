@@ -726,6 +726,28 @@ SetPromiseRejectionTrackerCallback(JSContext* cx, unsigned argc, Value* vp)
 }
 
 static bool
+AddIntlExtras(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    if (!args.get(0).isObject())
+        return false;
+    JS::RootedObject intl(cx, &args.get(0).toObject());
+    if (!intl)
+        return false;
+
+    static const JSFunctionSpec funcs[] = {
+        JS_SELF_HOSTED_FN("getCalendarInfo", "Intl_getCalendarInfo", 1, 0),
+        JS_FS_END
+    };
+
+    if (!JS_DefineFunctions(cx, intl, funcs))
+        return false;
+
+    args.rval().setUndefined();
+    return true;
+}
+
+static bool
 EvalAndPrint(JSContext* cx, const char* bytes, size_t length,
              int lineno, bool compileOnly)
 {
@@ -5701,6 +5723,11 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "setPromiseRejectionTrackerCallback()",
 "Sets the callback to be invoked whenever a Promise rejection is unhandled\n"
 "or a previously-unhandled rejection becomes handled."),
+
+    JS_FN_HELP("addIntlExtras", AddIntlExtras, 1, 0,
+"AddIntlExtras(obj)",
+"Adds a set of extra Intl functions that are not yet standardized on Intl object\n"
+" and allows the user to add them on an object passed as an argument."),
 
     JS_FS_HELP_END
 };

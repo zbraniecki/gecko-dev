@@ -2356,6 +2356,74 @@ js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+bool
+js::intl_GetCalendarInfo(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 1);
+
+    JSAutoByteString locale(cx, args[0].toString());
+
+    UErrorCode status = U_ZERO_ERROR;
+    UCalendar* cal = ucal_open(nullptr, 0, locale.ptr(), UCAL_DEFAULT, &status);
+    if (U_FAILURE(status)) {
+        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
+        return false;
+    }
+    ScopedICUObject<UCalendar> toClose(cal, ucal_close);
+
+    int32_t firstDayOfWeek = ucal_getAttribute(cal, UCAL_FIRST_DAY_OF_WEEK);
+
+    RootedObject info(cx, NewBuiltinClassInstance<PlainObject>(cx));
+    if (!info)
+        return false;
+
+    RootedValue firstDayOfWeekVal(cx, Int32Value(firstDayOfWeek));
+    RootedValue weekendStartVal(cx);
+    RootedValue weekendEndVal(cx);
+
+    if (!DefineProperty(cx, info, cx->names().firstDayOfWeek, firstDayOfWeekVal))
+        return false;
+
+    UCalendarWeekdayType prevDayType = ucal_getDayOfWeekType(cal, UCAL_SATURDAY, &status);
+    if (U_FAILURE(status)) {
+        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
+        return false;
+    }
+
+    for (int i = UCAL_SUNDAY; i <= UCAL_SATURDAY; i++) {
+        UCalendarDaysOfWeek dayOfWeek = (UCalendarDaysOfWeek) i;
+        UCalendarWeekdayType type = ucal_getDayOfWeekType(cal, dayOfWeek, &status);
+        if (U_FAILURE(status)) {
+            JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
+            return false;
+        }
+
+        if (prevDayType != type) {
+            switch (type) {
+                case UCAL_WEEKDAY:
+                    weekendEndVal = NumberValue(i);
+                    break;
+                case UCAL_WEEKEND:
+                    weekendStartVal = NumberValue(i);
+                    break;
+                default:
+                    MOZ_ASSERT_UNREACHABLE("unhandled dayOfWeek type");
+            }
+        }
+
+        prevDayType = type;
+    }
+
+    if (!DefineProperty(cx, info, cx->names().weekendStart, weekendStartVal))
+        return false;
+
+    if (!DefineProperty(cx, info, cx->names().weekendEnd, weekendEndVal))
+        return false;
+
+    args.rval().setObject(*info);
+    return toClose.forget();
+}
 
 /******************** Intl ********************/
 
