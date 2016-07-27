@@ -2335,6 +2335,93 @@ js::intl_FormatDateTime(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+bool
+js::intl_GetCalendarInfo(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    MOZ_ASSERT(args.length() == 1);
+
+    JSAutoByteString locale(cx, args[0].toString());
+    if (!locale)
+        return false;
+
+    UErrorCode status = U_ZERO_ERROR;
+    UCalendar* cal = ucal_open(nullptr, 0, locale.ptr(), UCAL_DEFAULT, &status);
+    if (U_FAILURE(status)) {
+        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
+        return false;
+    }
+    ScopedICUObject<UCalendar, ucal_close> toClose(cal);
+
+
+    RootedObject info(cx, NewBuiltinClassInstance<PlainObject>(cx));
+    if (!info)
+        return false;
+
+    int32_t firstDayOfWeek = ucal_getAttribute(cal, UCAL_FIRST_DAY_OF_WEEK);
+    RootedValue firstDayOfWeekVal(cx, Int32Value(firstDayOfWeek));
+    if (!DefineProperty(cx, info, cx->names().firstDayOfWeek, firstDayOfWeekVal))
+        return false;
+
+    int32_t minDays = ucal_getAttribute(cal, UCAL_MINIMAL_DAYS_IN_FIRST_WEEK);
+    RootedValue minDaysVal(cx, Int32Value(minDays));
+    if (!DefineProperty(cx, info, cx->names().minDays, minDaysVal))
+        return false;
+
+    UCalendarWeekdayType prevDayType = ucal_getDayOfWeekType(cal, UCAL_SATURDAY, &status);
+    if (U_FAILURE(status)) {
+        JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
+        return false;
+    }
+
+    RootedValue weekendStart(cx), weekendEnd(cx);
+
+    for (int i = UCAL_SUNDAY; i <= UCAL_SATURDAY; i++) {
+        UCalendarDaysOfWeek dayOfWeek = static_cast<UCalendarDaysOfWeek>(i);
+        UCalendarWeekdayType type = ucal_getDayOfWeekType(cal, dayOfWeek, &status);
+        if (U_FAILURE(status)) {
+            JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
+            return false;
+        }
+
+        if (prevDayType != type) {
+            switch (type) {
+              case UCAL_WEEKDAY:
+                // If the first Weekday after Weekend is Sunday (1),
+                // then the last Weekend day is Saturday (7).
+                // Otherwise we'll just take the previous days number.
+                weekendEnd.setInt32(i == 1 ? 7 : i - 1);
+                break;
+              case UCAL_WEEKEND:
+                weekendStart.setInt32(i);
+                break;
+              case UCAL_WEEKEND_ONSET:
+              case UCAL_WEEKEND_CEASE:
+                // At the time this code was added, ICU apparently never behaves this way,
+                // so just throw, so that users will report a bug and we can decide what to
+                // do.
+                JS_ReportErrorNumber(cx, GetErrorMessage, nullptr, JSMSG_INTERNAL_INTL_ERROR);
+                return false;
+              default:
+                break;
+            }
+        }
+
+        prevDayType = type;
+    }
+
+    MOZ_ASSERT(weekendStart.isInt32());
+    MOZ_ASSERT(weekendEnd.isInt32());
+
+    if (!DefineProperty(cx, info, cx->names().weekendStart, weekendStart))
+        return false;
+
+    if (!DefineProperty(cx, info, cx->names().weekendEnd, weekendEnd))
+        return false;
+
+    args.rval().setObject(*info);
+    return true;
+}
 
 /******************** Intl ********************/
 

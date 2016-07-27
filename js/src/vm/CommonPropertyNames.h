@@ -110,6 +110,7 @@
     macro(Float32x4, Float32x4, "Float32x4") \
     macro(float64, float64, "float64") \
     macro(Float64x2, Float64x2, "Float64x2") \
+    macro(firstDayOfWeek, firstDayOfWeek, "firstDayOfWeek") \
     macro(forceInterpreter, forceInterpreter, "forceInterpreter") \
     macro(forEach, forEach, "forEach") \
     macro(format, format, "format") \
@@ -177,6 +178,7 @@
     macro(maximumFractionDigits, maximumFractionDigits, "maximumFractionDigits") \
     macro(maximumSignificantDigits, maximumSignificantDigits, "maximumSignificantDigits") \
     macro(message, message, "message") \
+    macro(minDays, minDays, "minDays") \
     macro(minimumFractionDigits, minimumFractionDigits, "minimumFractionDigits") \
     macro(minimumIntegerDigits, minimumIntegerDigits, "minimumIntegerDigits") \
     macro(minimumSignificantDigits, minimumSignificantDigits, "minimumSignificantDigits") \
@@ -307,6 +309,8 @@
     macro(RegExpSearcher, RegExpSearcher, "RegExpSearcher") \
     macro(RegExpTester, RegExpTester, "RegExpTester") \
     macro(weekday, weekday, "weekday") \
+    macro(weekendStart, weekendStart, "weekendStart") \
+    macro(weekendEnd, weekendEnd, "weekendEnd") \
     macro(writable, writable, "writable") \
     macro(year, year, "year") \
     macro(yield, yield, "yield") \
