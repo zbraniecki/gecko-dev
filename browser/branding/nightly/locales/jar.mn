@@ -10,3 +10,5 @@
   locale/branding/brand.dtd        (en-US/brand.dtd)
   locale/branding/brand.properties (en-US/brand.properties)
   locale/branding/browserconfig.properties
+
+  browser/brand.ftl                (en-US/brand.ftl)

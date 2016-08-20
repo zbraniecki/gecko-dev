@@ -57,6 +57,8 @@ toolkit.jar:
    content/global/globalOverlay.js
    content/global/mozilla.xhtml
    content/global/process-content.js
+   content/global/l20n-chrome-xul.js
+   content/global/l20n-perf-monitor.js
    content/global/resetProfile.css
    content/global/resetProfile.js
    content/global/resetProfile.xul

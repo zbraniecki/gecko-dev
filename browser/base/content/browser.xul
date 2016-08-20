@@ -74,6 +74,12 @@
 <script type="application/javascript" src="chrome://browser/content/downloads/indicator.js"/>
 <script type="application/javascript" src="chrome://browser/content/places/editBookmarkOverlay.js"/>
 
+<link rel="localization" href="/browser/brand.ftl"/>
+<link rel="localization" href="/browser/menubar.ftl"/>
+<link rel="localization" href="/browser/toolbar.ftl"/>
+<script type="application/javascript" src="chrome://global/content/l20n-perf-monitor.js"/>
+<script type="application/javascript" src="chrome://global/content/l20n-chrome-xul.js"/>
+
 # All sets except for popupsets (commands, keys, stringbundles and broadcasters) *must* go into the
 # browser-sets.inc file for sharing with hiddenWindow.xul.
 #define FULL_BROWSER_WINDOW
@@ -675,7 +681,7 @@
                            tooltip="forward-button-tooltip"
                            context="backForwardMenu"/>
             <textbox id="urlbar" flex="1"
-                     placeholder="&urlbar.placeholder2;"
+                     data-l10n-id="urlbar-textbox"
                      type="autocomplete"
                      autocompletesearch="unifiedcomplete"
                      autocompletesearchparam="enable-actions"

@@ -401,6 +401,12 @@ nsXMLContentSink::OnTransformDone(nsresult aResult,
   }
 
   // Start the layout process
+  nsContentUtils::DispatchTrustedEvent(mDocument,
+      static_cast<nsIDocument*>(mDocument),
+      NS_LITERAL_STRING("MozBeforeLayout"),
+      true,
+      false);
+
   StartLayout(false);
 
   ScrollToRef();
@@ -421,6 +427,12 @@ nsXMLContentSink::StyleSheetLoaded(StyleSheetHandle aSheet,
 
   if (!mDocument->CSSLoader()->HasPendingLoads()) {
     mDocument->CSSLoader()->RemoveObserver(this);
+
+    nsContentUtils::DispatchTrustedEvent(mDocument,
+        static_cast<nsIDocument*>(mDocument),
+        NS_LITERAL_STRING("MozBeforeLayout"),
+        true,
+        false);
     StartLayout(false);
     ScrollToRef();
   }
@@ -853,6 +865,13 @@ nsXMLContentSink::MaybeStartLayout(bool aIgnorePendingSheets)
   if (mLayoutStarted || mXSLTProcessor || CanStillPrettyPrint()) {
     return;
   }
+
+  nsContentUtils::DispatchTrustedEvent(mDocument,
+      static_cast<nsIDocument*>(mDocument),
+      NS_LITERAL_STRING("MozBeforeLayout"),
+      true,
+      false);
+
   StartLayout(aIgnorePendingSheets);
 }
 
